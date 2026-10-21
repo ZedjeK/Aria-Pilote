@@ -54,6 +54,10 @@
                 <textarea id="chat-input" rows="3" placeholder="Écris ton message… (Entrée pour envoyer, Maj+Entrée pour aller à la ligne)"></textarea>
                 <div class="composer-actions">
                     <span id="chat-model" class="muted small"></span>
+                    <span id="ctx-gauge" class="ctx-gauge" hidden title="Contexte occupé par la conversation">
+                        <span class="ctx-bar"><span></span></span>
+                        <span class="ctx-text"></span>
+                    </span>
                     <button type="button" id="btn-regen" class="ghost">🔄 Régénérer</button>
                     <button type="button" id="btn-stop" class="ghost" hidden>⏹ Stop</button>
                     <button type="submit" id="btn-send" class="primary">Envoyer</button>

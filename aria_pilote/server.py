@@ -80,6 +80,13 @@ class ServerManager:
 
     # --- cycle de vie --------------------------------------------------------
 
+    @property
+    def ctx_size(self):
+        """Taille du contexte chargé (0 si aucun modèle prêt)."""
+        if self.state != "ready" or not self._settings:
+            return 0
+        return int(self._settings.get("ctx_size") or 0)
+
     def auth_headers(self):
         return {"Authorization": f"Bearer {self.api_key}"} if self.api_key else {}
 

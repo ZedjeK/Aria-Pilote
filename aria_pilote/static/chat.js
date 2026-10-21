@@ -175,8 +175,32 @@ async function openConversation(id) {
     }
     $("#chat-error").hidden = true;
     syncAgentBar();
+    renderGauge(chat.current?.context);
     renderMessages();
     loadConversations();
+}
+
+// --- Contexte ----------------------------------------------------------------------
+
+function renderGauge(ctx) {
+    const gauge = $("#ctx-gauge");
+    gauge.hidden = !ctx?.max;
+    if (!ctx?.max) return;
+    const pct = Math.min(100, (100 * ctx.used) / ctx.max);
+    gauge.classList.toggle("high", pct >= 60 && pct < 85);
+    gauge.classList.toggle("full", pct >= 85);
+    gauge.querySelector(".ctx-bar span").style.width = `${pct}%`;
+    gauge.querySelector(".ctx-text").textContent =
+        `${ctx.used.toLocaleString("fr-FR")} / ${ctx.max.toLocaleString("fr-FR")} tokens`;
+}
+
+function summaryNode(summary, count) {
+    const node = el("details", { className: "summary-divider" },
+        el("summary", {}, `🗜 Les ${count} messages au-dessus sont résumés pour le modèle (voir le résumé)`));
+    const body = el("div", { className: "md" });
+    body.innerHTML = renderMarkdown(summary.text || "");
+    node.append(body);
+    return node;
 }
 
 $("#btn-new-conv").addEventListener("click", () => {
@@ -338,15 +362,17 @@ function renderMessages() {
         return;
     }
     const nodes = [];
-    for (const m of messages) {
+    const summary = chat.current?.summary;
+    messages.forEach((m, index) => {
+        if (summary && index === summary.upto) nodes.push(summaryNode(summary, summary.upto));
         if (m.role === "tool") {
             nodes.push(toolNode(m));
         } else if (m.role === "assistant" && !m.content && !m.reasoning) {
-            continue;  // simple appel d'outil : la carte de l'outil suffit
+            // simple appel d'outil : la carte de l'outil suffit
         } else {
             nodes.push(messageNode(m));
         }
-    }
+    });
     box.replaceChildren(...nodes);
     box.scrollTop = box.scrollHeight;
 }
@@ -509,6 +535,17 @@ async function send(content) {
             } else if (ev.type === "memory") {
                 chat.memoryLoaded = true;
                 syncAgentBar();
+            } else if (ev.type === "context") {
+                renderGauge(ev);
+                if (ev.saturated) showChatError("Le contexte est presque plein et il n'y a plus d'anciens échanges à résumer.");
+            } else if (ev.type === "compacted") {
+                renderGauge(ev);
+                closeLive();
+                const what = ev.messages ? `${ev.messages} anciens messages résumés` : "résultats d'outils raccourcis";
+                append(el("div", { className: "summary-divider" },
+                    `🗜 ${what} pour libérer de la place : `
+                    + `${ev.before.toLocaleString("fr-FR")} → ${ev.used.toLocaleString("fr-FR")} tokens`));
+                if (ev.saturated) showChatError("Le contexte reste trop petit pour cette tâche : recharge le modèle avec un contexte plus grand.");
             } else if (ev.type === "tool_result") {
                 if (ev.todo) renderTodo(ev.todo);
                 const card = toolCards[ev.call_id];
