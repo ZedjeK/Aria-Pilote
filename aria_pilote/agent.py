@@ -1,12 +1,8 @@
 """Boucle d'agent : le modèle appelle des outils, Aria Pilote les exécute (avec ton accord si besoin)."""
 
-import asyncio
-import json
-import uuid
-
 import httpx
 
-from . import backups, chat, context, conversations, skills, tools, workspace
+from . import backups, chat, context, conversations, skills, subagents, toolrun, tools, workspace
 
 MAX_TOOL_CALLS = 25
 # Une étape d'agent qui réfléchit puis écrit un fichier entier a besoin de place
@@ -38,32 +34,9 @@ MEMORY_PROMPT = """Mémoire du projet (fichier {name} écrit par l'utilisateur :
 {memory}
 ---"""
 
-# Types d'outils soumis à accord, et le drapeau qui les autorise pour toute la conversation
-# (None : jamais d'autorisation globale)
-APPROVAL_FLAGS = {"write": "auto_write", "web": "auto_web", "command": None}
-
-# Accords en attente : approval_id -> (future, conversation_id, type d'outil)
-_approvals = {}
-
-
-class ApprovalError(Exception):
-    pass
-
-
-def resolve_approval(approval_id, decision):
-    if decision not in ("allow", "deny", "allow_session"):
-        raise ApprovalError("Décision inconnue.")
-    pending = _approvals.get(approval_id)
-    if pending is None:
-        raise ApprovalError("Cette demande n'est plus en attente.")
-    future, cid, kind = pending
-    if decision == "allow_session":
-        flag = APPROVAL_FLAGS[kind]
-        if flag is None:
-            raise ApprovalError("Les commandes se valident une par une.")
-        conversations.update(cid, lambda c: c.setdefault("agent", {}).update({flag: True}))
-    if not future.done():
-        future.set_result("deny" if decision == "deny" else "allow")
+# Les accords sont gérés par toolrun, commun à l'agent et aux sous-agents
+ApprovalError = toolrun.ApprovalError
+resolve_approval = toolrun.resolve_approval
 
 
 def undo(cid, backup_id):
@@ -89,64 +62,40 @@ def load_memory(root):
 
 
 def _system_prompt(preset, root, memory):
-    parts = [(preset.get("system_prompt") or "").strip(), AGENT_PROMPT.format(root=root), skills.prompt_section(root)]
+    parts = [(preset.get("system_prompt") or "").strip(), AGENT_PROMPT.format(root=root),
+             skills.prompt_section(root), subagents.prompt_section(root)]
     if memory:
         parts.append(MEMORY_PROMPT.format(name=MEMORY_FILE, memory=memory))
     return "\n\n".join(p for p in parts if p)
 
 
-async def _execute(cid, root, call):
+async def _delegate(cid, root, call_id, args, run_ctx, out):
+    """Outil delegate : un sous-agent fait la tâche dans son propre contexte et renvoie son rapport."""
+    agent = subagents.discover(root).get((args.get("agent") or "").strip())
+    task = (args.get("task") or "").strip()
+    if agent is None or not task:
+        names = ", ".join(subagents.discover(root)) or "aucun"
+        out["result"] = {"status": "error", "output": f"Sous-agent inconnu ou tâche vide. Sous-agents disponibles : {names}."}
+        return
+    sub = {}
+    async for ev in subagents.run(cid, root, agent, task, run_ctx["preset"], run_ctx["model"], call_id, sub):
+        yield ev
+    out["result"] = {"status": "ok", "output": f"Rapport du sous-agent « {agent.name} » :\n{sub['report']}",
+                     "subagent": {"name": agent.name, "steps": sub["steps"]}}
+
+
+async def _execute(cid, root, call, run_ctx):
     """Exécute un appel d'outil ; émet tool_call, éventuellement approval, puis tool_result."""
     name = call["function"]["name"]
-    raw = call["function"]["arguments"] or "{}"
-    try:
-        args = json.loads(raw)
-        if not isinstance(args, dict):
-            raise ValueError("objet attendu")
-    except ValueError as exc:
-        args, result = {"_brut": raw}, {"status": "error", "output": f"Arguments JSON invalides : {exc}"}
-    else:
-        result = None
+    args, error = toolrun.parse_args(call)
     yield chat.event({"type": "tool_call", "call_id": call["id"], "name": name, "args": args})
-
-    tool = tools.TOOLS.get(name)
-    if result is None and tool is None:
-        result = {"status": "error", "output": f"Outil inconnu : {name}. Outils disponibles : {', '.join(tools.TOOLS)}."}
-    if result is None:
-        try:
-            prepared = await asyncio.to_thread(tool.prepare, root, args)
-        except tools.ToolError as exc:
-            result = {"status": "error", "output": str(exc)}
-        except Exception as exc:  # arguments farfelus du modèle : on lui renvoie l'erreur
-            result = {"status": "error", "output": f"Erreur : {exc}"}
-    if result is None:
-        settings = conversations.get(cid).get("agent") or {}
-        decision = "allow"
-        if tool.kind in APPROVAL_FLAGS and not settings.get(APPROVAL_FLAGS[tool.kind] or "", False):
-            approval_id = uuid.uuid4().hex[:12]
-            future = asyncio.get_running_loop().create_future()
-            _approvals[approval_id] = (future, cid, tool.kind)
-            yield chat.event({
-                "type": "approval",
-                "approval_id": approval_id,
-                "call_id": call["id"],
-                "kind": tool.kind,
-                "path": prepared.get("rel"),
-                "preview": prepared["preview"],
-            })
-            try:
-                decision = await future
-            finally:
-                _approvals.pop(approval_id, None)
-        if decision == "deny":
-            result = {"status": "denied", "output": "L'utilisateur a refusé cette action."}
-        else:
-            try:
-                result = await tool.run(prepared, cid)
-            except tools.ToolError as exc:
-                result = {"status": "error", "output": str(exc)}
-            except OSError as exc:
-                result = {"status": "error", "output": f"Erreur système : {exc}"}
+    holder = {"result": error}
+    if error is None:
+        runner = _delegate(cid, root, call["id"], args, run_ctx, holder) if name == "delegate" \
+            else toolrun.run_tool(cid, root, name, args, call["id"], holder)
+        async for ev in runner:
+            yield ev
+    result = holder["result"]
 
     message = {
         "role": "tool",
@@ -158,6 +107,8 @@ async def _execute(cid, root, call):
     }
     if result.get("backup_id"):
         message["backup_id"] = result["backup_id"]
+    if result.get("subagent"):
+        message["subagent"] = result["subagent"]  # étapes du sous-agent, pour l'affichage
     conversations.append_message(cid, message)
     yield chat.event({
         "type": "tool_result",
@@ -185,21 +136,23 @@ async def run(conv, preset, model_name):
         "max_tokens": max(preset.get("max_tokens") or 0, AGENT_MIN_TOKENS),
         "thinking_budget": preset.get("thinking_budget") or AGENT_THINKING_BUDGET,
     }
+    schemas = tools.SCHEMAS + ([subagents.DELEGATE_SCHEMA] if subagents.discover(root) else [])
+    run_ctx = {"preset": preset, "model": model_name}
     calls_done = 0
     retried = False
 
     while True:
         # Avant chaque étape : les résultats d'outils s'accumulent vite pendant une tâche
-        info = await chat.make_room(cid, preset, system_prompt, tools.SCHEMAS)
+        info = await chat.make_room(cid, preset, system_prompt, schemas)
         if info:
             yield chat.event(info)
-        payload = chat.build_payload(conversations.get(cid), preset, model_name, system_prompt=system_prompt, tools=tools.SCHEMAS)
+        payload = chat.build_payload(conversations.get(cid), preset, model_name, system_prompt=system_prompt, tools=schemas)
         out, message = {}, None
         try:
             async for ev in chat.completion(payload, out):
                 yield ev
         except context.ContextOverflow:
-            info = None if retried else await chat.make_room(cid, preset, system_prompt, tools.SCHEMAS, force=True)
+            info = None if retried else await chat.make_room(cid, preset, system_prompt, schemas, force=True)
             if info and info["type"] == "compacted":
                 retried = True
                 yield chat.event(info)
@@ -235,5 +188,5 @@ async def run(conv, preset, model_name):
                 })
                 return
             calls_done += 1
-            async for ev in _execute(cid, root, call):
+            async for ev in _execute(cid, root, call, run_ctx):
                 yield ev

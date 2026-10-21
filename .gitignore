@@ -21,3 +21,6 @@ services/searxng/service.json
 
 # Compétences perso de l'utilisateur (les intégrées sont dans aria_pilote/skills/)
 /skills/
+
+# Sous-agents perso de l'utilisateur (les intégrés sont dans aria_pilote/agents/)
+/agents/

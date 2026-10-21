@@ -11,7 +11,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from . import (VERSION, agent, backups, chat, config, conversations, downloads, engines, hub, models, presets,
-               searxng, skills, workspace)
+               searxng, skills, subagents, workspace)
 from .server import EngineMissing, manager
 
 STATIC_DIR = Path(__file__).parent / "static"
@@ -348,6 +348,11 @@ def get_skill(name: str, conversation_id: str | None = None):
         return skills.to_dict(skills.get(name, _skills_root(conversation_id)), with_body=True)
     except skills.SkillError as exc:
         raise HTTPException(404, str(exc))
+
+
+@app.get("/api/subagents")
+def list_subagents(conversation_id: str | None = None):
+    return [subagents.to_dict(a) for a in subagents.discover(_skills_root(conversation_id)).values()]
 
 
 @app.post("/api/skills")
