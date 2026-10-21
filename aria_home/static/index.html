@@ -1,0 +1,201 @@
+<!doctype html>
+<html lang="fr">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Aria Home</title>
+    <link rel="icon" href="favicon.png">
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <header class="topbar">
+        <div class="brand">Aria<span>Home</span><small id="app-version"></small></div>
+        <nav class="tabs">
+            <button class="tab" data-view="chat">Chat</button>
+            <button class="tab" data-view="models">Modèles</button>
+            <button class="tab" data-view="discover">Découvrir</button>
+        </nav>
+        <div id="status" class="status idle">
+            <span class="dot"></span>
+            <span id="status-text">Aucun modèle chargé</span>
+        </div>
+        <div class="actions">
+            <button id="btn-unload" class="ghost" hidden>Éjecter</button>
+            <button id="btn-settings" class="ghost">Réglages</button>
+            <button id="btn-quit" class="ghost danger-text" title="Arrêter Aria Home">⏻ Quitter</button>
+        </div>
+    </header>
+
+    <main id="view-chat" class="chat-layout" hidden>
+        <aside class="panel conv-panel">
+            <button id="btn-new-conv" class="primary">+ Nouvelle conversation</button>
+            <ul id="conv-list" class="conv-list"></ul>
+        </aside>
+
+        <section class="panel chat-panel">
+            <div class="chat-head">
+                <h2 id="conv-title">Nouvelle conversation</h2>
+                <button id="btn-rename" class="ghost" title="Renommer" hidden>✎</button>
+                <div class="preset-pick">
+                    <select id="preset-select" title="Preset"></select>
+                    <button id="btn-edit-preset" class="ghost">Modifier</button>
+                </div>
+            </div>
+            <div class="agent-bar">
+                <label class="check-line"><input id="agent-toggle" type="checkbox"> Agent</label>
+                <input id="agent-root" class="mono" placeholder="Dossier de travail, ex. C:\Users\zeman\Desktop\mon-projet">
+                <button id="btn-agent-root" class="ghost">Valider</button>
+                <span id="agent-info" class="muted small"></span>
+            </div>
+            <ul id="agent-todo" class="todo" hidden></ul>
+            <div id="messages" class="messages"></div>
+            <p id="chat-error" class="error" hidden></p>
+            <form id="chat-form" class="composer">
+                <textarea id="chat-input" rows="3" placeholder="Écris ton message… (Entrée pour envoyer, Maj+Entrée pour aller à la ligne)"></textarea>
+                <div class="composer-actions">
+                    <span id="chat-model" class="muted small"></span>
+                    <button type="button" id="btn-regen" class="ghost">🔄 Régénérer</button>
+                    <button type="button" id="btn-stop" class="ghost" hidden>⏹ Stop</button>
+                    <button type="submit" id="btn-send" class="primary">Envoyer</button>
+                </div>
+            </form>
+        </section>
+    </main>
+
+    <main id="view-models" class="layout" hidden>
+        <section class="panel">
+            <div class="panel-head">
+                <h2>Mes modèles</h2>
+                <button id="btn-refresh" class="ghost" title="Rescanner les dossiers">↻</button>
+            </div>
+            <input id="filter" class="filter" placeholder="Filtrer…">
+            <ul id="model-list" class="model-list"></ul>
+            <h3>Moteurs</h3>
+            <ul id="engines" class="engines"></ul>
+        </section>
+
+        <section class="panel">
+            <p id="empty" class="muted">Choisis un modèle à gauche.</p>
+            <div id="detail" hidden>
+                <h2 id="d-name"></h2>
+                <p id="d-path" class="mono muted small"></p>
+                <dl id="d-meta" class="meta"></dl>
+                <form id="load-form" class="form">
+                    <label>Moteur
+                        <select name="engine">
+                            <option value="auto">Auto</option>
+                            <option value="llama.cpp">llama.cpp officiel</option>
+                            <option value="prism">PrismML (Bonsai)</option>
+                        </select>
+                    </label>
+                    <label>Contexte (tokens)
+                        <input name="ctx_size" type="number" min="512" step="512" required>
+                    </label>
+                    <label>Couches GPU
+                        <input name="gpu_layers" type="number" min="0" required>
+                    </label>
+                    <label>Threads CPU
+                        <input name="threads" type="number" min="0" placeholder="0 = auto">
+                    </label>
+                    <label>Flash attention
+                        <select name="flash_attn">
+                            <option value="auto">Auto</option>
+                            <option value="on">On</option>
+                            <option value="off">Off</option>
+                        </select>
+                    </label>
+                    <label class="check"><input name="use_mmproj" type="checkbox"> Vision (mmproj)</label>
+                    <label class="check"><input name="remember" type="checkbox"> Mémoriser pour ce modèle</label>
+                    <button type="submit" class="primary">Charger</button>
+                </form>
+                <p id="form-error" class="error" hidden></p>
+                <button id="btn-delete-model" class="ghost danger-text">🗑 Envoyer ce modèle à la corbeille</button>
+            </div>
+
+            <h3>Journal du moteur</h3>
+            <pre id="logs" class="logs"></pre>
+        </section>
+    </main>
+
+    <main id="view-discover" class="layout" hidden>
+        <section class="panel">
+            <form id="hub-form" class="hub-search">
+                <input id="hub-query" placeholder="Rechercher un modèle GGUF (ex. bonsai, qwen 27b)…" required>
+                <button type="submit" class="primary">Chercher</button>
+            </form>
+            <p id="hub-error" class="error" hidden></p>
+            <ul id="hub-results" class="model-list"></ul>
+        </section>
+
+        <section class="panel">
+            <p id="hub-empty" class="muted">Lance une recherche, puis choisis un dépôt.</p>
+            <div id="hub-detail" hidden>
+                <h2 id="hub-repo"></h2>
+                <p id="hub-dest" class="mono muted small"></p>
+                <label id="hub-vision-wrap" class="check-line"><input id="hub-vision" type="checkbox" checked> Ajouter la vision (<span id="hub-mmproj"></span>)</label>
+                <div class="table-wrap">
+                    <table class="files">
+                        <thead>
+                            <tr><th>Fichier</th><th>Quant</th><th>Taille</th><th>Moteur</th><th>Machine</th><th></th></tr>
+                        </thead>
+                        <tbody id="hub-files"></tbody>
+                    </table>
+                </div>
+                <p class="muted small">« Machine » est une estimation : taille du fichier + ~1,5 Go pour le contexte, comparée à ta VRAM et ta RAM.</p>
+            </div>
+
+            <h3>Téléchargements</h3>
+            <ul id="dl-list" class="dl-list"></ul>
+        </section>
+    </main>
+
+    <dialog id="settings">
+        <form method="dialog" id="settings-form" class="form">
+            <h2>Réglages</h2>
+            <label>Dossiers de modèles (un par ligne)
+                <textarea name="model_dirs" rows="5" class="mono"></textarea>
+            </label>
+            <div class="row">
+                <button value="cancel" class="ghost">Annuler</button>
+                <button value="save" class="primary">Enregistrer</button>
+            </div>
+        </form>
+    </dialog>
+
+    <dialog id="preset-dialog">
+        <form method="dialog" id="preset-form" class="form preset-form">
+            <h2>Preset</h2>
+            <label class="wide">Nom
+                <input name="name" required>
+            </label>
+            <label class="wide">Prompt système
+                <textarea name="system_prompt" rows="5"></textarea>
+            </label>
+            <label>Température <input name="temperature" type="number" step="0.05" min="0"></label>
+            <label>Top P <input name="top_p" type="number" step="0.05" min="0" max="1"></label>
+            <label>Top K <input name="top_k" type="number" step="1" min="0"></label>
+            <label>Min P <input name="min_p" type="number" step="0.01" min="0" max="1"></label>
+            <label>Presence penalty <input name="presence_penalty" type="number" step="0.1"></label>
+            <label>Max tokens <input name="max_tokens" type="number" step="256" min="1"></label>
+            <label>Réflexion
+                <select name="thinking">
+                    <option value="">Le modèle décide</option>
+                    <option value="true">Activée</option>
+                    <option value="false">Désactivée</option>
+                </select>
+            </label>
+            <div class="row">
+                <button value="delete" class="ghost danger" formnovalidate>Supprimer</button>
+                <button value="cancel" class="ghost" formnovalidate>Annuler</button>
+                <button value="new" class="ghost">Enregistrer comme nouveau</button>
+                <button value="save" class="primary">Enregistrer</button>
+            </div>
+        </form>
+    </dialog>
+
+    <script src="markdown.js"></script>
+    <script src="app.js"></script>
+    <script src="chat.js"></script>
+    <script src="discover.js"></script>
+</body>
+</html>
