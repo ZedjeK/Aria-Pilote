@@ -65,6 +65,9 @@ def build_payload(conv, preset, model_name, system_prompt=None, tools=None):
             payload[field] = preset[field]
     if preset.get("thinking") is not None:
         payload["chat_template_kwargs"] = {"enable_thinking": preset["thinking"]}
+    if preset.get("thinking_budget"):
+        # llama-server referme la réflexion au bout de ce nombre de tokens, puis le modèle répond
+        payload["thinking_budget_tokens"] = preset["thinking_budget"]
     if tools:
         payload["tools"] = tools
     return payload

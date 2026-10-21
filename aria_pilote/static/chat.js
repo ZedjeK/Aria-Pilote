@@ -35,7 +35,7 @@ $("#btn-edit-preset").addEventListener("click", () => {
     const preset = currentPreset();
     if (!preset) return;
     const form = $("#preset-form");
-    for (const field of ["name", "system_prompt", "temperature", "top_p", "top_k", "min_p", "presence_penalty", "max_tokens"]) {
+    for (const field of ["name", "system_prompt", "temperature", "top_p", "top_k", "min_p", "presence_penalty", "max_tokens", "thinking_budget"]) {
         form[field].value = preset[field] ?? "";
     }
     form.thinking.value = preset.thinking === null || preset.thinking === undefined ? "" : String(preset.thinking);
@@ -54,6 +54,7 @@ function readPresetForm() {
         min_p: num("min_p"),
         presence_penalty: num("presence_penalty"),
         max_tokens: num("max_tokens"),
+        thinking_budget: num("thinking_budget") || null,
         thinking: form.thinking.value === "" ? null : form.thinking.value === "true",
     };
 }
