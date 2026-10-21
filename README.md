@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/logo.png" width="160" alt="Logo d'Aria Pilote : un A néon glitché avec une barre de navire orange">
+  <img src="docs/logo.png" width="160" alt="Logo d'Aria Pilote : un A néon glitché avec une boussole orange">
 </p>
 
 <h1 align="center">Aria Pilote</h1>
