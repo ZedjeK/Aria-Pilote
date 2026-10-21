@@ -2,7 +2,7 @@
 
 Octogone bleu nuit à lignes de balayage et liseré bleu roi, « A » néon glitché
 (haut blanc, jambe gauche cyan, jambe droite bleu roi) et l'emblème orange de
-l'appli : une barre de navire.
+l'appli : une boussole.
 
 Usage : python tools/make_icon.py DOSSIER_ICO [DOSSIER_FAVICON] [CHEMIN_LOGO_PNG]
 """
@@ -12,6 +12,11 @@ import struct
 import sys
 import zlib
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from emblems import EMBLEMS  # noqa: E402
+
+EMBLEM = "boussole"  # emblème orange retenu (voir tools/emblems.py)
 
 NAVY = (10, 17, 34)
 SCANLINE = (16, 26, 50)
@@ -25,11 +30,6 @@ ORANGE = (255, 138, 31)
 A_PATH = [(0.21, 0.83), (0.43, 0.17), (0.57, 0.17), (0.79, 0.83), (0.66, 0.83), (0.50, 0.37), (0.34, 0.83)]
 GLITCH_Y = 0.46  # sous cette ligne, les jambes sont décalées
 STROKE = 0.028
-
-# Barre de navire : centre, rayon de la roue, rayon des poignées
-WHEEL_C = (0.5, 0.64)
-WHEEL_R = 0.085
-SPOKE_R = 0.135
 
 
 def _seg(px, py, ax, ay, bx, by):
@@ -72,21 +72,6 @@ def _octagon(px, py, half=0.47, cut=0.77):
     return max(max(x, y) - half, (x + y - cut) / math.sqrt(2))
 
 
-def _wheel(px, py):
-    cx, cy = WHEEL_C
-    dx, dy = px - cx, py - cy
-    r = math.hypot(dx, dy)
-    ring = abs(r - WHEEL_R) - 0.017
-    hub = r - 0.028
-    d = min(ring, hub)
-    for k in range(8):
-        a = k * math.pi / 4
-        ex, ey = math.cos(a), math.sin(a)
-        d = min(d, _seg(px, py, cx, cy, cx + ex * SPOKE_R, cy + ey * SPOKE_R) - 0.011)
-        d = min(d, math.hypot(px - (cx + ex * SPOKE_R), py - (cy + ey * SPOKE_R)) - 0.019)
-    return d
-
-
 def _blend(dst, color, alpha):
     alpha = max(0.0, min(1.0, alpha))
     return tuple(d + (c - d) * alpha for d, c in zip(dst, color))
@@ -96,7 +81,8 @@ def _cover(dist, px_unit):
     return max(0.0, min(1.0, 0.5 - dist / px_unit))
 
 
-def render(size):
+def render(size, emblem=EMBLEM):
+    shape = EMBLEMS[emblem]
     unit = 1.0 / size
     rows = []
     for y in range(size):
@@ -108,7 +94,7 @@ def render(size):
             # Fond bleu nuit et lignes de balayage horizontales
             color = SCANLINE if (v * 96) % 1 < 0.42 else NAVY
             # Biseau sombre au bord, puis liseré bleu roi intérieur
-            color = _blend(color, BEZEL, _cover(-(octo + 0.03), unit) * 0 + (1 - _cover(octo + 0.03, unit)))
+            color = _blend(color, BEZEL, 1 - _cover(octo + 0.03, unit))
             color = _blend(color, ROYAL, _cover(abs(octo + 0.045) - 0.006, unit) * 0.9)
             # « A » glitché : trois morceaux décalés, coupés net, chacun avec sa lueur douce
             for segments, shift, tint, y0, y1 in PARTS:
@@ -117,20 +103,25 @@ def render(size):
                 inside = min(_cover(y0 - v, unit), _cover(v - y1, unit))  # coupe horizontale franche
                 color = _blend(color, tint, _cover(line, unit) * inside)
             # Emblème orange, avec un léger halo
-            wheel = _wheel(u, v)
-            color = _blend(color, ORANGE, 0.35 * math.exp(-(max(wheel, 0) / 0.03) ** 2))
-            color = _blend(color, ORANGE, _cover(wheel, unit))
+            mark = shape(u, v)
+            color = _blend(color, ORANGE, 0.35 * math.exp(-(max(mark, 0) / 0.03) ** 2))
+            color = _blend(color, ORANGE, _cover(mark, unit))
             row += bytes(int(round(c)) for c in color) + bytes([int(round(255 * alpha))])
         rows.append(bytes(row))
     return b"".join(rows)
 
 
-def png(size):
+def encode_png(width, height, raw_rows):
+    """PNG RGBA à partir de lignes déjà préfixées par leur octet de filtre."""
     def chunk(kind, data):
         return struct.pack(">I", len(data)) + kind + data + struct.pack(">I", zlib.crc32(kind + data) & 0xFFFFFFFF)
 
-    header = struct.pack(">IIBBBBB", size, size, 8, 6, 0, 0, 0)  # RGBA 8 bits
-    return b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", header) + chunk(b"IDAT", zlib.compress(render(size), 9)) + chunk(b"IEND", b"")
+    header = struct.pack(">IIBBBBB", width, height, 8, 6, 0, 0, 0)  # RGBA 8 bits
+    return b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", header) + chunk(b"IDAT", zlib.compress(raw_rows, 9)) + chunk(b"IEND", b"")
+
+
+def png(size, emblem=EMBLEM):
+    return encode_png(size, size, render(size, emblem))
 
 
 def ico(sizes=(256, 64, 48, 32, 16)):
