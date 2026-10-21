@@ -11,6 +11,8 @@ from . import backups, chat, context, conversations, skills, tools, workspace
 MAX_TOOL_CALLS = 25
 # Une étape d'agent qui réfléchit puis écrit un fichier entier a besoin de place
 AGENT_MIN_TOKENS = 8192
+# Sans plafond, certains modèles réfléchissent des milliers de tokens sans jamais agir
+AGENT_THINKING_BUDGET = 2048
 MEMORY_FILE = "ARIA.md"
 MAX_MEMORY_CHARS = 20000
 
@@ -178,7 +180,11 @@ async def run(conv, preset, model_name):
     if memory:
         yield chat.event({"type": "memory", "file": MEMORY_FILE, "chars": len(memory)})
     system_prompt = _system_prompt(preset, root, memory)
-    preset = {**preset, "max_tokens": max(preset.get("max_tokens") or 0, AGENT_MIN_TOKENS)}
+    preset = {
+        **preset,
+        "max_tokens": max(preset.get("max_tokens") or 0, AGENT_MIN_TOKENS),
+        "thinking_budget": preset.get("thinking_budget") or AGENT_THINKING_BUDGET,
+    }
     calls_done = 0
     retried = False
 

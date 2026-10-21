@@ -79,6 +79,7 @@ class Preset(BaseModel):
     presence_penalty: float | None = None
     max_tokens: int | None = None
     thinking: bool | None = None
+    thinking_budget: int | None = None  # tokens de réflexion au plus (None : sans limite)
 
 
 class ConversationCreate(BaseModel):
