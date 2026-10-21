@@ -248,18 +248,30 @@ $("#btn-quit").addEventListener("click", async () => {
 // --- Réglages --------------------------------------------------------------
 
 $("#btn-settings").addEventListener("click", async () => {
-    const cfg = await api("/api/config");
+    const [cfg, hooksInfo] = await Promise.all([api("/api/config"), api("/api/hooks")]);
     $("#settings-form").model_dirs.value = cfg.model_dirs.join("\n");
+    $("#settings-form").hooks.value = hooksInfo.global;
+    $("#settings-error").hidden = true;
     $("#settings").showModal();
 });
 
 $("#settings").addEventListener("close", async () => {
     if ($("#settings").returnValue !== "save") return;
-    const dirs = $("#settings-form").model_dirs.value
+    const form = $("#settings-form");
+    const dirs = form.model_dirs.value
         .split("\n")
         .map((d) => d.trim())
         .filter(Boolean);
     await api("/api/config", { method: "PUT", body: JSON.stringify({ model_dirs: dirs }) });
+    try {
+        await api("/api/hooks/global", { method: "PUT", body: JSON.stringify({ content: form.hooks.value }) });
+    } catch (err) {
+        // hooks.json invalide : on rouvre les réglages avec l'erreur, sans perdre la saisie
+        $("#settings-error").textContent = err.message;
+        $("#settings-error").hidden = false;
+        $("#settings").showModal();
+        return;
+    }
     await loadModels();
 });
 

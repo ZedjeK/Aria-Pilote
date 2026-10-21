@@ -128,6 +128,7 @@ async function saveAgent(patch) {
         showChatError(err.message);
     }
     syncAgentBar();
+    refreshHooksBanner();
 }
 
 $("#agent-toggle").addEventListener("change", () => {
@@ -179,6 +180,7 @@ async function openConversation(id) {
     renderGauge(chat.current?.context);
     renderMessages();
     loadConversations();
+    refreshHooksBanner();
 }
 
 // --- Compétences -------------------------------------------------------------------
@@ -262,6 +264,49 @@ $("#skill-form").addEventListener("submit", async (event) => {
         $("#skill-error").hidden = false;
     }
 });
+
+// --- Hooks ---------------------------------------------------------------------------
+
+const HOOK_LABELS = { avant_outil: "avant l'outil", apres_outil: "après l'outil", debut_tache: "début de tâche", fin_tache: "fin de tâche" };
+
+function hookNote(ev) {
+    const lines = ev.resultats.map((r) => `${r.source} · code ${r.code}${r.sortie ? " · " + r.sortie : ""}`);
+    const title = ev.bloque ? `⚓ Action bloquée par un hook (${HOOK_LABELS[ev.evenement]})` : `⚓ Hook ${HOOK_LABELS[ev.evenement]}`;
+    return el("details", { className: `hook-note${ev.bloque ? " blocked" : ""}`, open: ev.bloque },
+        el("summary", {}, title), el("pre", {}, lines.join("\n")));
+}
+
+function hooksTrustNode(ev) {
+    const box = el("div", { className: "approval hooks-trust" });
+    const button = el("button", { className: "primary" }, "Approuver ces hooks");
+    button.addEventListener("click", async () => {
+        button.disabled = true;
+        try {
+            await api("/api/hooks/trust", { method: "POST", body: JSON.stringify({ conversation_id: chat.current.id }) });
+            box.replaceChildren(el("span", { className: "muted small" }, "Hooks approuvés ✓ : ils tourneront à partir de la prochaine tâche."));
+            setTimeout(refreshHooksBanner, 4000);
+        } catch (err) {
+            button.disabled = false;
+            showChatError(err.message);
+        }
+    });
+    box.append(
+        el("div", { className: "approval-title" }, "Ce projet contient des hooks : ils ne tournent pas tant que tu ne les as pas approuvés."),
+        el("p", { className: "muted small" }, `${ev.path}${ev.error ? " — " + ev.error : ""}`),
+        el("pre", { className: "diff" }, ev.content),
+    );
+    if (!ev.error) box.append(el("div", { className: "row" }, button));
+    return box;
+}
+
+async function refreshHooksBanner() {
+    // Bandeau permanent tant que les hooks du projet ne sont pas approuvés
+    const banner = $("#hooks-banner");
+    const agentOn = chat.current?.agent?.enabled;
+    const project = agentOn ? (await api(`/api/hooks?conversation_id=${chat.current.id}`)).project : null;
+    banner.hidden = !project || project.trusted;
+    banner.replaceChildren(...(project && !project.trusted ? [hooksTrustNode(project)] : []));
+}
 
 // --- Contexte ----------------------------------------------------------------------
 
@@ -638,6 +683,10 @@ async function send(content) {
                 card.node.open = true;
                 card.node.append(approvalNode(ev));
                 card.node.scrollIntoView({ block: "nearest" });
+            } else if (ev.type === "hook") {
+                append(hookNote(ev));
+            } else if (ev.type === "hooks_untrusted") {
+                refreshHooksBanner();
             } else if (ev.type === "sub_tool_call") {
                 const card = toolCards[ev.parent_id];
                 card.data.subagent = card.data.subagent || { steps: [] };
