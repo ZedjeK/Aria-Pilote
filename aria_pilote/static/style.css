@@ -1,12 +1,16 @@
+/* Palette de la famille Aria : cyan glacé (ce qui est bon, la marque), bleu roi (l'information),
+   orange (les boutons d'action et ce qui demande ton attention) */
 :root {
-    --bg: #0d0f17;
-    --panel: #151826;
-    --panel-2: #1c2033;
-    --border: #2a2f47;
-    --text: #e6e8f2;
-    --muted: #8a90ab;
-    --accent: #36e2f5;
-    --accent-2: #ff4fd8;
+    --bg: #0a0f1e;
+    --panel: #0f1830;
+    --panel-2: #15213f;
+    --border: #22325c;
+    --deep: #060b17;
+    --text: #e8eefc;
+    --muted: #8a9bc4;
+    --accent: #5ee8ff;
+    --accent-2: #3d6bff;
+    --action: #ff8a1f;
     --ok: #3ddc97;
     --warn: #ffc857;
     --err: #ff5c7a;
@@ -43,7 +47,8 @@ button {
     cursor: pointer;
 }
 button:hover { border-color: var(--accent); }
-button.primary { background: linear-gradient(90deg, var(--accent), var(--accent-2)); color: #0d0f17; border: 0; font-weight: 600; }
+button.primary { background: var(--action); color: var(--bg); border: 0; font-weight: 600; }
+button.primary:hover { box-shadow: 0 0 10px var(--action); }
 button.ghost { background: transparent; }
 
 input, select, textarea {
@@ -151,7 +156,7 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--a
     margin: 0;
     height: 320px;
     overflow: auto;
-    background: #07080d;
+    background: var(--deep);
     border: 1px solid var(--border);
     border-radius: 8px;
     padding: 10px;
@@ -271,7 +276,7 @@ button.danger-text { color: var(--err); }
 .code { margin: 0 0 8px; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
 .code-head { display: flex; justify-content: space-between; align-items: center; padding: 4px 10px; background: var(--panel-2); font: 11px var(--mono); color: var(--muted); }
 .code-head .copy { padding: 2px 8px; font-size: 11px; }
-.code pre { margin: 0; padding: 10px; overflow-x: auto; background: #07080d; }
+.code pre { margin: 0; padding: 10px; overflow-x: auto; background: var(--deep); }
 .code pre code { background: none; padding: 0; font-size: 12.5px; }
 
 /* --- Agent --- */
@@ -290,15 +295,15 @@ button.danger-text { color: var(--err); }
 .tool.ok > summary { color: var(--ok); }
 .tool.error > summary, .tool.denied > summary { color: var(--err); }
 .tool.running > summary { color: var(--warn); }
-.tool pre { margin: 0; padding: 8px 10px; max-height: 320px; overflow: auto; background: #07080d; font: 12px/1.45 var(--mono); white-space: pre-wrap; word-break: break-all; border-top: 1px solid var(--border); }
+.tool pre { margin: 0; padding: 8px 10px; max-height: 320px; overflow: auto; background: var(--deep); font: 12px/1.45 var(--mono); white-space: pre-wrap; word-break: break-all; border-top: 1px solid var(--border); }
 .tool .tool-actions { padding: 6px 10px; display: flex; gap: 8px; align-items: center; border-top: 1px solid var(--border); }
 .tool .tool-actions button { padding: 2px 10px; font-size: 12px; }
 
-.approval { border-top: 1px solid var(--accent-2); padding: 8px 10px; display: grid; gap: 8px; }
-.approval-title { color: var(--accent-2); font-weight: 600; }
+.approval { border-top: 1px solid var(--action); padding: 8px 10px; display: grid; gap: 8px; }
+.approval-title { color: var(--action); font-weight: 600; }
 .approval .row { display: flex; gap: 8px; flex-wrap: wrap; }
 .approval .row button { padding: 4px 12px; font-size: 12px; }
-.diff { margin: 0; max-height: 360px; overflow: auto; background: #07080d; border-radius: 6px; padding: 8px 10px; font: 12px/1.45 var(--mono); white-space: pre; }
+.diff { margin: 0; max-height: 360px; overflow: auto; background: var(--deep); border-radius: 6px; padding: 8px 10px; font: 12px/1.45 var(--mono); white-space: pre; }
 .diff .add { color: var(--ok); }
 .diff .del { color: var(--err); }
 .diff .hunk { color: var(--accent); }
