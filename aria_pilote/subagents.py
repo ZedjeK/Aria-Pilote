@@ -8,6 +8,7 @@ Un sous-agent est un fichier <nom>.md : un en-tête « --- » avec name, descrip
 Le sous-agent ne renvoie qu'un rapport : ses lectures n'encombrent pas le contexte de l'agent principal.
 """
 
+import json
 import re
 from dataclasses import dataclass
 from pathlib import Path
@@ -118,14 +119,22 @@ async def _fit(conv, system_prompt, preset, schemas):
     return True
 
 
-async def run(cid, root, agent, task, preset, model_name, parent_id, out):
-    """Fait travailler un sous-agent ; émet ses étapes (sub_tool_call / sub_tool_result) et met son rapport dans out."""
-    schemas = [s for s in tools.SCHEMAS if s["function"]["name"] in agent.tools]
-    system_prompt = SUB_PROMPT.format(prompt=agent.prompt(), root=root, tools=", ".join(agent.tools))
-    if "load_skill" in agent.tools:
+READ_ONLY_KINDS = {"read", "state", "web"}
+LOOP_LIMIT = 3
+
+
+async def run(cid, root, agent, task, preset, model_name, parent_id, out, read_only=False):
+    """Fait travailler un sous-agent ; émet ses étapes (sub_tool_call / sub_tool_result) et met son rapport dans out.
+
+    `read_only` (mode Plan de l'agent principal) retire au sous-agent tout outil qui modifie quelque chose.
+    """
+    allowed = [t for t in agent.tools if not read_only or tools.TOOLS[t].kind in READ_ONLY_KINDS]
+    schemas = [s for s in tools.SCHEMAS if s["function"]["name"] in allowed]
+    system_prompt = SUB_PROMPT.format(prompt=agent.prompt(), root=root, tools=", ".join(allowed))
+    if "load_skill" in allowed:
         system_prompt += "\n\n" + skills.prompt_section(root)
     conv = {"messages": [{"role": "user", "content": task}], "squeeze": 0}  # contexte propre, gardé en mémoire
-    steps, report, calls = [], None, 0
+    steps, report, calls, seen = [], None, 0, {}
 
     while report is None:
         if not await _fit(conv, system_prompt, preset, schemas):
@@ -156,8 +165,12 @@ async def run(cid, root, agent, task, preset, model_name, parent_id, out):
             args, error = toolrun.parse_args(call)
             yield chat.event({"type": "sub_tool_call", "parent_id": parent_id, "call_id": call["id"], "name": name, "args": args})
             holder = {"result": error}
-            if error is None:
-                async for ev in toolrun.run_tool(cid, root, name, args, call["id"], holder, allowed=agent.tools, parent_id=parent_id):
+            signature = f"{name}:{json.dumps(args, sort_keys=True, ensure_ascii=False)}"
+            seen[signature] = seen.get(signature, 0) + 1
+            if error is None and seen[signature] >= LOOP_LIMIT:
+                holder["result"] = {"status": "error", "output": "Appel identique déjà fait : change d'approche ou rédige ton rapport."}
+            elif error is None:
+                async for ev in toolrun.run_tool(cid, root, name, args, call["id"], holder, allowed=allowed, parent_id=parent_id):
                     yield ev
             res = holder["result"]
             conv["messages"].append({"role": "tool", "tool_call_id": call["id"], "name": name, "content": res["output"]})
