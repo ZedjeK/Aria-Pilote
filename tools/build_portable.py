@@ -40,7 +40,7 @@ PYTHON_URL = f"https://github.com/astral-sh/python-build-standalone/releases/dow
 CSC = Path(os.environ.get("WINDIR", r"C:\Windows")) / "Microsoft.NET" / "Framework64" / "v4.0.30319" / "csc.exe"
 
 # Ce qui appartient à l'utilisateur dans une version installée : jamais écrasé
-USER_ITEMS = ("models", "data", "skills", "config.json")
+USER_ITEMS = ("models", "data", "skills", "agents", "config.json")
 EXE_NAME = "Aria-Pilote.exe"
 RELEASE_RE = re.compile(r"^Aria-Pilote-(\d+)\.(\d+)\.(\d+)$")
 # Ancien nom de l'appli : ses dossiers ne servent plus que de source pour reprendre tes affaires

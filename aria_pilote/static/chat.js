@@ -346,12 +346,33 @@ function updateMessageNode(node, m) {
 const TOOL_STATUS = { running: "en cours…", ok: "ok", error: "erreur", denied: "refusé" };
 
 function shortArgs(args) {
-    const main = args?.path ?? args?.pattern ?? args?.command ?? args?.query ?? args?.url ?? "";
+    const main = args?.path ?? args?.pattern ?? args?.command ?? args?.query ?? args?.url ?? args?.name ?? "";
     const text = String(main);
     return text.length > 70 ? text.slice(0, 69) + "…" : text;
 }
 
+function subStepNode(step) {
+    return el("li", { className: `sub-step ${step.status}` },
+        `${step.name}  ${shortArgs(step.args)} · ${TOOL_STATUS[step.status] || step.status}`);
+}
+
+function subagentNode(m) {
+    // Délégation à un sous-agent : ses étapes, puis son rapport
+    const node = el("details", { className: `tool subagent ${m.status}` });
+    const task = String(m.args?.task || "");
+    node.append(el("summary", {}, `🤖 ${m.args?.agent || "sous-agent"} : ${task.length > 70 ? task.slice(0, 69) + "…" : task} · ${TOOL_STATUS[m.status] || m.status}`));
+    const steps = el("ul", { className: "sub-steps" }, ...(m.subagent?.steps || []).map(subStepNode));
+    node.append(steps);
+    if (m.content) {
+        const report = el("div", { className: "md sub-report" });
+        report.innerHTML = renderMarkdown(m.content);
+        node.append(report);
+    }
+    return node;
+}
+
 function toolNode(m) {
+    if (m.name === "delegate") return subagentNode(m);
     const node = el("details", { className: `tool ${m.status}` });
     node.dataset.callId = m.tool_call_id || "";
     node.append(el("summary", {}, `🔧 ${m.name}  ${shortArgs(m.args)} · ${TOOL_STATUS[m.status] || m.status}`));
@@ -612,10 +633,28 @@ async function send(content) {
                 toolCards[ev.call_id] = { data, node };
                 append(node);
             } else if (ev.type === "approval") {
-                const card = toolCards[ev.call_id];
+                // Une demande d'un sous-agent s'affiche dans la carte de sa délégation
+                const card = toolCards[ev.call_id] || toolCards[ev.parent_id];
                 card.node.open = true;
                 card.node.append(approvalNode(ev));
                 card.node.scrollIntoView({ block: "nearest" });
+            } else if (ev.type === "sub_tool_call") {
+                const card = toolCards[ev.parent_id];
+                card.data.subagent = card.data.subagent || { steps: [] };
+                const step = { name: ev.name, args: ev.args, status: "running" };
+                card.data.subagent.steps.push(step);
+                card.node.open = true;
+                const line = subStepNode(step);
+                card.subLines = { ...(card.subLines || {}), [ev.call_id]: { step, line } };
+                card.node.querySelector(".sub-steps").append(line);
+            } else if (ev.type === "sub_tool_result") {
+                const entry = toolCards[ev.parent_id]?.subLines?.[ev.call_id];
+                if (entry) {
+                    entry.step.status = ev.status;
+                    const fresh = subStepNode(entry.step);
+                    entry.line.replaceWith(fresh);
+                    entry.line = fresh;
+                }
             } else if (ev.type === "memory") {
                 chat.memoryLoaded = true;
                 syncAgentBar();

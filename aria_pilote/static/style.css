@@ -301,6 +301,14 @@ button.danger-text { color: var(--err); }
 .tool .tool-actions { padding: 6px 10px; display: flex; gap: 8px; align-items: center; border-top: 1px solid var(--border); }
 .tool .tool-actions button { padding: 2px 10px; font-size: 12px; }
 
+.tool.subagent { border-color: var(--accent-2); }
+.sub-steps { list-style: none; margin: 0; padding: 6px 10px 6px 22px; border-top: 1px solid var(--border); display: grid; gap: 2px; }
+.sub-step { font: 12px var(--mono); color: var(--muted); }
+.sub-step.ok { color: var(--ok); }
+.sub-step.error, .sub-step.denied { color: var(--err); }
+.sub-step.running { color: var(--warn); }
+.sub-report { padding: 8px 10px; border-top: 1px solid var(--border); background: var(--bg); }
+
 .approval { border-top: 1px solid var(--action); padding: 8px 10px; display: grid; gap: 8px; }
 .approval-title { color: var(--action); font-weight: 600; }
 .approval .row { display: flex; gap: 8px; flex-wrap: wrap; }
