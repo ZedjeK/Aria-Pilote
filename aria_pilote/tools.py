@@ -276,7 +276,7 @@ def prepare_run_command(root, args):
         raise ToolError("Commande vide.")
     reason = check_denylist(command)
     if reason:
-        raise ToolError(f"Commande refusée d'office ({reason}). Elle est sur la liste noire d'Aria Home : "
+        raise ToolError(f"Commande refusée d'office ({reason}). Elle est sur la liste noire d'Aria Pilote : "
                         "propose une autre approche, ou demande à l'utilisateur de la lancer lui-même.")
     return {"command": command, "cwd": str(workspace.validate_root(root)), "preview": command}
 

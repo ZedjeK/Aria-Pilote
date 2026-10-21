@@ -1,4 +1,4 @@
-"""Application web d'Aria Home : API REST + interface statique."""
+"""Application web d'Aria Pilote : API REST + interface statique."""
 
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -22,7 +22,7 @@ async def lifespan(app):
     await searxng.manager.stop()
 
 
-app = FastAPI(title="Aria Home", lifespan=lifespan)
+app = FastAPI(title="Aria Pilote", lifespan=lifespan)
 
 # Serveur uvicorn en cours, renseigné par __main__ (None si lancé autrement)
 uvicorn_server = None
@@ -30,7 +30,7 @@ uvicorn_server = None
 
 @app.middleware("http")
 async def local_only(request: Request, call_next):
-    """N'accepte que l'interface d'Aria Home elle-même.
+    """N'accepte que l'interface d'Aria Pilote elle-même.
 
     - Hôte : bloque le « DNS rebinding » (un site qui se ferait passer pour 127.0.0.1
       pour lire tes conversations).
@@ -123,7 +123,7 @@ def status():
 def shutdown():
     """Bouton Quitter : uvicorn s'arrête, et le lifespan éjecte le modèle et coupe SearXNG."""
     if uvicorn_server is None:
-        raise HTTPException(409, "Arrêt impossible : Aria Home n'a pas été lancée par son lanceur.")
+        raise HTTPException(409, "Arrêt impossible : Aria Pilote n'a pas été lancée par son lanceur.")
     uvicorn_server.should_exit = True
     return {"ok": True}
 

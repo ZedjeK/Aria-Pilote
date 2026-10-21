@@ -1,4 +1,4 @@
-"""Job object Windows : les processus enfants meurent avec Aria Home, même si elle est tuée brutalement."""
+"""Job object Windows : les processus enfants meurent avec Aria Pilote, même si elle est tuée brutalement."""
 
 import ctypes
 import sys

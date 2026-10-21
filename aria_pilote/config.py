@@ -1,4 +1,4 @@
-"""Configuration d'Aria Home, stockée dans config.json à la racine du projet."""
+"""Configuration d'Aria Pilote, stockée dans config.json à la racine du projet."""
 
 import copy
 import json

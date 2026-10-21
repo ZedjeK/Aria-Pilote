@@ -1,4 +1,4 @@
-"""SearXNG embarqué : démarré à la demande par Aria Home, arrêté avec elle."""
+"""SearXNG embarqué : démarré à la demande par Aria Pilote, arrêté avec elle."""
 
 import asyncio
 import json

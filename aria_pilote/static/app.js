@@ -168,7 +168,7 @@ async function pollStatus() {
         if (state.status.model?.id !== previous) renderList();
     } catch {
         $("#status").className = "status error";
-        $("#status-text").textContent = "Aria Home injoignable";
+        $("#status-text").textContent = "Aria Pilote injoignable";
     }
 }
 
@@ -229,7 +229,7 @@ $("#btn-delete-model").addEventListener("click", async () => {
 });
 
 $("#btn-quit").addEventListener("click", async () => {
-    if (!confirm("Arrêter Aria Home ? Le modèle sera éjecté et SearXNG coupé.")) return;
+    if (!confirm("Arrêter Aria Pilote ? Le modèle sera éjecté et SearXNG coupé.")) return;
     try {
         await api("/api/shutdown", { method: "POST" });
     } catch (err) {
@@ -239,8 +239,8 @@ $("#btn-quit").addEventListener("click", async () => {
     document.body.replaceChildren(
         el("div", { className: "goodbye" }, el("div", {},
             el("h1", {}, "À bientôt 👋"),
-            el("p", {}, "Aria Home est arrêtée. Tu peux fermer cet onglet."),
-            el("p", { className: "small" }, "Pour la relancer : double-clic sur « Aria Home.exe »."),
+            el("p", {}, "Aria Pilote est arrêtée. Tu peux fermer cet onglet."),
+            el("p", { className: "small" }, "Pour la relancer : double-clic sur « Aria-Pilote.exe »."),
         ))
     );
 });

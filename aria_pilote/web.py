@@ -12,7 +12,7 @@ from . import config, searxng
 
 MAX_BYTES = 2 * 1024 * 1024
 MAX_REDIRECTS = 5
-USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AriaHome/1.0"
+USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AriaPilote/1.0"
 
 
 class WebError(Exception):
@@ -22,7 +22,7 @@ class WebError(Exception):
 def check_public(url):
     """Refuse tout ce qui n'est pas une adresse publique.
 
-    Sans ce contrôle, l'agent pourrait appeler l'API d'Aria Home elle-même
+    Sans ce contrôle, l'agent pourrait appeler l'API d'Aria Pilote elle-même
     (et valider ses propres demandes d'accord) ou des services de ton réseau local.
     """
     parts = urlsplit(url)

@@ -31,13 +31,13 @@ COMMIT = "81371861f67226091d1c4df2e3908a11d3b54eb9"  # master du 19/10/2026
 # que dans un message d'erreur quand la base Valkey est activée (elle ne l'est pas).
 PATCH_FILE = "searx/valkeydb.py"
 PATCH_OLD = "import pwd\n"
-PATCH_NEW = "try:\n    import pwd\nexcept ImportError:  # Windows (retouche Aria Home)\n    pwd = None\n"
+PATCH_NEW = "try:\n    import pwd\nexcept ImportError:  # Windows (retouche Aria Pilote)\n    pwd = None\n"
 
-SETTINGS_TEMPLATE = """# Configuration SearXNG d'Aria Home (générée par tools/install_searxng.py)
+SETTINGS_TEMPLATE = """# Configuration SearXNG d'Aria Pilote (générée par tools/install_searxng.py)
 use_default_settings: true
 
 general:
-  instance_name: "Aria Home"
+  instance_name: "Aria Pilote"
 
 server:
   bind_address: "127.0.0.1"
@@ -60,7 +60,7 @@ valkey:
 def download_source(src_dir, commit):
     url = f"https://codeload.github.com/{REPO}/zip/{commit}"
     print(f"[1/5] Téléchargement de SearXNG {commit[:7]}…")
-    req = urllib.request.Request(url, headers={"User-Agent": "aria-home"})
+    req = urllib.request.Request(url, headers={"User-Agent": "aria-pilote"})
     with urllib.request.urlopen(req, timeout=120) as resp:
         data = resp.read()
     print(f"      {len(data) / 1024**2:.1f} Mo")
@@ -84,8 +84,8 @@ def patch_windows(src_dir):
     print("[2/5] Retouche Windows…")
     path = src_dir / PATCH_FILE
     text = path.read_text(encoding="utf-8")
-    if PATCH_NEW in text:
-        return
+    if "pwd = None" in text:
+        return  # déjà retouché (le commentaire a pu changer avec le nom de l'appli)
     if text.count(PATCH_OLD) != 1:
         sys.exit(f"Retouche impossible : {PATCH_FILE} a changé dans cette version de SearXNG.")
     path.write_text(text.replace(PATCH_OLD, PATCH_NEW, 1), encoding="utf-8")
