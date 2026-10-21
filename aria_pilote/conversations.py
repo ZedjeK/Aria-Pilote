@@ -85,10 +85,13 @@ def delete(cid):
         path.unlink()
 
 
-def add_user_message(conv, content):
-    conv["messages"].append({"role": "user", "content": content, "created_at": _now()})
+def add_user_message(conv, content, skill=None):
+    message = {"role": "user", "content": content, "created_at": _now()}
+    if skill:
+        message["skill"] = skill  # « /nom » tapé dans le chat : la compétence est ajoutée à l'envoi
+    conv["messages"].append(message)
     if conv["title"] == DEFAULT_TITLE:
-        conv["title"] = _make_title(content)
+        conv["title"] = _make_title(f"/{skill} {content}" if skill else content)
 
 
 def drop_trailing_assistant(conv):

@@ -1,12 +1,13 @@
 """Chat : relais en streaming vers llama-server et enregistrement de la réponse dans l'historique."""
 
+import asyncio
 import json
 import time
 import uuid
 
 import httpx
 
-from . import config, context, conversations
+from . import config, context, conversations, skills
 from .server import manager
 
 SAMPLING_FIELDS = ("temperature", "top_p", "top_k", "min_p", "presence_penalty", "max_tokens")
@@ -42,6 +43,9 @@ def build_messages(conv, system_prompt):
             for tc in m["tool_calls"]:
                 if tc["id"] not in answered:
                     messages.append({"role": "tool", "tool_call_id": tc["id"], "content": "Action interrompue par l'utilisateur."})
+        elif m["role"] == "user" and m.get("skill"):
+            root = (conv.get("agent") or {}).get("workspace") if (conv.get("agent") or {}).get("enabled") else None
+            messages.append({"role": "user", "content": skills.expand(m["skill"], m["content"], root)})
         else:
             messages.append({"role": m["role"], "content": m["content"]})
     return messages
@@ -161,6 +165,19 @@ SATURATED = ("La conversation dépasse le contexte chargé, même après résum�
              "recharge le modèle avec un contexte plus grand, ou commence une nouvelle conversation.")
 
 
+ENGINE_CRASHED = ("Le moteur s'est arrêté pendant la génération. Cause fréquente : un autre logiciel "
+                  "(génération d'images, jeu…) a pris la mémoire de la carte graphique. "
+                  "Libère-la, puis recharge le modèle dans l'onglet Modèles.")
+
+
+async def failure_message(exc):
+    """Message clair pour une génération interrompue, y compris quand le moteur a planté."""
+    await asyncio.sleep(1)  # laisse au superviseur le temps de constater un plantage
+    if manager.state == "error":
+        return ENGINE_CRASHED
+    return f"Échec de la génération : {exc or type(exc).__name__}"
+
+
 async def make_room(cid, preset, system_prompt, tools=None, force=False):
     """Mesure le contexte et résume si besoin ; une panne de mesure ne bloque pas la génération."""
     try:
@@ -195,7 +212,7 @@ async def stream(conv, preset, model_name):
             yield event({"type": "error", "message": SATURATED})
             return
         except (httpx.HTTPError, UpstreamError) as exc:
-            yield event({"type": "error", "message": f"Échec de la génération : {exc}"})
+            yield event({"type": "error", "message": await failure_message(exc)})
             return
         finally:
             if has_output(out):

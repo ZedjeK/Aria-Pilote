@@ -58,6 +58,7 @@
                         <span class="ctx-bar"><span></span></span>
                         <span class="ctx-text"></span>
                     </span>
+                    <button type="button" id="btn-skills" class="ghost" title="Compétences">📚 Compétences</button>
                     <button type="button" id="btn-regen" class="ghost">🔄 Régénérer</button>
                     <button type="button" id="btn-stop" class="ghost" hidden>⏹ Stop</button>
                     <button type="submit" id="btn-send" class="primary">Envoyer</button>
@@ -162,6 +163,33 @@
             <div class="row">
                 <button value="cancel" class="ghost">Annuler</button>
                 <button value="save" class="primary">Enregistrer</button>
+            </div>
+        </form>
+    </dialog>
+
+    <dialog id="skills-dialog" class="skills-dialog">
+        <div class="skills-head">
+            <h2>Compétences</h2>
+            <button id="btn-skill-new" class="ghost">+ Nouvelle</button>
+            <button id="btn-skills-close" class="ghost">Fermer</button>
+        </div>
+        <p class="muted small">Clique sur une compétence pour l'ajouter à ton message (« /nom » au début). En mode Agent,
+            il les charge aussi tout seul quand une tâche y correspond.</p>
+        <ul id="skills-list" class="skills-list"></ul>
+        <form id="skill-form" class="form" hidden>
+            <label>Nom (minuscules, chiffres, tirets)
+                <input name="name" required pattern="[a-z0-9][a-z0-9\-]{0,39}">
+            </label>
+            <label>Description (dit à l'agent quand s'en servir)
+                <input name="description" required>
+            </label>
+            <label>Instructions
+                <textarea name="body" rows="12" class="mono" required></textarea>
+            </label>
+            <p id="skill-error" class="error" hidden></p>
+            <div class="row">
+                <button type="button" id="btn-skill-cancel" class="ghost">Annuler</button>
+                <button type="submit" class="primary">Enregistrer</button>
             </div>
         </form>
     </dialog>
