@@ -3,7 +3,7 @@
 Organisation attendue :
     Aria - Pilote\\
     ├── Source code\\        ce projet (on développe ici)
-    └── Aria-Pilote-0.6.0\\   l'appli utilisée au quotidien
+    └── Aria-Pilote-0.7.0\\   l'appli utilisée au quotidien
 
 La version est construite dans un dossier temporaire, puis mise en place :
 - même version déjà présente : mise à jour sur place ;
