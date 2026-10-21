@@ -165,8 +165,11 @@ class ServerManager:
                         config.save_model_settings(self.model.path, {"engine": "prism"})
                         self._spawn("prism")
                         continue
+                    was_ready = self.state == "ready"
                     self.state = "error"
                     self.error = f"llama-server s'est arrêté (code {code}). Regarde le journal."
+                    if was_ready:
+                        self.error += " Arrêt en pleine utilisation : vérifie qu'aucun autre logiciel n'occupe la mémoire GPU."
                     self._log(f"[aria] {self.error}")
                     return
                 if self.state == "loading":

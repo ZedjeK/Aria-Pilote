@@ -1,5 +1,6 @@
 """Application web d'Aria Pilote : API REST + interface statique."""
 
+import re
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -9,7 +10,8 @@ from fastapi.responses import PlainTextResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from . import VERSION, agent, backups, chat, config, conversations, downloads, engines, hub, models, presets, searxng, workspace
+from . import (VERSION, agent, backups, chat, config, conversations, downloads, engines, hub, models, presets,
+               searxng, skills, workspace)
 from .server import EngineMissing, manager
 
 STATIC_DIR = Path(__file__).parent / "static"
@@ -44,7 +46,11 @@ async def local_only(request: Request, call_next):
     origin = request.headers.get("origin")
     if request.method not in ("GET", "HEAD", "OPTIONS") and origin and origin not in {f"http://{h}" for h in hosts}:
         return PlainTextResponse("Origine refusée.", status_code=403)
-    return await call_next(request)
+    response = await call_next(request)
+    if not request.url.path.startswith("/api/"):
+        # Après une mise à jour, le navigateur doit reprendre la nouvelle interface (revérification par ETag)
+        response.headers["Cache-Control"] = "no-cache"
+    return response
 
 
 class LoadRequest(BaseModel):
@@ -98,6 +104,12 @@ class ApprovalRequest(BaseModel):
 class UndoRequest(BaseModel):
     conversation_id: str
     backup_id: str
+
+
+class SkillRequest(BaseModel):
+    name: str
+    description: str
+    body: str
 
 
 class ChatRequest(BaseModel):
@@ -291,7 +303,12 @@ async def chat_endpoint(req: ChatRequest):
     if req.content is not None:
         if not req.content.strip():
             raise HTTPException(400, "Message vide.")
-        conversations.add_user_message(conv, req.content)
+        # « /nom demande » : la compétence est jointe au message si elle existe
+        content, skill = req.content, None
+        match = re.match(r"^/([a-z0-9][a-z0-9-]*)(?:\s+(.*))?$", req.content.strip(), re.DOTALL)
+        if match and match.group(1) in skills.discover(_agent_root(conv)):
+            skill, content = match.group(1), (match.group(2) or "").strip()
+        conversations.add_user_message(conv, content, skill)
     else:
         conversations.drop_trailing_assistant(conv)
         if not conv["messages"]:
@@ -305,6 +322,48 @@ async def chat_endpoint(req: ChatRequest):
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache"},
     )
+
+
+def _agent_root(conv):
+    """Dossier de travail si le mode Agent est actif (pour trouver les compétences du projet)."""
+    settings = (conv or {}).get("agent") or {}
+    return settings.get("workspace") if settings.get("enabled") else None
+
+
+# --- Compétences ---------------------------------------------------------------------
+
+def _skills_root(conversation_id):
+    return _agent_root(conversations.get(conversation_id)) if conversation_id else None
+
+
+@app.get("/api/skills")
+def list_skills(conversation_id: str | None = None):
+    return [skills.to_dict(s) for s in skills.discover(_skills_root(conversation_id)).values()]
+
+
+@app.get("/api/skills/{name}")
+def get_skill(name: str, conversation_id: str | None = None):
+    try:
+        return skills.to_dict(skills.get(name, _skills_root(conversation_id)), with_body=True)
+    except skills.SkillError as exc:
+        raise HTTPException(404, str(exc))
+
+
+@app.post("/api/skills")
+def save_skill(req: SkillRequest):
+    try:
+        return skills.to_dict(skills.save_user_skill(req.name, req.description, req.body))
+    except skills.SkillError as exc:
+        raise HTTPException(400, str(exc))
+
+
+@app.delete("/api/skills/{name}")
+def delete_skill(name: str):
+    try:
+        skills.delete_user_skill(name)
+    except (skills.SkillError, OSError) as exc:
+        raise HTTPException(400, str(exc))
+    return {"ok": True}
 
 
 @app.post("/api/agent/approve")

@@ -180,6 +180,88 @@ async function openConversation(id) {
     loadConversations();
 }
 
+// --- Compétences -------------------------------------------------------------------
+
+const SKILL_SOURCES = { "intégrée": "intégrée", perso: "perso", projet: "projet" };
+
+function skillsQuery() {
+    return chat.current ? `?conversation_id=${chat.current.id}` : "";
+}
+
+async function openSkills() {
+    $("#skill-form").hidden = true;
+    $("#skills-list").hidden = false;
+    const list = $("#skills-list");
+    list.replaceChildren(el("li", { className: "muted" }, "Chargement…"));
+    $("#skills-dialog").showModal();
+    const items = await api(`/api/skills${skillsQuery()}`);
+    list.replaceChildren();
+    for (const s of items) {
+        const text = el("div", { className: "skill-text" },
+            el("div", { className: "skill-name" }, `/${s.name}`),
+            el("div", { className: "skill-desc" }, s.description));
+        const item = el("li", { title: "Ajouter à mon message" }, text, el("span", { className: "badge" }, SKILL_SOURCES[s.source] || s.source));
+        item.addEventListener("click", () => {
+            const input = $("#chat-input");
+            input.value = `/${s.name} ${input.value.replace(/^\/[a-z0-9-]+\s*/, "")}`;
+            $("#skills-dialog").close();
+            input.focus();
+        });
+        if (s.editable) {
+            const edit = el("button", { className: "ghost" }, "Modifier");
+            edit.addEventListener("click", (event) => { event.stopPropagation(); editSkill(s.name); });
+            const del = el("button", { className: "ghost danger-text" }, "Supprimer");
+            del.addEventListener("click", async (event) => {
+                event.stopPropagation();
+                if (!confirm(`Envoyer la compétence « ${s.name} » à la corbeille ?`)) return;
+                await api(`/api/skills/${s.name}`, { method: "DELETE" });
+                openSkills();
+            });
+            item.append(edit, del);
+        }
+        list.append(item);
+    }
+    if (!items.length) list.append(el("li", { className: "muted" }, "Aucune compétence."));
+}
+
+async function editSkill(name) {
+    const form = $("#skill-form");
+    form.reset();
+    $("#skill-error").hidden = true;
+    form.name.readOnly = Boolean(name);
+    if (name) {
+        const s = await api(`/api/skills/${name}${skillsQuery()}`);
+        form.name.value = s.name;
+        form.description.value = s.description;
+        form.body.value = s.body;
+    } else {
+        form.body.value = "1. …\n2. …\n";
+    }
+    $("#skills-list").hidden = true;
+    form.hidden = false;
+    form.name.focus();
+}
+
+$("#btn-skills").addEventListener("click", openSkills);
+$("#btn-skills-close").addEventListener("click", () => $("#skills-dialog").close());
+$("#btn-skill-new").addEventListener("click", () => editSkill(null));
+$("#btn-skill-cancel").addEventListener("click", openSkills);
+
+$("#skill-form").addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const form = event.target;
+    try {
+        await api("/api/skills", {
+            method: "POST",
+            body: JSON.stringify({ name: form.name.value.trim(), description: form.description.value, body: form.body.value }),
+        });
+        openSkills();
+    } catch (err) {
+        $("#skill-error").textContent = err.message;
+        $("#skill-error").hidden = false;
+    }
+});
+
 // --- Contexte ----------------------------------------------------------------------
 
 function renderGauge(ctx) {
@@ -236,7 +318,8 @@ function formatStats(m) {
 function messageNode(m) {
     const node = el("div", { className: `msg ${m.role}` });
     if (m.role === "user") {
-        node.textContent = m.content;
+        if (m.skill) node.append(el("span", { className: "badge skill" }, `📚 ${m.skill}`), " ");
+        node.append(m.content);
         return node;
     }
     node.append(

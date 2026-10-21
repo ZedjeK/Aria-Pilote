@@ -16,7 +16,7 @@ import tempfile
 from dataclasses import dataclass
 from typing import Awaitable, Callable
 
-from . import backups, conversations, jobs, web, workspace
+from . import backups, conversations, jobs, skills, web, workspace
 
 SKIP_DIRS = {".git", ".hg", ".svn", "node_modules", ".venv", "venv", "__pycache__", ".mypy_cache", ".idea"}
 MAX_FILE_BYTES = 5 * 1024 * 1024
@@ -386,6 +386,23 @@ async def run_update_todo(prepared, cid):
     return _ok(f"Plan mis à jour :\n{text}", todo=items)
 
 
+# --- compétences -----------------------------------------------------------------
+
+def prepare_load_skill(root, args):
+    try:
+        skill = skills.get((args.get("name") or "").strip(), root)
+        if args.get("file"):
+            return {"output": _truncate(skills.read_extra(skill, args["file"]))}
+        text = skills.body(skill)
+    except skills.SkillError as exc:
+        names = ", ".join(skills.discover(root)) or "aucune"
+        raise ToolError(f"{exc} Compétences disponibles : {names}.")
+    files = skills.extra_files(skill)
+    if files:
+        text += "\n\nFichiers de la compétence (à lire avec load_skill et le paramètre file) : " + ", ".join(files)
+    return {"output": _truncate(f"Compétence « {skill.name} » ({skill.source}) :\n\n{text}")}
+
+
 # --- web -------------------------------------------------------------------------
 
 def prepare_web_fetch(root, args):
@@ -499,6 +516,16 @@ TOOLS = {t.name: t for t in [
             },
         }, ["items"]),
         prepare_update_todo, run_update_todo,
+    ),
+    Tool(
+        "load_skill", "read",
+        "Charge les instructions d'une compétence (voir la liste des compétences disponibles), "
+        "ou un de ses fichiers d'appoint avec le paramètre file.",
+        _schema({
+            "name": {"type": "string", "description": "Nom de la compétence."},
+            "file": {"type": "string", "description": "Fichier d'appoint de la compétence (facultatif)."},
+        }, ["name"]),
+        prepare_load_skill, run_prepared_output,
     ),
     Tool(
         "web_search", "web",

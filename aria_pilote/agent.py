@@ -6,9 +6,11 @@ import uuid
 
 import httpx
 
-from . import backups, chat, context, conversations, tools, workspace
+from . import backups, chat, context, conversations, skills, tools, workspace
 
 MAX_TOOL_CALLS = 25
+# Une étape d'agent qui réfléchit puis écrit un fichier entier a besoin de place
+AGENT_MIN_TOKENS = 8192
 MEMORY_FILE = "ARIA.md"
 MAX_MEMORY_CHARS = 20000
 
@@ -85,7 +87,7 @@ def load_memory(root):
 
 
 def _system_prompt(preset, root, memory):
-    parts = [(preset.get("system_prompt") or "").strip(), AGENT_PROMPT.format(root=root)]
+    parts = [(preset.get("system_prompt") or "").strip(), AGENT_PROMPT.format(root=root), skills.prompt_section(root)]
     if memory:
         parts.append(MEMORY_PROMPT.format(name=MEMORY_FILE, memory=memory))
     return "\n\n".join(p for p in parts if p)
@@ -176,6 +178,7 @@ async def run(conv, preset, model_name):
     if memory:
         yield chat.event({"type": "memory", "file": MEMORY_FILE, "chars": len(memory)})
     system_prompt = _system_prompt(preset, root, memory)
+    preset = {**preset, "max_tokens": max(preset.get("max_tokens") or 0, AGENT_MIN_TOKENS)}
     calls_done = 0
     retried = False
 
@@ -198,7 +201,7 @@ async def run(conv, preset, model_name):
             yield chat.event({"type": "error", "message": chat.SATURATED})
             return
         except (httpx.HTTPError, chat.UpstreamError) as exc:
-            yield chat.event({"type": "error", "message": f"Échec de la génération : {exc}"})
+            yield chat.event({"type": "error", "message": await chat.failure_message(exc)})
             return
         finally:
             if chat.has_output(out):
@@ -212,6 +215,10 @@ async def run(conv, preset, model_name):
 
         calls = (message or {}).get("tool_calls")
         if not calls:
+            if (message or {}).get("stats", {}).get("finish_reason") == "length":
+                yield chat.event({"type": "error", "message": (
+                    f"Réponse coupée : le modèle a atteint la limite de {preset['max_tokens']} tokens par réponse "
+                    "avant de finir. Augmente « Max tokens » dans le preset, ou désactive la réflexion, puis relance.")})
             yield chat.event({"type": "done", "message": message})
             return
         for call in calls:

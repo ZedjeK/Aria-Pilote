@@ -88,7 +88,8 @@ def _transcript(messages, skip=None):
         if i == skip:
             continue
         if m["role"] == "user":
-            lines.append(f"Utilisateur : {m['content']}")
+            prefix = f"[compétence {m['skill']}] " if m.get("skill") else ""
+            lines.append(f"Utilisateur : {prefix}{m['content']}")
         elif m["role"] == "assistant":
             if m.get("content"):
                 lines.append(f"Assistant : {m['content']}")
