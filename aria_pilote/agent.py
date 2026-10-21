@@ -6,7 +6,7 @@ import uuid
 
 import httpx
 
-from . import backups, chat, conversations, tools, workspace
+from . import backups, chat, context, conversations, tools, workspace
 
 MAX_TOOL_CALLS = 25
 MEMORY_FILE = "ARIA.md"
@@ -177,14 +177,26 @@ async def run(conv, preset, model_name):
         yield chat.event({"type": "memory", "file": MEMORY_FILE, "chars": len(memory)})
     system_prompt = _system_prompt(preset, root, memory)
     calls_done = 0
+    retried = False
 
     while True:
-        conv = conversations.get(cid)
-        payload = chat.build_payload(conv, preset, model_name, system_prompt=system_prompt, tools=tools.SCHEMAS)
+        # Avant chaque étape : les résultats d'outils s'accumulent vite pendant une tâche
+        info = await chat.make_room(cid, preset, system_prompt, tools.SCHEMAS)
+        if info:
+            yield chat.event(info)
+        payload = chat.build_payload(conversations.get(cid), preset, model_name, system_prompt=system_prompt, tools=tools.SCHEMAS)
         out, message = {}, None
         try:
             async for ev in chat.completion(payload, out):
                 yield ev
+        except context.ContextOverflow:
+            info = None if retried else await chat.make_room(cid, preset, system_prompt, tools.SCHEMAS, force=True)
+            if info and info["type"] == "compacted":
+                retried = True
+                yield chat.event(info)
+                continue
+            yield chat.event({"type": "error", "message": chat.SATURATED})
+            return
         except (httpx.HTTPError, chat.UpstreamError) as exc:
             yield chat.event({"type": "error", "message": f"Échec de la génération : {exc}"})
             return
@@ -192,6 +204,10 @@ async def run(conv, preset, model_name):
             if chat.has_output(out):
                 message = chat.assistant_message(out, model_name, preset)
                 conversations.append_message(cid, message)
+        retried = False
+        usage = context.record_usage(cid, message["stats"]) if message else None
+        if usage:
+            yield chat.event(usage)
         yield chat.event({"type": "step_end"})
 
         calls = (message or {}).get("tool_calls")

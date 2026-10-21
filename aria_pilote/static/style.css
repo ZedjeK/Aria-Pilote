@@ -310,6 +310,18 @@ button.danger-text { color: var(--err); }
 .diff .del { color: var(--err); }
 .diff .hunk { color: var(--accent); }
 
+/* --- Contexte --- */
+
+.ctx-gauge { display: flex; align-items: center; gap: 6px; font: 11px var(--mono); color: var(--muted); }
+.ctx-bar { width: 90px; height: 6px; background: var(--panel-2); border-radius: 3px; overflow: hidden; }
+.ctx-bar span { display: block; height: 100%; background: var(--accent); }
+.ctx-gauge.high .ctx-bar span { background: var(--action); }
+.ctx-gauge.full .ctx-bar span { background: var(--err); }
+
+.summary-divider { align-self: stretch; border: 1px dashed var(--accent-2); border-radius: 8px; padding: 6px 10px; font-size: 12px; color: var(--muted); }
+.summary-divider summary { cursor: pointer; color: var(--accent-2); }
+.summary-divider .md { margin-top: 6px; color: var(--text); }
+
 .composer { display: grid; gap: 8px; }
 .composer textarea { resize: vertical; min-height: 60px; }
 .composer-actions { display: flex; align-items: center; gap: 8px; justify-content: flex-end; }
