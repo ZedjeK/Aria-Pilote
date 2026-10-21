@@ -2,7 +2,7 @@
 
 import httpx
 
-from . import backups, chat, context, conversations, skills, subagents, toolrun, tools, workspace
+from . import backups, chat, context, conversations, hooks, skills, subagents, toolrun, tools, workspace
 
 MAX_TOOL_CALLS = 25
 # Une étape d'agent qui réfléchit puis écrit un fichier entier a besoin de place
@@ -131,6 +131,18 @@ async def run(conv, preset, model_name):
     if memory:
         yield chat.event({"type": "memory", "file": MEMORY_FILE, "chars": len(memory)})
     system_prompt = _system_prompt(preset, root, memory)
+
+    # Hooks du projet pas encore approuvés : ils ne tournent pas, on te les montre
+    status = hooks.project_status(root)
+    if status and not status["trusted"]:
+        yield chat.event({"type": "hooks_untrusted", **status})
+    # Hooks « debut_tache » : leur sortie donne du contexte à l'agent (état git, rappel…)
+    start = await hooks.run("debut_tache", root)
+    if start:
+        yield toolrun.hook_event("debut_tache", start)
+        notes = "\n".join(o["sortie"] for o in start if o["sortie"])
+        if notes:
+            system_prompt += f"\n\nInformations fournies par les hooks de début de tâche :\n{notes}"
     preset = {
         **preset,
         "max_tokens": max(preset.get("max_tokens") or 0, AGENT_MIN_TOKENS),
@@ -178,6 +190,9 @@ async def run(conv, preset, model_name):
                 yield chat.event({"type": "error", "message": (
                     f"Réponse coupée : le modèle a atteint la limite de {preset['max_tokens']} tokens par réponse "
                     "avant de finir. Augmente « Max tokens » dans le preset, ou désactive la réflexion, puis relance.")})
+            end = await hooks.run("fin_tache", root, result={"status": "ok", "output": (message or {}).get("content") or ""})
+            if end:
+                yield toolrun.hook_event("fin_tache", end)
             yield chat.event({"type": "done", "message": message})
             return
         for call in calls:

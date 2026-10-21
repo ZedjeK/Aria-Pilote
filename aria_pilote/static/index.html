@@ -47,6 +47,7 @@
                 <button id="btn-agent-root" class="ghost">Valider</button>
                 <span id="agent-info" class="muted small"></span>
             </div>
+            <div id="hooks-banner" hidden></div>
             <ul id="agent-todo" class="todo" hidden></ul>
             <div id="messages" class="messages"></div>
             <p id="chat-error" class="error" hidden></p>
@@ -160,6 +161,17 @@
             <label>Dossiers de modèles (un par ligne)
                 <textarea name="model_dirs" rows="5" class="mono"></textarea>
             </label>
+            <label>Hooks globaux (hooks.json) : commandes PowerShell lancées autour du travail de l'agent
+                <textarea name="hooks" rows="10" class="mono" spellcheck="false"
+                    placeholder='{
+    "avant_outil": [{"outils": ["run_command"], "commande": "if ($env:ARIA_ARGS -match \"git push\") { \"Pousser se fait à la main.\"; exit 2 }"}],
+    "apres_outil": [{"outils": ["write_file", "edit_file"], "commande": "if ($env:ARIA_FICHIER -like \"*.py\") { python -m py_compile $env:ARIA_FICHIER }"}],
+    "debut_tache": [{"commande": "git status --short"}]
+}'></textarea>
+            </label>
+            <p class="muted small">Événements : avant_outil (code de sortie 2 = action bloquée), apres_outil (sortie ajoutée au résultat),
+                debut_tache (sortie donnée à l'agent), fin_tache. Variables : ARIA_OUTIL, ARIA_ARGS, ARIA_FICHIER, ARIA_STATUT.</p>
+            <p id="settings-error" class="error" hidden></p>
             <div class="row">
                 <button value="cancel" class="ghost">Annuler</button>
                 <button value="save" class="primary">Enregistrer</button>

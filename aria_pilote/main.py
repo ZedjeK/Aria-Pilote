@@ -10,8 +10,8 @@ from fastapi.responses import PlainTextResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from . import (VERSION, agent, backups, chat, config, conversations, downloads, engines, hub, models, presets,
-               searxng, skills, subagents, workspace)
+from . import (VERSION, agent, backups, chat, config, conversations, downloads, engines, hooks, hub, models,
+               presets, searxng, skills, subagents, workspace)
 from .server import EngineMissing, manager
 
 STATIC_DIR = Path(__file__).parent / "static"
@@ -348,6 +348,42 @@ def get_skill(name: str, conversation_id: str | None = None):
         return skills.to_dict(skills.get(name, _skills_root(conversation_id)), with_body=True)
     except skills.SkillError as exc:
         raise HTTPException(404, str(exc))
+
+
+class HooksText(BaseModel):
+    content: str
+
+
+class HooksTrust(BaseModel):
+    conversation_id: str
+
+
+@app.get("/api/hooks")
+def get_hooks(conversation_id: str | None = None):
+    return {
+        "global": hooks.read_global(),
+        "global_path": str(hooks.GLOBAL_PATH),
+        "project": hooks.project_status(_skills_root(conversation_id)),
+        "events": list(hooks.EVENTS),
+    }
+
+
+@app.put("/api/hooks/global")
+def put_global_hooks(req: HooksText):
+    try:
+        hooks.save_global(req.content)
+    except hooks.HookError as exc:
+        raise HTTPException(400, str(exc))
+    return {"ok": True}
+
+
+@app.post("/api/hooks/trust")
+def trust_hooks(req: HooksTrust):
+    try:
+        hooks.trust(_agent_root(conversations.get(req.conversation_id)))
+    except hooks.HookError as exc:
+        raise HTTPException(400, str(exc))
+    return {"ok": True}
 
 
 @app.get("/api/subagents")

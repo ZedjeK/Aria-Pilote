@@ -4,7 +4,7 @@ import asyncio
 import json
 import uuid
 
-from . import chat, conversations, tools
+from . import chat, conversations, hooks, tools
 
 # Types d'outils soumis à accord, et le drapeau qui les autorise pour toute la conversation
 # (None : jamais d'autorisation globale)
@@ -67,6 +67,16 @@ async def run_tool(cid, root, name, args, call_id, out, allowed=None, parent_id=
         out["result"] = {"status": "error", "output": f"Erreur : {exc}"}
         return
 
+    # Hooks « avant_outil » : ils passent avant ta validation et peuvent bloquer l'action (code 2)
+    before = await hooks.run("avant_outil", root, name, args)
+    if before:
+        yield hook_event("avant_outil", before, call_id, parent_id)
+    blocker = hooks.blocking(before)
+    if blocker:
+        out["result"] = {"status": "denied",
+                         "output": f"Action bloquée par un hook ({blocker['source']}) : {blocker['sortie'] or 'sans explication'}"}
+        return
+
     settings = conversations.get(cid).get("agent") or {}
     decision = "allow"
     if tool.kind in APPROVAL_FLAGS and not settings.get(APPROVAL_FLAGS[tool.kind] or "", False):
@@ -95,3 +105,17 @@ async def run_tool(cid, root, name, args, call_id, out, allowed=None, parent_id=
         out["result"] = {"status": "error", "output": str(exc)}
     except OSError as exc:
         out["result"] = {"status": "error", "output": f"Erreur système : {exc}"}
+
+    # Hooks « apres_outil » : leur sortie complète le résultat que voit le modèle (linter, tests…)
+    after = await hooks.run("apres_outil", root, name, args, out["result"])
+    if after:
+        yield hook_event("apres_outil", after, call_id, parent_id)
+        notes = "\n".join(f"[hook {o['source']}, code {o['code']}] {o['sortie']}" for o in after if o["sortie"])
+        if notes:
+            out["result"]["output"] += f"\n\n{notes}"
+
+
+def hook_event(event, outcomes, call_id=None, parent_id=None):
+    return chat.event({"type": "hook", "evenement": event, "call_id": call_id, "parent_id": parent_id,
+                       "resultats": outcomes, "bloque": any(o["code"] == hooks.BLOCK_CODE for o in outcomes)
+                       and event == "avant_outil"})
