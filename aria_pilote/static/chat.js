@@ -90,10 +90,13 @@ function agentSettings() {
 function syncAgentBar() {
     const a = agentSettings();
     $("#agent-toggle").checked = Boolean(a.enabled);
+    $("#plan-toggle").checked = Boolean(a.plan_mode);
+    $("#plan-toggle").disabled = !a.enabled;
     $("#agent-root").value = a.workspace || "";
     $(".agent-bar").classList.toggle("on", Boolean(a.enabled));
     const info = [];
     if (a.enabled) {
+        if (a.plan_mode) info.push("mode Plan : lecture seule, plan à valider");
         info.push(a.auto_write ? "modifs autorisées" : "modifs demandées");
         info.push(a.auto_web ? "web autorisé" : "web demandé");
         info.push("commandes demandées");
@@ -118,7 +121,7 @@ async function saveAgent(patch) {
         if (chat.current) {
             chat.current = await api(`/api/conversations/${chat.current.id}`, {
                 method: "PATCH",
-                body: JSON.stringify({ agent: { enabled: next.enabled, workspace: next.workspace || null } }),
+                body: JSON.stringify({ agent: { enabled: next.enabled, workspace: next.workspace || null, plan_mode: Boolean(next.plan_mode) } }),
             });
         } else {
             if (next.enabled && !next.workspace) throw new Error("Choisis d'abord un dossier de travail.");
@@ -133,6 +136,10 @@ async function saveAgent(patch) {
 
 $("#agent-toggle").addEventListener("change", () => {
     saveAgent({ enabled: $("#agent-toggle").checked, workspace: $("#agent-root").value.trim() });
+});
+
+$("#plan-toggle").addEventListener("change", () => {
+    saveAgent({ plan_mode: $("#plan-toggle").checked });
 });
 
 $("#btn-agent-root").addEventListener("click", () => {
@@ -416,7 +423,34 @@ function subagentNode(m) {
     return node;
 }
 
-function toolNode(m) {
+function planActions() {
+    const approve = el("button", { className: "primary" }, "✅ Approuver et exécuter");
+    approve.addEventListener("click", async () => {
+        approve.disabled = true;
+        await saveAgent({ plan_mode: false });
+        send("Le plan est approuvé : exécute-le étape par étape, en tenant ton plan à jour.");
+    });
+    const change = el("button", { className: "ghost" }, "✏️ Demander des changements");
+    change.addEventListener("click", () => {
+        const input = $("#chat-input");
+        input.value = "Modifie le plan : ";
+        input.focus();
+    });
+    return el("div", { className: "row" }, approve, change);
+}
+
+function planNode(m, pending) {
+    // Mode Plan : le plan proposé, avec les boutons tant qu'il attend ta décision
+    const node = el("div", { className: "plan-card" }, el("div", { className: "approval-title" }, "🗺️ Plan proposé"));
+    const body = el("div", { className: "md" });
+    body.innerHTML = renderMarkdown(m.args?.plan || "");
+    node.append(body);
+    if (pending) node.append(planActions());
+    return node;
+}
+
+function toolNode(m, pendingPlan = false) {
+    if (m.name === "propose_plan") return planNode(m, pendingPlan);
     if (m.name === "delegate") return subagentNode(m);
     const node = el("details", { className: `tool ${m.status}` });
     node.dataset.callId = m.tool_call_id || "";
@@ -513,16 +547,28 @@ function renderMessages() {
     }
     const nodes = [];
     const summary = chat.current?.summary;
+    // Le dernier plan proposé attend ta décision tant que le mode Plan est actif et que tu n'as rien répondu
+    const lastUser = messages.map((m) => m.role).lastIndexOf("user");
+    const lastPlan = messages.map((m) => m.name).lastIndexOf("propose_plan");
+    const planMode = Boolean(chat.current?.agent?.plan_mode);
+    const planPending = planMode && lastPlan > lastUser;
+    // Un modèle qui écrit son plan en texte au lieu d'appeler propose_plan : sa réponse finale tient lieu de plan
+    const last = messages.at(-1);
+    const textPlan = planMode && !planPending && messages.length - 1 > lastUser && last?.role === "assistant" && last.content;
     messages.forEach((m, index) => {
         if (summary && index === summary.upto) nodes.push(summaryNode(summary, summary.upto));
         if (m.role === "tool") {
-            nodes.push(toolNode(m));
+            nodes.push(toolNode(m, planPending && index === lastPlan));
         } else if (m.role === "assistant" && !m.content && !m.reasoning) {
             // simple appel d'outil : la carte de l'outil suffit
         } else {
             nodes.push(messageNode(m));
         }
     });
+    if (textPlan) {
+        nodes.push(el("div", { className: "plan-card" },
+            el("div", { className: "approval-title" }, "🗺️ Plan ci-dessus : en attente de ta décision"), planActions()));
+    }
     box.replaceChildren(...nodes);
     box.scrollTop = box.scrollHeight;
 }
@@ -540,9 +586,18 @@ $("#messages").addEventListener("click", async (event) => {
     setTimeout(() => (button.textContent = "Copier"), 1500);
 });
 
-function showChatError(message) {
-    $("#chat-error").textContent = message;
-    $("#chat-error").hidden = false;
+const CONTINUE_PROMPT = "Continue la tâche là où tu t'es arrêté.";
+
+function showChatError(message, continuable = false) {
+    const box = $("#chat-error");
+    box.textContent = message;
+    if (continuable) {
+        // Limite d'appels atteinte ou réponse coupée : on relance sans retaper la demande
+        const button = el("button", { type: "button", className: "primary continue" }, "▶ Continuer");
+        button.addEventListener("click", () => send(CONTINUE_PROMPT));
+        box.append(" ", button);
+    }
+    box.hidden = false;
 }
 
 // --- Envoi et streaming -----------------------------------------------------
@@ -651,6 +706,7 @@ async function send(content) {
     chat.controller = new AbortController();
     let aborted = false;
     let ok = true;
+    let errorShown = null;  // réaffichée après le rechargement final de la conversation
     try {
         const resp = await fetch("/api/chat", {
             method: "POST",
@@ -729,7 +785,8 @@ async function send(content) {
             } else if (ev.type === "done" && ev.message && live) {
                 Object.assign(live, ev.message);
             } else if (ev.type === "error") {
-                showChatError(ev.message);
+                errorShown = { message: ev.message, continuable: ev.continuable };
+                showChatError(ev.message, ev.continuable);
             }
         });
     } catch (err) {
@@ -754,6 +811,7 @@ async function send(content) {
         setTimeout(() => openConversation(id), 600);
     } else {
         await openConversation(id);
+        if (errorShown) showChatError(errorShown.message, errorShown.continuable);
     }
     return ok;
 }

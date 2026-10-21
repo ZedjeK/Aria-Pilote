@@ -89,6 +89,7 @@ class ConversationCreate(BaseModel):
 class AgentSettings(BaseModel):
     enabled: bool
     workspace: str | None = None
+    plan_mode: bool | None = None
 
 
 class ConversationPatch(BaseModel):
@@ -285,6 +286,8 @@ def patch_conversation(cid: str, patch: ConversationPatch):
         if patch.agent.enabled and not settings.get("workspace"):
             raise HTTPException(400, "Choisis d'abord un dossier de travail.")
         settings["enabled"] = patch.agent.enabled
+        if patch.agent.plan_mode is not None:
+            settings["plan_mode"] = patch.agent.plan_mode
     return conversations.save(conv)
 
 

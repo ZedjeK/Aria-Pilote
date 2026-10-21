@@ -307,6 +307,11 @@ button.danger-text { color: var(--err); }
 .hook-note pre { margin: 4px 0 0; white-space: pre-wrap; font: 11px var(--mono); }
 .hooks-trust { align-self: stretch; border: 1px solid var(--action); border-radius: 8px; }
 
+.plan-card { align-self: stretch; display: grid; gap: 8px; padding: 10px 12px; border: 1px solid var(--accent); border-radius: 10px; background: var(--panel-2); }
+.plan-card .approval-title { color: var(--accent); }
+.plan-card .row { display: flex; gap: 8px; flex-wrap: wrap; }
+#chat-error .continue { margin-left: 8px; padding: 3px 12px; font-size: 12px; }
+
 .tool.subagent { border-color: var(--accent-2); }
 .sub-steps { list-style: none; margin: 0; padding: 6px 10px 6px 22px; border-top: 1px solid var(--border); display: grid; gap: 2px; }
 .sub-step { font: 12px var(--mono); color: var(--muted); }
