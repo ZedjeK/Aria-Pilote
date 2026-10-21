@@ -33,7 +33,7 @@ BACKENDS = {
 
 
 def github(url):
-    req = urllib.request.Request(url, headers={"User-Agent": "aria-home", "Accept": "application/vnd.github+json"})
+    req = urllib.request.Request(url, headers={"User-Agent": "aria-pilote", "Accept": "application/vnd.github+json"})
     with urllib.request.urlopen(req, timeout=30) as resp:
         return json.load(resp)
 
@@ -62,7 +62,7 @@ def download(asset):
     if target.exists() and target.stat().st_size == asset["size"]:
         print(f"  déjà téléchargé : {asset['name']}")
         return target
-    req = urllib.request.Request(asset["browser_download_url"], headers={"User-Agent": "aria-home"})
+    req = urllib.request.Request(asset["browser_download_url"], headers={"User-Agent": "aria-pilote"})
     tmp = target.with_suffix(".part")
     with urllib.request.urlopen(req, timeout=60) as resp, open(tmp, "wb") as out:
         done = 0

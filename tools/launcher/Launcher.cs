@@ -1,4 +1,4 @@
-// Lanceur d'Aria Home : démarre l'appli sans console (Python portable du dossier),
+// Lanceur d'Aria Pilote : démarre l'appli sans console (Python portable du dossier),
 // attend qu'elle réponde, puis ouvre l'interface dans le navigateur par défaut.
 // Compilé par tools/build_portable.py avec le csc.exe fourni par Windows.
 
@@ -29,7 +29,7 @@ static class Launcher
                 Fail("Python portable introuvable :\n" + pythonw);
                 return 1;
             }
-            var psi = new ProcessStartInfo(pythonw, "-m aria_home");
+            var psi = new ProcessStartInfo(pythonw, "-m aria_pilote");
             psi.WorkingDirectory = root;
             psi.UseShellExecute = false;
             psi.CreateNoWindow = true;
@@ -41,7 +41,7 @@ static class Launcher
             {
                 if (DateTime.Now > deadline)
                 {
-                    Fail("Aria Home ne répond pas.\nRegarde le journal : " + Path.Combine(root, "data", "aria_home.log"));
+                    Fail("Aria Pilote ne répond pas.\nRegarde le journal : " + Path.Combine(root, "data", "aria_pilote.log"));
                     return 1;
                 }
                 Thread.Sleep(500);
@@ -84,6 +84,6 @@ static class Launcher
 
     static void Fail(string message)
     {
-        MessageBox.Show(message, "Aria Home", MessageBoxButtons.OK, MessageBoxIcon.Error);
+        MessageBox.Show(message, "Aria Pilote", MessageBoxButtons.OK, MessageBoxIcon.Error);
     }
 }

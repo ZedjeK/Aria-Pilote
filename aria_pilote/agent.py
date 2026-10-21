@@ -1,4 +1,4 @@
-"""Boucle d'agent : le modèle appelle des outils, Aria Home les exécute (avec ton accord si besoin)."""
+"""Boucle d'agent : le modèle appelle des outils, Aria Pilote les exécute (avec ton accord si besoin)."""
 
 import asyncio
 import json

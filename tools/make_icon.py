@@ -1,4 +1,4 @@
-"""Dessine l'icône d'Aria Home (un « A » néon dans un anneau cyan → magenta), sans dépendance.
+"""Dessine l'icône d'Aria Pilote (un « A » néon dans un anneau cyan → magenta), sans dépendance.
 
 Produit un .ico multi-tailles (PNG intégrés) et un PNG pour le favicon de l'interface.
 Usage : python tools/make_icon.py DOSSIER_ICO [DOSSIER_FAVICON]
