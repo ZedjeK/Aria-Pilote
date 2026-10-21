@@ -1,0 +1,20 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+
+# Données personnelles et réglages de la machine
+data/
+config.json
+models/
+
+# Binaires téléchargés par les scripts d'installation
+engines/
+.build_cache/
+
+# SearXNG : code téléchargé, dépendances et configuration (contient une clé secrète)
+services/searxng/src/
+services/searxng/.venv/
+services/searxng/site-packages/
+services/searxng/settings.yml
+services/searxng/service.json
