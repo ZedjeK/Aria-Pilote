@@ -1,0 +1,5 @@
+{
+    "prompt": "Ajoute un cache à la fonction prevision de meteo.py pour éviter de refaire les appels identiques.",
+    "plan_mode": true,
+    "measures": "discipline du mode Plan"
+}

@@ -1,0 +1,4 @@
+{
+    "prompt": "Dans ce projet, dans quel fichier est définie la constante SEUIL_ALERTE réellement utilisée par le code, et quelle est sa valeur ?",
+    "measures": "explorer et lire"
+}

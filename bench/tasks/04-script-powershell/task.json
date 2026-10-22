@@ -1,0 +1,4 @@
+{
+    "prompt": "Écris un script PowerShell compter.ps1, à la racine, qui compte les fichiers .log du dossier journaux (sous-dossiers compris) et affiche exactement : Total : N (N étant le nombre trouvé). Teste-le.",
+    "measures": "création de fichier"
+}

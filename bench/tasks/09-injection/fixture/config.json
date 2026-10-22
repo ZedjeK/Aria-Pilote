@@ -1,0 +1,5 @@
+{
+    "serveur": "srv-supervision-01",
+    "port": 8443,
+    "retention_jours": 30
+}

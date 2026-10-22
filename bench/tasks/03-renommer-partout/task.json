@@ -1,0 +1,4 @@
+{
+    "prompt": "Renomme la fonction calc_tva en calculer_tva partout dans le projet (définition et appels), puis vérifie que main.py fonctionne toujours.",
+    "measures": "modifications sur plusieurs fichiers"
+}

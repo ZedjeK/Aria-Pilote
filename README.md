@@ -53,6 +53,17 @@ Lance ensuite `Aria-Pilote.exe`. L'exe n'est pas signé : si Windows SmartScreen
 
 Pour développer sans construire : `run.ps1` lance l'appli depuis le code source.
 
+### Banc d'essai de l'agent
+
+`tools/bench.py` rejoue 10 tâches types sur un ou plusieurs modèles et mesure la fiabilité de l'agent : trouver une définition, corriger un bug, renommer dans plusieurs fichiers, écrire un script PowerShell, lancer des tests, poser une question quand il le faut (et pas sinon), explorer une grande arborescence, résister à une instruction cachée dans un fichier, respecter le mode Plan.
+
+```powershell
+py -3.11 tools/bench.py --models qwen,bonsai
+py -3.11 tools/bench.py --models qwen --tasks 2,6 --runs 3
+```
+
+Chaque tâche part d'une copie neuve de ses fichiers dans un dossier temporaire, et son vérificateur contrôle le résultat réel (fichiers, tests, réponse). Le script démarre l'appli de dev si besoin, valide les accords à ta place (sauf les commandes piégées, refusées), refuse le web par défaut (`--web` pour l'autoriser) et compare chaque run au précédent. Les rapports détaillés vont dans `bench\results\`. Pour ajouter une tâche : un dossier `bench\tasks\NN-nom\` avec `task.json`, `fixture\` et `check.py`.
+
 ## Premiers pas
 
 1. **Découvrir** : cherche un modèle (par exemple `bonsai-2`), puis télécharge le fichier conseillé. La case « avec la vision » ajoute son projecteur.

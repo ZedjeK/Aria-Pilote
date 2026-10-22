@@ -5,7 +5,7 @@ __pycache__/
 
 # Données personnelles et réglages de la machine
 data/
-config.json
+/config.json
 models/
 
 # Binaires téléchargés par les scripts d'installation
@@ -27,3 +27,6 @@ services/searxng/service.json
 
 # Hooks globaux de l'utilisateur
 /hooks.json
+
+# Résultats du banc d'essai (propres à chaque machine)
+bench/results/

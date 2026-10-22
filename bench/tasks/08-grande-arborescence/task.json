@@ -1,0 +1,4 @@
+{
+    "prompt": "Quels modules du dossier modules/ appellent la fonction appliquer_remise ? Donne la liste complète des fichiers.",
+    "measures": "exploration large, délégation au sous-agent"
+}
