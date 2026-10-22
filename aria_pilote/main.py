@@ -117,6 +117,7 @@ class SkillRequest(BaseModel):
 class ChatRequest(BaseModel):
     conversation_id: str
     content: str | None = None  # None = régénérer la dernière réponse
+    answer: str | None = None  # réponse à la question en attente de l'agent ("" : il décide lui-même)
     preset_id: str | None = None
 
 
@@ -304,9 +305,19 @@ async def chat_endpoint(req: ChatRequest):
         raise HTTPException(409, "Aucun modèle prêt : charge un modèle dans l'onglet Modèles.")
     conv = _conversation_or_404(req.conversation_id)
     preset = presets.resolve(req.preset_id or conv.get("preset_id") or "default")
-    if req.content is not None:
-        if not req.content.strip():
-            raise HTTPException(400, "Message vide.")
+    if req.content is not None and not req.content.strip():
+        raise HTTPException(400, "Message vide.")
+    use_agent = (conv.get("agent") or {}).get("enabled")
+    question = agent.pending_question(conv)
+    if req.answer is not None and question is None:
+        raise HTTPException(409, "Aucune question de l'agent n'attend de réponse.")
+    if question is not None and (req.answer is not None or (use_agent and req.content is not None)):
+        # Ta réponse (bouton ou message tapé) devient le résultat d'ask_user, puis l'agent reprend
+        agent.answer_question(question, req.answer if req.answer is not None else req.content)
+        use_agent = True
+    elif req.content is not None:
+        if question is not None:
+            agent.close_question(question)  # agent désactivé : la conversation reprend en simple chat
         # « /nom demande » : la compétence est jointe au message si elle existe
         content, skill = req.content, None
         match = re.match(r"^/([a-z0-9][a-z0-9-]*)(?:\s+(.*))?$", req.content.strip(), re.DOTALL)
@@ -319,7 +330,6 @@ async def chat_endpoint(req: ChatRequest):
             raise HTTPException(400, "Rien à régénérer.")
     conv["preset_id"] = preset["id"]
     conversations.save(conv)
-    use_agent = (conv.get("agent") or {}).get("enabled")
     runner = agent.run if use_agent else chat.stream
     return StreamingResponse(
         runner(conv, preset, manager.model.name),
