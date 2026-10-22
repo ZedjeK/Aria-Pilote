@@ -25,6 +25,7 @@
 | **Agent** | Dans le dossier que tu lui donnes : lister, lire, chercher, modifier des fichiers et lancer des commandes PowerShell. Chaque modification arrive avec son diff, chaque fichier est sauvegardé avant d'être touché, et « Annuler cette modif » le remet comme avant | Outils d'Aria |
 | **Garde-fous** | Ton accord avant chaque modification, commande ou accès web. Dossier de travail cloisonné, liens et jonctions compris. Liste noire de commandes refusées d'office (formatage, registre système, désactivation de l'antivirus, télécharger-puis-exécuter…). 25 appels d'outils au plus par tâche | — |
 | **Plan et mémoire** | L'agent écrit son plan d'étapes et le coche au fil du travail. Un fichier `ARIA.md` à la racine d'un projet lui donne tes conventions à chaque tâche | — |
+| **Questions** | Quand une info indispensable lui manque, l'agent te pose la question avec des options au lieu de deviner. La tâche se met en pause, survit à un rechargement de la page, et reprend dès ta réponse (un bouton, ou un message tapé) | — |
 | **Recherche web** | Recherche privée par un SearXNG qui tourne sur ton PC, lecture de pages publiques. Les adresses de ta machine et de ton réseau local sont refusées | SearXNG embarqué |
 | **Sécurité locale** | llama-server n'accepte que les requêtes d'Aria (clé régénérée à chaque lancement, CORS limité), l'interface refuse les autres sites et le DNS rebinding, et tout ce qu'Aria lance s'arrête avec elle | — |
 

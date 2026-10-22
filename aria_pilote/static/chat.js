@@ -395,7 +395,10 @@ function updateMessageNode(node, m) {
     node.querySelector(".stats").hidden = !stats;
 }
 
-const TOOL_STATUS = { running: "en cours…", ok: "ok", error: "erreur", denied: "refusé" };
+const TOOL_STATUS = {
+    running: "en cours…", ok: "ok", error: "erreur", denied: "refusé",
+    pending: "en attente de ta réponse", skipped: "après ta réponse", unanswered: "sans réponse",
+};
 
 function shortArgs(args) {
     const main = args?.path ?? args?.pattern ?? args?.command ?? args?.query ?? args?.url ?? args?.name ?? "";
@@ -449,8 +452,51 @@ function planNode(m, pending) {
     return node;
 }
 
-function toolNode(m, pendingPlan = false) {
+function pendingQuestionIndex(messages) {
+    // Question d'ask_user qui attend ta réponse : rien de ta part depuis (même règle que le serveur)
+    for (let i = messages.length - 1; i >= 0; i--) {
+        const m = messages[i];
+        if (m.role === "user") return -1;
+        if (m.role === "tool" && m.name === "ask_user" && m.status === "pending") return i;
+    }
+    return -1;
+}
+
+function answerQuestion(answer) {
+    if (chat.controller) return;
+    send(null, answer);
+}
+
+function questionNode(m, active) {
+    const node = el("div", { className: "question-card" }, el("div", { className: "approval-title" }, "❓ Question de l'agent"));
+    const body = el("div", { className: "md" });
+    body.innerHTML = renderMarkdown(m.args?.question || "");
+    node.append(body);
+    const options = Array.isArray(m.args?.options) ? m.args.options : [];
+    if (m.status === "pending" && active) {
+        const buttons = el("div", { className: "row" });
+        for (const option of options) {
+            const button = el("button", { className: "primary" }, option);
+            button.addEventListener("click", () => answerQuestion(option));
+            buttons.append(button);
+        }
+        const free = el("button", { className: "ghost" }, "✏️ Autre réponse");
+        free.addEventListener("click", () => $("#chat-input").focus());
+        const decide = el("button", { className: "ghost" }, "🎲 Décide toi-même");
+        decide.addEventListener("click", () => answerQuestion(""));
+        buttons.append(free, decide);
+        node.append(buttons, el("div", { className: "muted small" }, "Tu peux aussi taper ta réponse dans la zone de message."));
+    } else if (m.status === "ok") {
+        node.append(el("div", { className: "question-answer" }, m.answer ? `↳ Ta réponse : ${m.answer}` : "↳ Tu as laissé l'agent décider."));
+    } else if (m.status !== "pending") {
+        node.append(el("div", { className: "question-answer muted" }, m.status === "unanswered" ? "↳ Restée sans réponse." : m.content));
+    }
+    return node;
+}
+
+function toolNode(m, pendingPlan = false, activeQuestion = false) {
     if (m.name === "propose_plan") return planNode(m, pendingPlan);
+    if (m.name === "ask_user" && m.status !== "running" && m.status !== "error") return questionNode(m, activeQuestion);
     if (m.name === "delegate") return subagentNode(m);
     const node = el("details", { className: `tool ${m.status}` });
     node.dataset.callId = m.tool_call_id || "";
@@ -555,10 +601,11 @@ function renderMessages() {
     // Un modèle qui écrit son plan en texte au lieu d'appeler propose_plan : sa réponse finale tient lieu de plan
     const last = messages.at(-1);
     const textPlan = planMode && !planPending && messages.length - 1 > lastUser && last?.role === "assistant" && last.content;
+    const question = pendingQuestionIndex(messages);
     messages.forEach((m, index) => {
         if (summary && index === summary.upto) nodes.push(summaryNode(summary, summary.upto));
         if (m.role === "tool") {
-            nodes.push(toolNode(m, planPending && index === lastPlan));
+            nodes.push(toolNode(m, planPending && index === lastPlan, index === question));
         } else if (m.role === "assistant" && !m.content && !m.reasoning) {
             // simple appel d'outil : la carte de l'outil suffit
         } else {
@@ -627,7 +674,8 @@ async function readEvents(resp, onEvent) {
     }
 }
 
-async function send(content) {
+async function send(content, answer) {
+    // answer : réponse à la question en attente de l'agent (content vaut alors null)
     if (chat.controller) return;
     $("#chat-error").hidden = true;
     if (state.status?.state !== "ready") {
@@ -655,7 +703,10 @@ async function send(content) {
         syncAgentBar();
     }
 
-    if (content === null) {
+    if (answer !== undefined) {
+        const question = chat.current.messages[pendingQuestionIndex(chat.current.messages)];
+        if (question) Object.assign(question, { status: "ok", answer: answer.trim() });
+    } else if (content === null) {
         while (["assistant", "tool"].includes(chat.current.messages.at(-1)?.role)) chat.current.messages.pop();
     } else {
         chat.current.messages.push({ role: "user", content });
@@ -711,7 +762,7 @@ async function send(content) {
         const resp = await fetch("/api/chat", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ conversation_id: chat.current.id, content, preset_id: $("#preset-select").value }),
+            body: JSON.stringify({ conversation_id: chat.current.id, content, answer, preset_id: $("#preset-select").value }),
             signal: chat.controller.signal,
         });
         if (!resp.ok) {
@@ -822,7 +873,9 @@ $("#chat-form").addEventListener("submit", async (event) => {
     const content = input.value;
     if (!content.trim() || chat.controller) return;
     input.value = "";
-    const ok = await send(content);
+    // Une question de l'agent attend : ton message est ta réponse
+    const asked = chat.current && agentSettings().enabled && pendingQuestionIndex(chat.current.messages) >= 0;
+    const ok = asked ? await send(null, content) : await send(content);
     if (ok === false && !input.value) input.value = content;
 });
 
