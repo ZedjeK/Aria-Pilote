@@ -12,7 +12,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from . import (VERSION, agent, background, backups, chat, config, conversations, downloads, engines, hardware, hooks,
-               hub, models, optimizer, permissions, presets, searxng, skills, subagents, workspace)
+               hub, models, optimizer, permissions, presets, searxng, skills, subagents, trial, workspace)
 from .server import EngineMissing, manager
 
 STATIC_DIR = Path(__file__).parent / "static"
@@ -213,10 +213,6 @@ async def unload():
     return manager.status()
 
 
-class OptimizeRequest(BaseModel):
-    profile: str = "equilibre"
-
-
 class OptimizeItem(BaseModel):
     model_id: str
     settings: dict
@@ -237,19 +233,41 @@ def get_hardware():
 
 
 @app.post("/api/optimize")
-def optimize(req: OptimizeRequest):
-    """Réglages proposés pour chaque modèle, d'après le matériel et la VRAM libre (rien n'est appliqué)."""
-    if req.profile not in optimizer.PROFILES:
-        raise HTTPException(400, f"Profil inconnu : {req.profile}")
+def optimize():
+    """Les trois choix (rapide, compromis, contexte) pour chaque modèle, d'après le matériel et la VRAM libre.
+
+    Rien n'est appliqué : c'est l'aperçu de la fenêtre « Optimiser mes modèles »."""
     hw = hardware.scan()
     budget = sum(g["vram_free"] for g in hw["gpus"]) if hw["gpus"] else None
     loaded = manager.model if manager.state in ("loading", "ready") else None
     if budget is not None and loaded is not None:
         # La VRAM du modèle chargé redeviendra libre quand il sera rechargé avec les nouveaux réglages
         budget += optimizer.footprint(loaded, _meta_of(loaded), manager._settings or {})
-    plans = [optimizer.plan(m, _meta_of(m), config.model_settings(m.key), budget, req.profile, hw["cpu"]["cores"])
-             for m in models.scan()]
-    return {"hardware": hw, "budget": budget, "loaded": loaded.name if loaded else None, "plans": plans}
+    # VRAM prise par les autres applications (ce qui reste une fois le modèle d'Aria compté comme libéré)
+    others = None
+    if hw["gpus"]:
+        ours = optimizer.footprint(loaded, _meta_of(loaded), manager._settings or {}) if loaded else 0
+        others = max(0, sum(g["vram_used"] for g in hw["gpus"]) - ours)
+    found = [(m, _meta_of(m), config.model_settings(m.key)) for m in models.scan()]
+    profiles = [{"id": pid, **{k: v for k, v in p.items() if k not in ("cap", "compress")},
+                 "plans": [optimizer.plan(m, meta, s, budget, pid, hw["cpu"]["cores"]) for m, meta, s in found]}
+                for pid, p in optimizer.PROFILES.items()]
+    return {"hardware": hw, "budget": budget, "loaded": loaded.name if loaded else None,
+            "others_used": others, "gpu_apps": hardware.gpu_apps(),
+            "profiles": profiles, "default": optimizer.DEFAULT_PROFILE}
+
+
+@app.post("/api/optimize/test")
+async def optimize_test(req: OptimizeApply):
+    """Essai réel des réglages proposés, en flux : chargement, VRAM, vitesse, palier inférieur si besoin."""
+    if backups._running:
+        raise HTTPException(409, "L'agent travaille : attends la fin de sa tâche avant de lancer l'essai.")
+    if trial.is_running():
+        raise HTTPException(409, "Un essai est déjà en cours.")
+    if not req.items:
+        raise HTTPException(400, "Aucun modèle à essayer.")
+    items = [{"model_id": i.model_id, "settings": i.settings} for i in req.items]
+    return StreamingResponse(trial.run(items), media_type="text/event-stream", headers={"Cache-Control": "no-cache"})
 
 
 @app.post("/api/optimize/apply")

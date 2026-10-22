@@ -11,7 +11,30 @@ from pathlib import Path
 
 GIB = 1024 ** 3
 STEPS = (4096, 8192, 16384, 32768, 65536, 131072, 262144)
-PROFILES = {"equilibre": 32768, "max": None}  # plafond de contexte de chaque profil
+# Les trois choix proposés par « Optimiser mes modèles » : plafond de contexte, compression du cache permise,
+# et ce que ça change pour toi (affiché dans la fenêtre)
+PROFILES = {
+    "rapide": {
+        "cap": 16384, "compress": False, "title": "⚡ Le plus rapide",
+        "summary": "Contexte jusqu'à 16k, cache non compressé.",
+        "pros": "Génération la plus vive, et le plus de VRAM laissée libre pour le reste (navigateur, jeux, ComfyUI…).",
+        "cons": "Mémoire courte : l'agent résume plus tôt les longues tâches et lit moins de fichiers d'un coup.",
+    },
+    "compromis": {
+        "cap": 32768, "compress": True, "title": "⚖️ Le compromis",
+        "summary": "Contexte jusqu'à 32k, cache compressé seulement si ça fait gagner un palier.",
+        "pros": "Assez de mémoire pour la plupart des tâches de l'agent, sans sacrifier la vitesse. Le choix conseillé.",
+        "cons": "La VRAM est bien occupée : un autre logiciel gourmand en même temps peut faire planter le modèle.",
+    },
+    "contexte": {
+        "cap": None, "compress": True, "title": "📚 Le plus de contexte",
+        "summary": "Autant de contexte que la VRAM le permet (jusqu'à celui du modèle), cache compressé.",
+        "pros": "Lire de très gros fichiers ou mener de très longues tâches sans résumer.",
+        "cons": "VRAM presque pleine ; lecture du prompt plus lente quand le contexte se remplit ; au-delà de 32k, "
+                "un petit modèle perd en précision sur ce qu'il a lu au début.",
+    },
+}
+DEFAULT_PROFILE = "compromis"
 BYTES = {"f16": 2.0, "q8_0": 34 / 32, "q4_0": 18 / 32}  # octets par valeur du cache
 # Tampons de calcul et contexte CUDA. Mesuré sur 4 chargements réels (Qwen 3.8 IQ3 / Bonsai 2 PQ2,
 # RTX 4080 SUPER, 16k à 128k) : entre 0,2 et 1,1 Gio au-delà des poids, du projecteur et du cache
@@ -61,7 +84,7 @@ def footprint(model, meta, settings):
     return int(model.size_bytes * share + _mmproj_bytes(model, settings) + kv * share + OVERHEAD)
 
 
-def plan(model, meta, settings, budget, profile="equilibre", cpu_cores=None):
+def plan(model, meta, settings, budget, profile=DEFAULT_PROFILE, cpu_cores=None):
     """Réglages proposés pour un modèle. `budget` : octets de VRAM utilisables (None : pas de GPU NVIDIA)."""
     current = {k: settings.get(k) for k in ("ctx_size", "gpu_layers", "cache_type", "flash_attn", "threads")}
     result = {"model_id": model.id, "name": model.name, "current": current, "proposed": dict(current),
@@ -71,7 +94,8 @@ def plan(model, meta, settings, budget, profile="equilibre", cpu_cores=None):
     if not values or not layers:
         result["notes"].append("En-tête GGUF incomplet : réglages laissés tels quels.")
         return result
-    cap = min(PROFILES.get(profile) or STEPS[-1], model.context_length or STEPS[-1])
+    profile = PROFILES[profile]
+    cap = min(profile["cap"] or STEPS[-1], model.context_length or STEPS[-1])
     steps = [s for s in STEPS if s <= cap] or [min(cap, STEPS[0])]
     mmproj = _mmproj_bytes(model, settings)
     proposed = result["proposed"]
@@ -87,7 +111,7 @@ def plan(model, meta, settings, budget, profile="equilibre", cpu_cores=None):
             fitting = [s for s in steps if fixed + values * BYTES[cache] * s <= budget]
             return fitting[-1] if fitting else None
 
-        f16, q8 = best("f16"), best("q8_0")
+        f16, q8 = best("f16"), best("q8_0") if profile["compress"] else None
         if f16 is None and q8 is None:
             # Le modèle ne tient pas entier : le plus de couches possible sur le GPU, le reste en RAM
             ctx = min(8192, steps[-1])
@@ -105,8 +129,28 @@ def plan(model, meta, settings, budget, profile="equilibre", cpu_cores=None):
                 proposed["flash_attn"] = "on"
                 result["notes"].append("Cache de contexte compressé (q8_0) : deux fois plus de contexte, "
                                        "quasiment sans perte de qualité.")
-            if ctx == cap and PROFILES.get(profile) and ctx < (model.context_length or 0):
-                result["notes"].append(f"Plafonné à {cap // 1024}k par le profil Équilibré.")
+            if ctx == cap and profile["cap"] and ctx < (model.context_length or 0):
+                result["notes"].append(f"Plafonné à {cap // 1024}k par ce choix.")
             result["vram_estimate"] = int(fixed - MARGIN + values * BYTES[cache] * ctx)
     result["changed"] = proposed != current
     return result
+
+
+def step_down(settings, layers):
+    """Réglages un cran plus économes, pour l'essai réel quand ça ne tient pas (None : plus rien à réduire).
+
+    Cache normal → même contexte compressé (q8_0) ; cache compressé → contexte divisé par deux (8k au
+    plus bas) ; ensuite, moins de couches sur le GPU. `layers` : nombre de couches du modèle."""
+    lower = dict(settings)
+    ctx = settings.get("ctx_size") or STEPS[1]
+    on_gpu = min(settings.get("gpu_layers") or 0, layers or 0)
+    if (settings.get("cache_type") or "f16") == "f16" and ctx > STEPS[1]:
+        lower.update(cache_type="q8_0", flash_attn="on")
+    elif ctx > STEPS[1]:
+        lower["ctx_size"] = max(STEPS[1], ctx // 2)
+    elif on_gpu > 0:
+        lower["gpu_layers"] = max(0, on_gpu - max(1, on_gpu // 8))
+        lower["threads"] = settings.get("threads") or 0
+    else:
+        return None
+    return lower

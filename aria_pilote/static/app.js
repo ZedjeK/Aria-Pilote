@@ -285,35 +285,83 @@ function describeSettings(s) {
 }
 
 let optimizePlans = [];
+let optimizeResult = null;
+
+function renderPlans() {
+    $("#optimize-rows").replaceChildren(...optimizePlans.map((p, i) => {
+        // Cochée d'office si un changement est proposé ; cochable aussi pour vérifier les réglages actuels
+        const pick = el("input", { type: "checkbox", checked: p.changed });
+        pick.dataset.index = i;
+        const notes = p.notes.length ? el("div", { className: "muted small" }, p.notes.join(" ")) : "";
+        return el("tr", {},
+            el("td", {}, pick),
+            el("td", {}, el("strong", {}, p.name), notes),
+            el("td", {}, describeSettings(p.current)),
+            el("td", { className: p.changed ? "changed" : "" }, p.changed ? describeSettings(p.proposed) : "déjà optimal"),
+            el("td", {}, p.vram_estimate ? gio(p.vram_estimate) : "—"),
+            el("td", { className: "trial muted small" }, "—"));
+    }));
+}
+
+function selectProfile(id) {
+    // Trois choix : chacun montre ses conséquences et ce qu'il donne pour tes modèles
+    const profile = optimizeResult.profiles.find((p) => p.id === id);
+    optimizePlans = profile.plans.map((p) => ({ ...p, proposed: { ...p.proposed } }));
+    for (const card of $("#optimize-profiles").children) card.classList.toggle("selected", card.dataset.id === id);
+    renderPlans();
+}
+
+function renderVramTip(result) {
+    // Les autres applications qui occupent la carte graphique faussent le calcul et l'essai : on les nomme
+    const box = $("#optimize-tip");
+    if (result.others_used === null) {
+        box.hidden = true;
+        return;
+    }
+    const heavy = result.others_used > 1.5 * 1024 ** 3;
+    const apps = result.gpu_apps.length ? ` Applications détectées sur la carte graphique : ${result.gpu_apps.join(", ")}.` : "";
+    const again = el("button", { type: "button", className: "ghost" }, "↻ Recalculer");
+    again.addEventListener("click", () => $("#btn-optimize").click());
+    box.className = `optimize-tip small${heavy ? " heavy" : ""}`;
+    box.replaceChildren(
+        el("span", {}, `💡 Pour un résultat fiable, ferme d'abord les applications inutiles qui utilisent la carte graphique `
+            + "(jeux, ComfyUI, navigateur chargé, fonds d'écran animés…) : elles prennent de la VRAM et faussent le calcul "
+            + `comme l'essai. En ce moment, elles occupent environ ${gio(result.others_used)}.${apps} `),
+        again);
+    box.hidden = false;
+}
+
+function profileCard(profile) {
+    const big = profile.plans.filter((p) => p.vram_estimate && p.vram_estimate > 2 * 1024 ** 3);
+    const shown = big.length ? big : profile.plans;
+    const card = el("button", { type: "button", className: "profile-card" },
+        el("div", { className: "profile-title" }, profile.title),
+        el("div", { className: "small" }, profile.summary),
+        el("div", { className: "small ok-text" }, `＋ ${profile.pros}`),
+        el("div", { className: "small warn-text" }, `－ ${profile.cons}`),
+        el("div", { className: "profile-models small" },
+            shown.map((p) => `${p.name.split(/[ -]/)[0]} : ${describeSettings(p.proposed)}`).join(" · ")));
+    card.dataset.id = profile.id;
+    card.addEventListener("click", () => selectProfile(profile.id));
+    return card;
+}
 
 $("#btn-optimize").addEventListener("click", async () => {
     const button = $("#btn-optimize");
     button.disabled = true;
     $("#optimize-error").hidden = true;
     try {
-        const result = await api("/api/optimize", { method: "POST", body: JSON.stringify({ profile: $("#opt-profile").value }) });
-        optimizePlans = result.plans;
-        const used = result.hardware.gpus.reduce((sum, g) => sum + g.vram_used, 0);
+        const result = await api("/api/optimize", { method: "POST", body: "{}" });
+        optimizeResult = result;
         const intro = [result.budget === null ? "Pas de carte NVIDIA : réglages pour le processeur."
             : `VRAM disponible pour un modèle : ${gio(result.budget)}.`];
         if (result.loaded) intro.push(`Le modèle chargé (${result.loaded}) est compté comme libéré.`);
-        if (used > 3 * 1024 ** 3 && !result.loaded) {
-            intro.push(`⚠ D'autres applications occupent ${gio(used)} de VRAM : les réglages seront prudents. `
-                + "Relance l'optimisation quand elles sont fermées pour en profiter.");
-        }
+        intro.push("Choisis une option, vérifie-la par un essai réel si tu veux, puis applique.");
         $("#optimize-intro").textContent = intro.join(" ");
-        $("#optimize-rows").replaceChildren(...optimizePlans.map((p, i) => {
-            const pick = el("input", { type: "checkbox", checked: p.changed, disabled: !p.changed });
-            pick.dataset.index = i;
-            const notes = p.notes.length ? el("div", { className: "muted small" }, p.notes.join(" ")) : "";
-            return el("tr", {},
-                el("td", {}, pick),
-                el("td", {}, el("strong", {}, p.name), notes),
-                el("td", {}, describeSettings(p.current)),
-                el("td", { className: p.changed ? "changed" : "" }, p.changed ? describeSettings(p.proposed) : "déjà optimal"),
-                el("td", {}, p.vram_estimate ? gio(p.vram_estimate) : "—"));
-        }));
-        $("#optimize-dialog").showModal();
+        renderVramTip(result);
+        $("#optimize-profiles").replaceChildren(...result.profiles.map(profileCard));
+        selectProfile(result.default);
+        if (!$("#optimize-dialog").open) $("#optimize-dialog").showModal();
     } catch (err) {
         $("#hw-info").textContent = `Optimisation impossible : ${err.message}`;
     } finally {
@@ -321,7 +369,80 @@ $("#btn-optimize").addEventListener("click", async () => {
     }
 });
 
-$("#btn-optimize-close").addEventListener("click", () => $("#optimize-dialog").close());
+$("#btn-optimize-close").addEventListener("click", () => {
+    trialController?.abort();
+    $("#optimize-dialog").close();
+});
+
+// Essai réel : chaque modèle coché est chargé avec ses réglages proposés (palier inférieur si ça ne tient pas)
+let trialController = null;
+
+function trialCell(modelId) {
+    const index = optimizePlans.findIndex((p) => p.model_id === modelId);
+    return $("#optimize-rows").children[index]?.querySelector("td.trial");
+}
+
+$("#btn-optimize-test").addEventListener("click", async () => {
+    const picked = [...$("#optimize-rows").querySelectorAll("input:checked")].map((box) => optimizePlans[Number(box.dataset.index)]);
+    if (!picked.length) return;
+    $("#optimize-error").hidden = true;
+    for (const b of ["#btn-optimize-test", "#btn-optimize-apply", "#btn-optimize"]) $(b).disabled = true;
+    for (const card of $("#optimize-profiles").children) card.disabled = true;
+    $("#btn-optimize-stop").hidden = false;
+    for (const p of picked) trialCell(p.model_id).textContent = "en attente…";
+    trialController = new AbortController();
+    try {
+        const resp = await fetch("/api/optimize/test", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ items: picked.map((p) => ({ model_id: p.model_id, settings: p.proposed })) }),
+            signal: trialController.signal,
+        });
+        if (!resp.ok) {
+            const data = await resp.json().catch(() => ({}));
+            throw new Error(data.detail || `Erreur HTTP ${resp.status}`);
+        }
+        await readEvents(resp, (ev) => {
+            const cell = ev.model_id ? trialCell(ev.model_id) : null;
+            if (ev.type === "trial_start" || ev.type === "trial_step") {
+                cell.className = "trial small";
+                cell.textContent = `⏳ ${ev.message || "préparation…"}`;
+            } else if (ev.type === "trial_result" && ev.ok) {
+                const plan = optimizePlans.find((p) => p.model_id === ev.model_id);
+                plan.proposed = { ...plan.proposed, ...ev.settings };  // « Appliquer » prendra les réglages vérifiés
+                const speed = ev.tok_s ? ` · ${Math.round(ev.tok_s)} tok/s` : " · vitesse non mesurée";
+                const used = ev.vram_used ? `${gio(ev.vram_used)} utilisés` : "chargé";
+                const free = ev.vram_free !== null ? `, ${gio(ev.vram_free)} libres` : "";
+                cell.className = "trial ok small";
+                cell.textContent = `${ev.adjusted ? "↓ ajusté : " + describeSettings(ev.settings) + " · " : "✓ "}${used}${free}${speed}`;
+                const proposedCell = cell.previousElementSibling.previousElementSibling;
+                proposedCell.textContent = describeSettings(plan.proposed);
+            } else if (ev.type === "trial_result") {
+                cell.className = "trial error small";
+                cell.textContent = `✗ ${ev.message}`;
+                cell.closest("tr").querySelector("input").checked = false;
+            } else if (ev.type === "trial_done" && ev.restored) {
+                $("#optimize-intro").textContent += ` Essai terminé : ${ev.restored} est rechargé avec ses réglages d'origine.`;
+            }
+        });
+    } catch (err) {
+        if (err.name !== "AbortError") {
+            $("#optimize-error").textContent = err.message;
+            $("#optimize-error").hidden = false;
+        }
+        for (const cell of $("#optimize-rows").querySelectorAll("td.trial")) {
+            if (cell.textContent.startsWith("⏳") || cell.textContent === "en attente…") cell.textContent = "interrompu";
+        }
+    } finally {
+        trialController = null;
+        for (const b of ["#btn-optimize-test", "#btn-optimize-apply", "#btn-optimize"]) $(b).disabled = false;
+        for (const card of $("#optimize-profiles").children) card.disabled = false;
+        $("#btn-optimize-stop").hidden = true;
+        loadModels();
+    }
+});
+
+$("#btn-optimize-stop").addEventListener("click", () => trialController?.abort());
 
 $("#btn-optimize-apply").addEventListener("click", async () => {
     const items = [...$("#optimize-rows").querySelectorAll("input:checked")].map((box) => {
