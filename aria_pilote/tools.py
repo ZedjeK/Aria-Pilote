@@ -16,7 +16,7 @@ import tempfile
 from dataclasses import dataclass
 from typing import Awaitable, Callable
 
-from . import background, backups, conversations, jobs, skills, web, workspace
+from . import background, backups, checks, conversations, jobs, skills, web, workspace
 
 SKIP_DIRS = {".git", ".hg", ".svn", "node_modules", ".venv", "venv", "__pycache__", ".mypy_cache", ".idea"}
 MAX_FILE_BYTES = 5 * 1024 * 1024
@@ -235,7 +235,13 @@ async def run_write(prepared, cid):
 
     backup_id = await asyncio.to_thread(write)
     lines = len(prepared["content"].splitlines())
-    return _ok(f"Fichier enregistré : {prepared['rel']} ({lines} lignes).", backup_id=backup_id)
+    output = f"Fichier enregistré : {prepared['rel']} ({lines} lignes)."
+    # Vérification automatique de la syntaxe : informe le modèle, ne bloque rien
+    verdict = await asyncio.to_thread(checks.check, prepared["target"])
+    if verdict is None:
+        return _ok(output, backup_id=backup_id)
+    note, valid = verdict
+    return _ok(f"{output}\n{note}", backup_id=backup_id, syntax=valid)
 
 
 # --- commandes -------------------------------------------------------------------

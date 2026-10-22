@@ -138,7 +138,10 @@ def stream(client, task, run, body, deadline, allow_web):
                 names[ev["call_id"]] = len(run["calls"])
                 run["calls"].append({"name": ev["name"], "args": ev["args"], "status": "running"})
             elif ev["type"] == "tool_result" and ev["call_id"] in names:
-                run["calls"][names[ev["call_id"]]]["status"] = ev["status"]
+                call = run["calls"][names[ev["call_id"]]]
+                call["status"] = ev["status"]
+                if ev.get("syntax") is not None:
+                    call["syntax"] = ev["syntax"]  # vérification automatique après écriture
             elif ev["type"] == "sub_tool_call":
                 run["sub_calls"].append(ev["name"])
             elif ev["type"] == "approval":

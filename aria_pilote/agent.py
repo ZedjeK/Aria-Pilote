@@ -283,6 +283,8 @@ async def _execute(cid, root, call, run_ctx):
         message["backup_id"] = result["backup_id"]
     if result.get("subagent"):
         message["subagent"] = result["subagent"]  # étapes du sous-agent, pour l'affichage
+    if result.get("syntax") is not None:
+        message["syntax"] = result["syntax"]  # vérification automatique après écriture
     conversations.append_message(cid, message)
     yield chat.event({
         "type": "tool_result",
@@ -290,6 +292,7 @@ async def _execute(cid, root, call, run_ctx):
         "status": result["status"],
         "output": result["output"],
         "backup_id": result.get("backup_id"),
+        "syntax": result.get("syntax"),
         "todo": result.get("todo"),
     })
 
