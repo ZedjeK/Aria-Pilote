@@ -25,6 +25,8 @@ DEFAULTS = {
     "searxng_url": "http://127.0.0.1:8888",
     # Vérification de la syntaxe des fichiers que l'agent écrit (Python, JSON, YAML, PowerShell…)
     "auto_check": True,
+    # Sauvegardes de l'agent (pour « Annuler ») gardées ce nombre de jours, puis envoyées à la corbeille (0 : toujours)
+    "backup_retention_days": 30,
     # Règles « toujours autoriser » des commandes de l'agent, par dossier de projet (voir permissions.py)
     "command_rules": {},
     # Réglages de chargement par défaut ; threads = 0 laisse llama.cpp choisir.
@@ -87,22 +89,44 @@ def update(patch):
         return copy.deepcopy(_data)
 
 
-def model_settings(path):
+# Les réglages par modèle sont indexés par la clé du modèle : son chemin relatif au dossier de modèles
+# (voir models.py), qui ne change pas quand le dossier de l'appli change de nom à chaque version.
+
+def model_settings(key):
     cfg = get()
     settings = dict(cfg["load_defaults"])
-    settings.update(cfg["model_overrides"].get(str(path), {}))
+    settings.update(cfg["model_overrides"].get(key, {}))
     return settings
 
 
-def forget_model(path):
+def forget_model(key):
     """Oublie les réglages mémorisés d'un modèle supprimé."""
     global _data
     get()
     with _lock:
-        if _data["model_overrides"].pop(str(path), None) is not None:
+        if _data["model_overrides"].pop(key, None) is not None:
             _save_locked()
 
 
-def save_model_settings(path, settings):
+def save_model_settings(key, settings):
     clean = {k: v for k, v in settings.items() if k in LOAD_FIELDS}
-    update({"model_overrides": {str(path): clean}})
+    update({"model_overrides": {key: clean}})
+
+
+def migrate_model_keys(keys):
+    """Anciennes clés (chemin complet du GGUF, avant la 0.9.1) → clé relative du modèle qui y correspond."""
+    global _data
+    get()
+    with _lock:
+        overrides = _data["model_overrides"]
+        moved = False
+        for old in list(overrides):
+            if not Path(old).is_absolute():
+                continue
+            tail = old.replace("\\", "/").lower()
+            match = next((k for k in keys if tail.endswith("/" + k.split(":", 1)[-1].lower())), None)
+            if match and match not in overrides:
+                overrides[match] = overrides.pop(old)
+                moved = True
+        if moved:
+            _save_locked()

@@ -20,6 +20,11 @@ STATIC_DIR = Path(__file__).parent / "static"
 
 @asynccontextmanager
 async def lifespan(app):
+    # Ménage des sauvegardes de l'agent : conversations disparues et sauvegardes trop anciennes → corbeille
+    try:
+        await asyncio.to_thread(backups.cleanup, conversations.ids(), config.get().get("backup_retention_days", 30))
+    except OSError as exc:
+        print(f"Ménage des sauvegardes impossible : {exc}")
     yield
     await asyncio.to_thread(background.stop_all)  # le job object les tuerait de toute façon : ici, proprement
     await manager.shutdown()
@@ -181,7 +186,7 @@ async def load(req: LoadRequest):
     model = models.get(req.model_id)
     if model is None:
         raise HTTPException(404, "Modèle introuvable, relance un scan.")
-    settings = config.model_settings(model.path)
+    settings = config.model_settings(model.key)
     for field in config.LOAD_FIELDS:
         value = getattr(req, field)
         if value is not None:
@@ -189,7 +194,7 @@ async def load(req: LoadRequest):
     if settings["engine"] != "auto" and settings["engine"] not in engines.ENGINES:
         raise HTTPException(400, f"Moteur inconnu : {settings['engine']}")
     if req.remember:
-        config.save_model_settings(model.path, settings)
+        config.save_model_settings(model.key, settings)
     auto = settings["engine"] == "auto"
     engine = model.engine_auto if auto else settings["engine"]
     try:
@@ -307,6 +312,10 @@ def delete_conversation(cid: str):
     _conversation_or_404(cid)
     background.stop_conversation(cid)
     conversations.delete(cid)
+    try:
+        backups.delete_conversation(cid)  # ses sauvegardes partent à la corbeille avec elle
+    except OSError:
+        pass  # le ménage du prochain démarrage s'en chargera
     return {"ok": True}
 
 

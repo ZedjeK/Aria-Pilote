@@ -87,7 +87,9 @@ def restore(cid, backup_id):
     """Remet le fichier dans l'état d'avant la modification (le supprime s'il n'existait pas)."""
     folder = _dir(cid, backup_id)
     if not (folder / "meta.json").exists():
-        raise BackupError("Sauvegarde introuvable.")
+        days = config.get().get("backup_retention_days")
+        raise BackupError("Sauvegarde introuvable : elle a expiré" + (f" (conservation : {days} jours)" if days else "")
+                          + " ou a été supprimée.")
     meta = _read_meta(folder)
     target = Path(meta["path"])
     if meta["existed"]:
@@ -97,6 +99,39 @@ def restore(cid, backup_id):
     meta["undone"] = True
     _write_meta(folder, meta)
     return meta
+
+
+# --- Ménage ------------------------------------------------------------------------
+
+def delete_conversation(cid):
+    """Conversation supprimée : ses sauvegardes partent à la corbeille avec elle."""
+    folder = BACKUP_DIR / cid
+    if ID_RE.match(cid) and folder.is_dir():
+        trash.to_recycle_bin([folder])
+
+
+def cleanup(existing_cids, retention_days):
+    """Au démarrage : les sauvegardes de conversations disparues, et celles de plus de `retention_days`
+    jours (0 : on garde tout), partent à la corbeille en un seul lot. Renvoie le nombre de dossiers envoyés."""
+    if not BACKUP_DIR.is_dir():
+        return 0
+    limit = time.time() - retention_days * 86400 if retention_days else None
+    doomed = []
+    for conv_dir in BACKUP_DIR.iterdir():
+        if not conv_dir.is_dir():
+            continue
+        if conv_dir.name not in existing_cids:
+            doomed.append(conv_dir)
+            continue
+        for folder in conv_dir.iterdir() if limit else []:
+            try:
+                if (folder / "meta.json").stat().st_mtime < limit:
+                    doomed.append(folder)
+            except OSError:
+                continue
+    if doomed:
+        trash.to_recycle_bin(doomed)
+    return len(doomed)
 
 
 # --- Annulation d'une tâche entière --------------------------------------------------

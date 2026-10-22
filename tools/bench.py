@@ -52,8 +52,7 @@ def start_app(client):
     if alive(client):
         return None
     flags = subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
-    # -X utf8 : sortie redirigée, le « → » du message de démarrage planterait en cp1252
-    proc = subprocess.Popen([sys.executable, "-X", "utf8", "-m", "aria_pilote"], cwd=ROOT, creationflags=flags,
+    proc = subprocess.Popen([sys.executable, "-m", "aria_pilote"], cwd=ROOT, creationflags=flags,
                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     for _ in range(60):
         if alive(client):
