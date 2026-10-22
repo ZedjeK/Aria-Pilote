@@ -64,6 +64,10 @@ def get(cid):
     return json.loads(path.read_text(encoding="utf-8"))
 
 
+def ids():
+    return {p.stem for p in DATA_DIR.glob("*.json")} if DATA_DIR.is_dir() else set()
+
+
 def list_all():
     if not DATA_DIR.is_dir():
         return []

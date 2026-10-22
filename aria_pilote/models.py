@@ -19,6 +19,7 @@ SHARD_RE = re.compile(r"-(\d{5})-of-(\d{5})\.gguf$", re.IGNORECASE)
 @dataclass
 class ModelInfo:
     id: str
+    key: str  # chemin relatif au dossier de modèles : stable d'une version d'Aria à l'autre
     path: str
     file: str
     publisher: str
@@ -40,8 +41,8 @@ _meta_cache = {}
 _models = {}
 
 
-def _model_id(path):
-    return hashlib.sha1(str(path).lower().encode("utf-8")).hexdigest()[:12]
+def _model_id(key):
+    return hashlib.sha1(key.lower().encode("utf-8")).hexdigest()[:12]
 
 
 def _read_meta(path):
@@ -81,7 +82,13 @@ def _shard_size(path):
     return sum(p.stat().st_size for p in path.parent.glob(f"{prefix}-*-of-{match.group(2)}.gguf"))
 
 
-def _describe(path, root, meta, mmproj):
+def _display_name(meta_name, path):
+    """Nom de l'en-tête GGUF, ou celui du fichier quand l'en-tête est trop pauvre (Bonsai 2 annonce « Hf »)."""
+    name = (meta_name or "").strip()
+    return name if len(name) >= 4 else path.stem
+
+
+def _describe(path, root, meta, mmproj, key):
     rel = path.relative_to(root).parts
     publisher, repo = (rel[0], rel[1]) if len(rel) >= 3 else ("local", path.parent.name)
     match = QUANT_RE.search(path.name)
@@ -90,12 +97,13 @@ def _describe(path, root, meta, mmproj):
     meta = meta if isinstance(meta, dict) else {}
     arch = meta.get("general.architecture")
     return ModelInfo(
-        id=_model_id(path),
+        id=_model_id(key),
+        key=key,
         path=str(path),
         file=path.name,
         publisher=publisher,
         repo=repo,
-        name=meta.get("general.name") or path.stem,
+        name=_display_name(meta.get("general.name"), path),
         size_bytes=_shard_size(path),
         quant=quant,
         arch=arch,
@@ -112,8 +120,8 @@ def scan(force=False):
     global _models
     if _models and not force:
         return list(_models.values())
-    found = {}
-    for root in config.get()["model_dirs"]:
+    found, keys = {}, set()
+    for index, root in enumerate(config.get()["model_dirs"]):
         root = config.path(root)
         if not root.is_dir():
             continue
@@ -130,8 +138,13 @@ def scan(force=False):
             for p in paths:
                 if p in projectors:
                     continue
-                info = _describe(p, root, metas[p], mmproj)
+                key = p.relative_to(root).as_posix()
+                if key.lower() in keys:  # même chemin relatif dans deux dossiers de modèles
+                    key = f"{index}:{key}"
+                keys.add(key.lower())
+                info = _describe(p, root, metas[p], mmproj, key)
                 found[info.id] = info
+    config.migrate_model_keys([m.key for m in found.values()])
     _models = dict(sorted(found.items(), key=lambda kv: (kv[1].publisher.lower(), kv[1].name.lower())))
     return list(_models.values())
 
@@ -170,12 +183,12 @@ def delete(model_id):
             folder.rmdir()
         except OSError:
             break
-    config.forget_model(model.path)
+    config.forget_model(model.key)
     scan(force=True)
     return [str(f) for f in files]
 
 
 def to_dict(model):
     data = asdict(model)
-    data["settings"] = config.model_settings(model.path)
+    data["settings"] = config.model_settings(model.key)
     return data

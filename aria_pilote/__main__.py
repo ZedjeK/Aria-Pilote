@@ -11,6 +11,11 @@ def main():
         log_path = config.ROOT / "data" / "aria_pilote.log"
         log_path.parent.mkdir(parents=True, exist_ok=True)
         sys.stdout = sys.stderr = open(log_path, "w", encoding="utf-8", buffering=1)
+    else:
+        # Sortie redirigée (run.ps1 > journal.txt) : en cp1252, le « → » ci-dessous ferait planter le démarrage
+        for stream in (sys.stdout, sys.stderr):
+            if hasattr(stream, "reconfigure"):
+                stream.reconfigure(encoding="utf-8", errors="replace")
 
     from . import main as app_module
 

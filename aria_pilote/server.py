@@ -162,7 +162,7 @@ class ServerManager:
                 if code is not None:
                     if self._should_fallback():
                         self._log("[aria] type de tenseur inconnu pour llama.cpp officiel → bascule sur PrismML")
-                        config.save_model_settings(self.model.path, {"engine": "prism"})
+                        config.save_model_settings(self.model.key, {"engine": "prism"})
                         self._spawn("prism")
                         continue
                     was_ready = self.state == "ready"

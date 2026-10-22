@@ -74,8 +74,8 @@ Chaque tâche part d'une copie neuve de ses fichiers dans un dossier temporaire,
 ## Bon à savoir
 
 - **Quitter** : utilise le bouton **⏻ Quitter**. Fermer l'onglet ne suffit pas : Aria reste en arrière-plan pour garder ton modèle chargé.
-- **Mises à jour** : une nouvelle version construite à côté de l'ancienne récupère tes modèles, tes conversations et ta config, puis supprime l'ancienne. Ces trois éléments ne sont jamais écrasés, et la construction s'arrête si Aria est encore ouverte.
-- **Où sont tes données** : `models\` pour les modèles, `data\` pour les conversations, presets, journaux et sauvegardes de l'agent, `config.json` pour les réglages. Tout reste dans le dossier de l'appli.
+- **Mises à jour** : une nouvelle version construite à côté de l'ancienne récupère tes modèles, tes conversations et ta config, puis supprime l'ancienne. Ces trois éléments ne sont jamais écrasés, et la construction s'arrête si Aria est encore ouverte. Les réglages mémorisés par modèle suivent aussi : ils sont rangés par chemin relatif au dossier `models\`.
+- **Où sont tes données** : `models\` pour les modèles, `data\` pour les conversations, presets, journaux et sauvegardes de l'agent, `config.json` pour les réglages. Tout reste dans le dossier de l'appli. Les sauvegardes de l'agent sont gardées 30 jours (`backup_retention_days` dans `config.json`, 0 pour tout garder), puis envoyées à la corbeille au démarrage, comme celles d'une conversation supprimée.
 - **La liste noire est un filet, pas un mur** : PowerShell offre mille détours. La vraie protection, c'est ta validation de chaque commande.
 - **Carte graphique partagée** : si un autre logiciel occupe la VRAM (génération d'images, jeu…), le modèle déborde en RAM et devient beaucoup plus lent.
 - **Mémoire de projet** : un `ARIA.md` dans le dossier de travail (conventions, commandes de test, pièges) est lu au début de chaque tâche.
