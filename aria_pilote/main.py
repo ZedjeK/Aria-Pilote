@@ -1,5 +1,6 @@
 """Application web d'Aria Pilote : API REST + interface statique."""
 
+import asyncio
 import re
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -10,7 +11,7 @@ from fastapi.responses import PlainTextResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from . import (VERSION, agent, backups, chat, config, conversations, downloads, engines, hooks, hub, models,
+from . import (VERSION, agent, background, backups, chat, config, conversations, downloads, engines, hooks, hub, models,
                presets, searxng, skills, subagents, workspace)
 from .server import EngineMissing, manager
 
@@ -20,6 +21,7 @@ STATIC_DIR = Path(__file__).parent / "static"
 @asynccontextmanager
 async def lifespan(app):
     yield
+    await asyncio.to_thread(background.stop_all)  # le job object les tuerait de toute façon : ici, proprement
     await manager.shutdown()
     await searxng.manager.stop()
 
@@ -302,6 +304,7 @@ def patch_conversation(cid: str, patch: ConversationPatch):
 @app.delete("/api/conversations/{cid}")
 def delete_conversation(cid: str):
     _conversation_or_404(cid)
+    background.stop_conversation(cid)
     conversations.delete(cid)
     return {"ok": True}
 
@@ -454,6 +457,28 @@ def _task_or_409(req_cid, task_id):
         raise HTTPException(409, "L'agent travaille encore dans cette conversation : attends la fin ou arrête-le.")
     if not backups.ID_RE.match(task_id):
         raise HTTPException(400, "Identifiant de tâche invalide.")
+
+
+class BackgroundStop(BaseModel):
+    conversation_id: str
+    id: str
+
+
+@app.get("/api/agent/background")
+def list_background(conversation_id: str):
+    """Commandes de l'agent qui tournent encore en arrière-plan (barre Agent)."""
+    _conversation_or_404(conversation_id)
+    return background.running(conversation_id)
+
+
+@app.post("/api/agent/background/stop")
+def stop_background(req: BackgroundStop):
+    _conversation_or_404(req.conversation_id)
+    try:
+        background.stop(background.get(req.conversation_id, req.id))
+    except background.BackgroundError as exc:
+        raise HTTPException(404, str(exc))
+    return background.running(req.conversation_id)
 
 
 @app.get("/api/agent/undo-task")

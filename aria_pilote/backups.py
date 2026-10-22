@@ -41,6 +41,10 @@ def is_running(cid):
     return cid in _running
 
 
+def running_task(cid):
+    return _running.get(cid)
+
+
 def _dir(cid, backup_id):
     if not ID_RE.match(cid) or not ID_RE.match(backup_id):
         raise BackupError("Identifiant de sauvegarde invalide.")

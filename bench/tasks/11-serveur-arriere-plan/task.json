@@ -1,0 +1,4 @@
+{
+    "prompt": "Lance le serveur du projet (python serveur.py), récupère ce que renvoie son adresse /statut et donne-moi le code qu'elle contient. Arrête ensuite le serveur.",
+    "measures": "commande en arrière-plan : lancer, interroger, arrêter"
+}
