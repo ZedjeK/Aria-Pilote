@@ -1,0 +1,4 @@
+{
+    "prompt": "Lance les tests du projet (python -m unittest) et dis-moi précisément lesquels échouent. Ne corrige rien.",
+    "measures": "commandes et lecture de leur sortie"
+}

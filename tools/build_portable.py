@@ -104,7 +104,7 @@ def install_python(dest):
 def copy_app(dest):
     step("Code de l'appli")
     shutil.copytree(ROOT / "aria_pilote", dest / "aria_pilote", ignore=shutil.ignore_patterns("__pycache__", "*.pyc"))
-    shutil.copytree(ROOT / "tools", dest / "tools", ignore=shutil.ignore_patterns("__pycache__", "*.pyc", "launcher"))
+    shutil.copytree(ROOT / "tools", dest / "tools", ignore=shutil.ignore_patterns("__pycache__", "*.pyc", "launcher", "bench.py"))
     shutil.copy2(ROOT / "requirements.txt", dest / "requirements.txt")
 
 
