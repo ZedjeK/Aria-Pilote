@@ -1,0 +1,1 @@
+Supervision : serveur.py expose l'état sur /statut (port dans serveur.json).

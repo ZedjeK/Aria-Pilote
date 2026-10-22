@@ -188,6 +188,7 @@ async function openConversation(id) {
     renderMessages();
     loadConversations();
     refreshHooksBanner();
+    refreshBackground();
 }
 
 // --- Compétences -------------------------------------------------------------------
@@ -306,6 +307,29 @@ function hooksTrustNode(ev) {
     return box;
 }
 
+async function refreshBackground() {
+    // Commandes de l'agent qui tournent encore (gardées à ta demande) : chacune avec son bouton Arrêter
+    const box = $("#bg-commands");
+    const list = chat.current ? await api(`/api/agent/background?conversation_id=${chat.current.id}`) : [];
+    box.hidden = !list.length;
+    box.replaceChildren(...list.map((c) => {
+        const stop = el("button", { className: "ghost danger" }, "Arrêter");
+        stop.addEventListener("click", async () => {
+            stop.disabled = true;
+            try {
+                await api("/api/agent/background/stop", {
+                    method: "POST", body: JSON.stringify({ conversation_id: chat.current.id, id: c.id }),
+                });
+            } catch (err) {
+                showChatError(err.message);
+            }
+            refreshBackground();
+        });
+        return el("div", { className: "bg-command" },
+            el("span", {}, `⚙ ${c.id} · `), el("code", {}, c.command.slice(0, 80)), el("span", { className: "muted small" }, ` · ${c.state}`), stop);
+    }));
+}
+
 async function refreshHooksBanner() {
     // Bandeau permanent tant que les hooks du projet ne sont pas approuvés
     const banner = $("#hooks-banner");
@@ -401,7 +425,7 @@ const TOOL_STATUS = {
 };
 
 function shortArgs(args) {
-    const main = args?.path ?? args?.pattern ?? args?.command ?? args?.query ?? args?.url ?? args?.name ?? "";
+    const main = args?.path ?? args?.pattern ?? args?.command ?? args?.query ?? args?.url ?? args?.name ?? args?.id ?? "";
     const text = String(main);
     return text.length > 70 ? text.slice(0, 69) + "…" : text;
 }
@@ -500,7 +524,8 @@ function toolNode(m, pendingPlan = false, activeQuestion = false) {
     if (m.name === "delegate") return subagentNode(m);
     const node = el("details", { className: `tool ${m.status}` });
     node.dataset.callId = m.tool_call_id || "";
-    node.append(el("summary", {}, `🔧 ${m.name}  ${shortArgs(m.args)} · ${TOOL_STATUS[m.status] || m.status}`));
+    const bg = m.args?.background ? (m.args.keep ? "⚙ arrière-plan, gardée · " : "⚙ arrière-plan · ") : "";
+    node.append(el("summary", {}, `🔧 ${m.name}  ${shortArgs(m.args)} · ${bg}${TOOL_STATUS[m.status] || m.status}`));
     node.append(el("pre", {}, JSON.stringify(m.args, null, 2)));
     if (m.content) node.append(el("pre", {}, m.content));
     if (m.backup_id) {

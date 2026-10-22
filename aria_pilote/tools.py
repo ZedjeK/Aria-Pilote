@@ -16,7 +16,7 @@ import tempfile
 from dataclasses import dataclass
 from typing import Awaitable, Callable
 
-from . import backups, conversations, jobs, skills, web, workspace
+from . import background, backups, conversations, jobs, skills, web, workspace
 
 SKIP_DIRS = {".git", ".hg", ".svn", "node_modules", ".venv", "venv", "__pycache__", ".mypy_cache", ".idea"}
 MAX_FILE_BYTES = 5 * 1024 * 1024
@@ -279,14 +279,14 @@ def prepare_run_command(root, args):
     if reason:
         raise ToolError(f"Commande refusée d'office ({reason}). Elle est sur la liste noire d'Aria Pilote : "
                         "propose une autre approche, ou demande à l'utilisateur de la lancer lui-même.")
-    return {"command": command, "cwd": str(workspace.validate_root(root)), "preview": command}
-
-
-def _kill_tree(pid):
-    subprocess.run(
-        ["taskkill", "/T", "/F", "/PID", str(pid)],
-        capture_output=True, creationflags=subprocess.CREATE_NO_WINDOW,
-    )
+    background_mode = bool(args.get("background"))
+    keep = background_mode and bool(args.get("keep"))
+    preview = command
+    if background_mode:
+        preview += "\n\n# ⚙ en arrière-plan" + (" (gardée après la tâche, à ta demande)" if keep else
+                                               " (arrêtée à la fin de la tâche)")
+    return {"command": command, "cwd": str(workspace.validate_root(root)), "preview": preview,
+            "background": background_mode, "keep": keep}
 
 
 # PowerShell 7 si présent (gère && et ||), sinon Windows PowerShell 5.1
@@ -327,10 +327,13 @@ async def run_command(prepared, cid):
     # UTF-8 avec BOM : seul encodage que les deux versions de PowerShell lisent sans abîmer les accents
     with os.fdopen(fd, "w", encoding="utf-8-sig") as f:
         f.write(script)
+    if prepared.get("background"):
+        return await _run_background(prepared, cid, script_path)
     try:
         proc = subprocess.Popen(
             _powershell_args(script_path),
             cwd=prepared["cwd"],
+            env={**os.environ, **jobs.COMMAND_ENV},
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
             stdin=subprocess.DEVNULL,
@@ -340,13 +343,13 @@ async def run_command(prepared, cid):
         try:
             stdout, _ = await asyncio.to_thread(proc.communicate, timeout=COMMAND_TIMEOUT_S)
         except subprocess.TimeoutExpired:
-            _kill_tree(proc.pid)
+            jobs.kill_tree(proc.pid)
             stdout, _ = await asyncio.to_thread(proc.communicate)
             text = stdout.decode("utf-8", errors="replace")
             return {"status": "error", "output": _truncate(f"Délai de {COMMAND_TIMEOUT_S} s dépassé : commande arrêtée.\n{text}")}
         except asyncio.CancelledError:
             # Bouton Stop : on ne laisse pas tourner la commande en arrière-plan
-            _kill_tree(proc.pid)
+            jobs.kill_tree(proc.pid)
             raise
         text = stdout.decode("utf-8", errors="replace")
         status = "ok" if proc.returncode == 0 else "error"
@@ -356,6 +359,88 @@ async def run_command(prepared, cid):
             os.unlink(script_path)
         except OSError:
             pass
+
+
+# --- commandes en arrière-plan -----------------------------------------------------
+
+def _unlink_quietly(path):
+    try:
+        os.unlink(path)
+    except OSError:
+        pass
+
+
+def _bg_report(cmd, fresh, lost=0, note=""):
+    lines = [f"{cmd.id} : {cmd.state()}."]
+    if note:
+        lines.append(note)
+    if lost:
+        lines.append(f"({lost} caractères plus anciens n'ont pas été gardés.)")
+    lines.append(fresh.rstrip() or "(aucune nouvelle sortie)")
+    return _truncate("\n".join(lines))
+
+
+async def _run_background(prepared, cid, script_path):
+    try:
+        cmd = background.start(cid, backups.running_task(cid), prepared["command"], _powershell_args(script_path),
+                               prepared["cwd"], keep=prepared["keep"], cleanup=lambda: _unlink_quietly(script_path))
+    except background.BackgroundError as exc:
+        _unlink_quietly(script_path)
+        raise ToolError(str(exc))
+    # Quelques secondes pour attraper un plantage immédiat (port déjà pris, fichier introuvable…)
+    await asyncio.to_thread(background.wait_exit, cmd, background.START_WAIT_S)
+    fresh, _, lost = background.read(cmd)
+    if cmd.running:
+        note = (f"Lancée en arrière-plan : lis sa sortie avec command_output (id « {cmd.id} », wait_for pour attendre "
+                "un message précis) et arrête-la avec stop_command quand tu n'en as plus besoin.")
+        return {"status": "ok", "output": _bg_report(cmd, fresh, lost, note), "background_id": cmd.id}
+    return {"status": "ok" if cmd.returncode == 0 else "error", "output": _bg_report(cmd, fresh, lost),
+            "background_id": cmd.id}
+
+
+def prepare_command_output(root, args):
+    command_id = str(args.get("id") or "").strip()
+    if not command_id:
+        raise ToolError("Le paramètre « id » est obligatoire (ex. bg1).")
+    wait_for = args.get("wait_for")
+    wait_for = wait_for.strip() if isinstance(wait_for, str) and wait_for.strip() else None
+    try:
+        timeout = float(args.get("timeout", 15 if wait_for else 0))
+    except (TypeError, ValueError):
+        raise ToolError("« timeout » doit être un nombre de secondes.")
+    return {"id": command_id, "wait_for": wait_for, "timeout": timeout, "preview": command_id}
+
+
+async def run_command_output(prepared, cid):
+    try:
+        cmd = background.get(cid, prepared["id"])
+    except background.BackgroundError as exc:
+        raise ToolError(str(exc))
+    fresh, found, lost = await asyncio.to_thread(background.read, cmd, prepared["wait_for"], prepared["timeout"])
+    note = ""
+    if prepared["wait_for"] and not found:
+        waited = min(prepared["timeout"], background.MAX_WAIT_S)
+        note = f"« {prepared['wait_for']} » n'est pas apparu" + ("." if not cmd.running else f" en {waited:.0f} s.")
+    return {"status": "ok", "output": _bg_report(cmd, fresh, lost, note)}
+
+
+def prepare_stop_command(root, args):
+    command_id = str(args.get("id") or "").strip()
+    if not command_id:
+        raise ToolError("Le paramètre « id » est obligatoire (ex. bg1).")
+    return {"id": command_id, "preview": command_id}
+
+
+async def run_stop_command(prepared, cid):
+    try:
+        cmd = background.get(cid, prepared["id"])
+    except background.BackgroundError as exc:
+        raise ToolError(str(exc))
+    was_running = cmd.running
+    await asyncio.to_thread(background.stop, cmd)
+    fresh, _, lost = background.read(cmd)
+    note = "Arrêtée." if was_running else "Elle était déjà terminée."
+    return {"status": "ok", "output": _bg_report(cmd, fresh, lost, note)}
 
 
 # --- plan de l'agent ----------------------------------------------------------------
@@ -495,9 +580,35 @@ TOOLS = {t.name: t for t in [
     ),
     Tool(
         "run_command", "command",
-        f"Exécute une commande {POWERSHELL_NAME} dans le dossier de travail (arrêtée après {COMMAND_TIMEOUT_S} s).",
-        _schema({"command": {"type": "string"}}, ["command"]),
+        f"Exécute une commande {POWERSHELL_NAME} dans le dossier de travail (arrêtée après {COMMAND_TIMEOUT_S} s). "
+        "Pour un serveur ou une commande qui ne s'arrête pas d'elle-même, mets background à true.",
+        _schema({
+            "command": {"type": "string"},
+            "background": {"type": "boolean", "default": False,
+                           "description": "Lance en arrière-plan et rend la main tout de suite (serveur, watcher, "
+                                          "long build). Renvoie un id pour command_output et stop_command."},
+            "keep": {"type": "boolean", "default": False,
+                     "description": "Garder la commande après la fin de la tâche : seulement si l'utilisateur "
+                                    "l'a demandé (ex. « laisse le serveur tourner »)."},
+        }, ["command"]),
         prepare_run_command, run_command,
+    ),
+    Tool(
+        "command_output", "state",
+        "Lit la sortie apparue depuis la dernière lecture d'une commande en arrière-plan, et son état. "
+        "wait_for attend qu'un texte apparaisse (ex. « Serveur prêt »), timeout secondes au plus (30 max).",
+        _schema({
+            "id": {"type": "string", "description": "Id de la commande (ex. bg1)."},
+            "wait_for": {"type": "string", "description": "Texte à attendre dans la sortie (facultatif)."},
+            "timeout": {"type": "number", "description": "Attente maximale en secondes (15 par défaut avec wait_for)."},
+        }, ["id"]),
+        prepare_command_output, run_command_output,
+    ),
+    Tool(
+        "stop_command", "state",
+        "Arrête une commande lancée en arrière-plan (et tous ses processus enfants).",
+        _schema({"id": {"type": "string", "description": "Id de la commande (ex. bg1)."}}, ["id"]),
+        prepare_stop_command, run_stop_command,
     ),
     Tool(
         "update_todo", "state",

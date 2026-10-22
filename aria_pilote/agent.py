@@ -1,11 +1,12 @@
 """Boucle d'agent : le modèle appelle des outils, Aria Pilote les exécute (avec ton accord si besoin)."""
 
+import asyncio
 import json
 from pathlib import Path
 
 import httpx
 
-from . import backups, chat, context, conversations, hooks, skills, subagents, toolrun, tools, workspace
+from . import background, backups, chat, context, conversations, hooks, skills, subagents, toolrun, tools, workspace
 
 MAX_TOOL_CALLS = 25
 # Une étape d'agent qui réfléchit puis écrit un fichier entier a besoin de place
@@ -23,7 +24,9 @@ Méthode :
 {todo_rule}
 - Explore avant d'agir (list_dir, find_files, grep), lis un fichier avant de le modifier.
 - Préfère edit_file pour une modification ciblée, write_file pour créer un fichier.
-- run_command exécute du PowerShell : une commande à la fois, sans interaction.
+- run_command exécute du PowerShell : une commande à la fois, sans interaction. Pour un serveur ou une
+  commande qui ne s'arrête pas seule, mets background à true, attends qu'elle soit prête avec command_output
+  (wait_for), puis arrête-la avec stop_command une fois ton test fini.
 - web_search et web_fetch servent aux infos récentes et à la documentation : cite tes sources.
   Ne mets jamais le contenu des fichiers de l'utilisateur dans une recherche ou une adresse web.
 - Chaque modification, commande et accès web est validé par l'utilisateur ; s'il refuse, propose autre chose ou demande-lui.
@@ -82,6 +85,8 @@ QUESTION_UNANSWERED = "L'utilisateur n'a pas répondu à cette question."
 QUESTION_DECIDE = "L'utilisateur te laisse décider : choisis l'option la plus raisonnable et dis-lui ce que tu as choisi."
 QUESTION_SKIPPED = "Non exécuté : attends d'abord la réponse de l'utilisateur à ta question."
 
+# En mode Plan, ni liste d'étapes (elle sert à l'exécution) ni commandes en arrière-plan (rien n'est lancé)
+PLAN_EXCLUDED = {"update_todo", "command_output", "stop_command"}
 # En mode Plan, seuls les outils qui ne modifient rien restent disponibles
 READ_ONLY_KINDS = {"read", "state", "web"}
 # Au 3e appel identique (même outil, mêmes arguments), l'agent tourne en rond
@@ -220,6 +225,13 @@ async def _delegate(cid, root, call_id, args, run_ctx, out):
                      "subagent": {"name": agent.name, "steps": sub["steps"]}}
 
 
+def _bg_running(cid, args):
+    try:
+        return background.get(cid, str(args.get("id", ""))).running
+    except background.BackgroundError:
+        return False
+
+
 async def _execute(cid, root, call, run_ctx):
     """Exécute un appel d'outil ; émet tool_call, éventuellement approval, puis tool_result."""
     name = call["function"]["name"]
@@ -229,8 +241,10 @@ async def _execute(cid, root, call, run_ctx):
 
     # Détection des boucles : un appel identique répété n'est plus exécuté
     signature = f"{name}:{json.dumps(args, sort_keys=True, ensure_ascii=False)}"
-    run_ctx["seen"][signature] = run_ctx["seen"].get(signature, 0) + 1
-    if error is None and run_ctx["seen"][signature] >= LOOP_LIMIT:
+    # Relire la sortie d'une commande qui tourne encore n'est pas tourner en rond : elle évolue
+    if not (name == "command_output" and _bg_running(cid, args)):
+        run_ctx["seen"][signature] = run_ctx["seen"].get(signature, 0) + 1
+    if error is None and run_ctx["seen"].get(signature, 0) >= LOOP_LIMIT:
         run_ctx["stuck"] = run_ctx["seen"][signature] > LOOP_LIMIT
         holder["result"] = {"status": "error", "output": (
             f"Appel identique déjà fait {run_ctx['seen'][signature] - 1} fois ({name}) : il n'est pas relancé. "
@@ -292,6 +306,8 @@ async def run(conv, preset, model_name):
             yield ev
     finally:
         backups.set_running(conv["id"], None)
+        # Fin de tâche, Stop ou question posée : ses commandes en arrière-plan s'arrêtent (sauf « keep »)
+        await asyncio.to_thread(background.stop_task, conv["id"], task_id)
 
 
 async def _run(conv, preset, model_name, task_id):
@@ -324,7 +340,7 @@ async def _run(conv, preset, model_name, task_id):
         "thinking_budget": preset.get("thinking_budget") or AGENT_THINKING_BUDGET,
     }
     allowed = [n for n, t in tools.TOOLS.items()
-               if t.kind in READ_ONLY_KINDS and n != "update_todo"] if plan_mode else None
+               if t.kind in READ_ONLY_KINDS and n not in PLAN_EXCLUDED] if plan_mode else None
     schemas = [s for s in tools.SCHEMAS if allowed is None or s["function"]["name"] in allowed]
     if subagents.discover(root):
         schemas.append(subagents.DELEGATE_SCHEMA)

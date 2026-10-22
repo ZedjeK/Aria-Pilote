@@ -1,6 +1,7 @@
 """Job object Windows : les processus enfants meurent avec Aria Pilote, même si elle est tuée brutalement."""
 
 import ctypes
+import subprocess
 import sys
 from ctypes import wintypes
 
@@ -70,3 +71,14 @@ def attach(proc):
         return False
     kernel32, job = _JOB
     return bool(kernel32.AssignProcessToJobObject(job, int(proc._handle)))
+
+
+# Variables ajoutées aux commandes de l'agent : la sortie est relue en UTF-8 (wrapper PowerShell),
+# alors qu'un Python redirigé écrirait en cp1252 et abîmerait les accents.
+COMMAND_ENV = {"PYTHONUTF8": "1"}
+
+
+def kill_tree(pid):
+    """Arrête un processus et tous ses enfants (PowerShell lance souvent le vrai programme en enfant)."""
+    subprocess.run(["taskkill", "/T", "/F", "/PID", str(pid)],
+                   capture_output=True, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
