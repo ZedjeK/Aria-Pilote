@@ -314,6 +314,13 @@ button.danger-text { color: var(--err); }
 .rule-box { display: grid; gap: 6px; padding: 8px 10px; border: 1px dashed var(--action); border-radius: 6px; font-size: 12px; }
 .rule-box input.mono { min-width: 260px; font-size: 12px; }
 .rule-box button { justify-self: start; padding: 4px 12px; font-size: 12px; }
+fieldset.hardware { border: 1px solid var(--border); border-radius: 8px; padding: 8px 12px; display: grid; gap: 8px; }
+fieldset.hardware legend { padding: 0 6px; color: var(--accent); }
+fieldset.hardware .row { display: flex; gap: 10px; align-items: flex-end; flex-wrap: wrap; }
+.optimize-dialog { max-width: 900px; }
+.optimize-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.optimize-table th, .optimize-table td { padding: 6px 8px; border-bottom: 1px solid var(--border); text-align: left; vertical-align: top; }
+.optimize-table td.changed { color: var(--accent); font-weight: 600; }
 .bg-commands { display: grid; gap: 4px; padding: 6px 8px; border: 1px solid var(--warn); border-radius: 8px; font-size: 12px; }
 .bg-command { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 .bg-command button { margin-left: auto; padding: 2px 10px; font-size: 12px; }

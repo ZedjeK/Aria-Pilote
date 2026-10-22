@@ -8,7 +8,9 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 CONFIG_PATH = ROOT / "config.json"
 
-LOAD_FIELDS = ("engine", "ctx_size", "gpu_layers", "threads", "flash_attn", "use_mmproj")
+LOAD_FIELDS = ("engine", "ctx_size", "gpu_layers", "threads", "flash_attn", "use_mmproj", "cache_type")
+# Type du cache de contexte (KV) : f16 par défaut ; q8_0 le divise par deux presque sans perte, q4_0 par quatre
+CACHE_TYPES = ("f16", "q8_0", "q4_0")
 
 # Les chemins relatifs sont résolus par rapport au dossier de l'appli (voir path()),
 # pour que le dossier reste valable une fois copié ailleurs.
@@ -37,6 +39,7 @@ DEFAULTS = {
         "threads": 0,
         "flash_attn": "auto",
         "use_mmproj": True,
+        "cache_type": "f16",
     },
     # Réglages mémorisés par modèle, indexés par chemin du fichier GGUF.
     "model_overrides": {},

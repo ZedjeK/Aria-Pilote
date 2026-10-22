@@ -74,8 +74,12 @@ def find_model(client, pattern):
 
 
 def load_model(client, model, ctx):
-    print(f"\n=== Chargement de {Path(model['path']).name} (contexte {ctx})")
-    resp = client.post("/api/load", json={"model_id": model["id"], "ctx_size": ctx}, headers=ORIGIN)
+    # ctx = 0 : les réglages mémorisés du modèle (ceux de « Optimiser mes modèles », par exemple)
+    settings = model.get("settings") or {}
+    label = f"contexte {ctx}" if ctx else f"réglages mémorisés : {settings.get('ctx_size')}, cache {settings.get('cache_type')}"
+    print(f"\n=== Chargement de {Path(model['path']).name} ({label})")
+    body = {"model_id": model["id"], **({"ctx_size": ctx} if ctx else {})}
+    resp = client.post("/api/load", json=body, headers=ORIGIN)
     if resp.status_code != 200:
         sys.exit(f"Chargement refusé : {resp.text[:300]}")
     errors = 0
@@ -262,7 +266,8 @@ def main():
     parser.add_argument("--models", required=True, help="morceaux de noms de modèles, séparés par des virgules")
     parser.add_argument("--tasks", default="", help="numéros des tâches à jouer (ex. 2,6) ; toutes par défaut")
     parser.add_argument("--runs", type=int, default=1, help="passages par tâche (défaut : 1)")
-    parser.add_argument("--ctx", type=int, default=16384, help="contexte du modèle (défaut : 16384)")
+    parser.add_argument("--ctx", type=int, default=16384,
+                        help="contexte du modèle (défaut : 16384) ; 0 = réglages mémorisés de chaque modèle")
     parser.add_argument("--preset", help="preset à utiliser (défaut : celui de la conversation)")
     parser.add_argument("--timeout", type=int, default=600, help="délai par passage, en secondes (défaut : 600)")
     parser.add_argument("--web", action="store_true", help="autoriser l'accès web (refusé par défaut)")
