@@ -310,6 +310,7 @@ button.danger-text { color: var(--err); }
 .plan-card { align-self: stretch; display: grid; gap: 8px; padding: 10px 12px; border: 1px solid var(--accent); border-radius: 10px; background: var(--panel-2); }
 .plan-card .approval-title { color: var(--accent); }
 .plan-card .row { display: flex; gap: 8px; flex-wrap: wrap; }
+.tool.syntax-error > summary { color: var(--warn); }
 .bg-commands { display: grid; gap: 4px; padding: 6px 8px; border: 1px solid var(--warn); border-radius: 8px; font-size: 12px; }
 .bg-command { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 .bg-command button { margin-left: auto; padding: 2px 10px; font-size: 12px; }

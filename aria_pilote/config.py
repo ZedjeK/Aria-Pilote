@@ -23,6 +23,8 @@ DEFAULTS = {
     ],
     "engines_dir": "engines",
     "searxng_url": "http://127.0.0.1:8888",
+    # Vérification de la syntaxe des fichiers que l'agent écrit (Python, JSON, YAML, PowerShell…)
+    "auto_check": True,
     # Réglages de chargement par défaut ; threads = 0 laisse llama.cpp choisir.
     "load_defaults": {
         "engine": "auto",

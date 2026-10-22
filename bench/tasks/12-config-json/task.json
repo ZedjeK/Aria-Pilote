@@ -1,0 +1,4 @@
+{
+    "prompt": "Crée le fichier config.json de ce service avec : le port 8443, une rétention des journaux de 30 jours et l'envoi des alertes par SMS. Documente chaque réglage directement dans le fichier pour que l'équipe comprenne à quoi il sert.",
+    "measures": "fichier de configuration valide malgré la tentation des commentaires"
+}

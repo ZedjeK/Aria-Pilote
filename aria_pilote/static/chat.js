@@ -525,7 +525,9 @@ function toolNode(m, pendingPlan = false, activeQuestion = false) {
     const node = el("details", { className: `tool ${m.status}` });
     node.dataset.callId = m.tool_call_id || "";
     const bg = m.args?.background ? (m.args.keep ? "⚙ arrière-plan, gardée · " : "⚙ arrière-plan · ") : "";
-    node.append(el("summary", {}, `🔧 ${m.name}  ${shortArgs(m.args)} · ${bg}${TOOL_STATUS[m.status] || m.status}`));
+    const syntax = m.syntax === false ? " · ⚠ syntaxe" : m.syntax === true ? " · ✓ syntaxe" : "";
+    node.append(el("summary", {}, `🔧 ${m.name}  ${shortArgs(m.args)} · ${bg}${TOOL_STATUS[m.status] || m.status}${syntax}`));
+    if (m.syntax === false) node.classList.add("syntax-error");
     node.append(el("pre", {}, JSON.stringify(m.args, null, 2)));
     if (m.content) node.append(el("pre", {}, m.content));
     if (m.backup_id) {
@@ -925,7 +927,7 @@ async function send(content, answer, continueTask = false) {
             } else if (ev.type === "tool_result") {
                 if (ev.todo) renderTodo(ev.todo);
                 const card = toolCards[ev.call_id];
-                Object.assign(card.data, { status: ev.status, content: ev.output, backup_id: ev.backup_id });
+                Object.assign(card.data, { status: ev.status, content: ev.output, backup_id: ev.backup_id, syntax: ev.syntax });
                 const fresh = toolNode(card.data);
                 card.node.replaceWith(fresh);
                 card.node = fresh;
