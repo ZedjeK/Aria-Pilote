@@ -12,7 +12,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from . import (VERSION, agent, background, backups, chat, config, conversations, downloads, engines, hooks, hub, models,
-               presets, searxng, skills, subagents, workspace)
+               permissions, presets, searxng, skills, subagents, workspace)
 from .server import EngineMissing, manager
 
 STATIC_DIR = Path(__file__).parent / "static"
@@ -102,7 +102,8 @@ class ConversationPatch(BaseModel):
 
 class ApprovalRequest(BaseModel):
     approval_id: str
-    decision: str  # allow | deny | allow_session
+    decision: str  # allow | deny | allow_session | allow_rule
+    rule: str | None = None  # allow_rule : la commande exacte, ou un début de commande terminé par *
 
 
 class UndoRequest(BaseModel):
@@ -436,10 +437,38 @@ def delete_skill(name: str):
 @app.post("/api/agent/approve")
 def approve(req: ApprovalRequest):
     try:
-        agent.resolve_approval(req.approval_id, req.decision)
+        agent.resolve_approval(req.approval_id, req.decision, req.rule)
     except agent.ApprovalError as exc:
         raise HTTPException(409, str(exc))
     return {"ok": True}
+
+
+class RuleDelete(BaseModel):
+    conversation_id: str
+    rule: str
+
+
+def _rules_root(conversation_id):
+    root = ((_conversation_or_404(conversation_id).get("agent") or {}).get("workspace"))
+    if not root:
+        raise HTTPException(400, "Aucun dossier de travail pour cette conversation.")
+    return root
+
+
+@app.get("/api/agent/rules")
+def list_rules(conversation_id: str):
+    """Règles « toujours autoriser » des commandes, pour le dossier de travail de la conversation."""
+    return permissions.rules(_rules_root(conversation_id))
+
+
+@app.delete("/api/agent/rules")
+def delete_rule(req: RuleDelete):
+    root = _rules_root(req.conversation_id)
+    try:
+        permissions.remove(root, req.rule)
+    except permissions.RuleError as exc:
+        raise HTTPException(404, str(exc))
+    return permissions.rules(root)
 
 
 @app.post("/api/agent/undo")

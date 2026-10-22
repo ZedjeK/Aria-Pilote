@@ -285,6 +285,8 @@ async def _execute(cid, root, call, run_ctx):
         message["subagent"] = result["subagent"]  # étapes du sous-agent, pour l'affichage
     if result.get("syntax") is not None:
         message["syntax"] = result["syntax"]  # vérification automatique après écriture
+    if result.get("rule"):
+        message["rule"] = result["rule"]  # commande autorisée par une règle du projet
     conversations.append_message(cid, message)
     yield chat.event({
         "type": "tool_result",
@@ -293,6 +295,7 @@ async def _execute(cid, root, call, run_ctx):
         "output": result["output"],
         "backup_id": result.get("backup_id"),
         "syntax": result.get("syntax"),
+        "rule": result.get("rule"),
         "todo": result.get("todo"),
     })
 

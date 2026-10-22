@@ -94,6 +94,7 @@ function syncAgentBar() {
     $("#plan-toggle").disabled = !a.enabled;
     $("#agent-root").value = a.workspace || "";
     $(".agent-bar").classList.toggle("on", Boolean(a.enabled));
+    $("#btn-rules").hidden = !(a.enabled && a.workspace && chat.current);
     const info = [];
     if (a.enabled) {
         if (a.plan_mode) info.push("mode Plan : lecture seule, plan à valider");
@@ -255,6 +256,29 @@ async function editSkill(name) {
 
 $("#btn-skills").addEventListener("click", openSkills);
 $("#btn-skills-close").addEventListener("click", () => $("#skills-dialog").close());
+
+async function openRules() {
+    const list = $("#rules-list");
+    list.replaceChildren(el("li", { className: "muted" }, "Chargement…"));
+    if (!$("#rules-dialog").open) $("#rules-dialog").showModal();
+    const query = `conversation_id=${chat.current.id}`;
+    const rules = await api(`/api/agent/rules?${query}`);
+    list.replaceChildren(...rules.map((rule) => {
+        const del = el("button", { className: "ghost danger-text" }, "Retirer");
+        del.addEventListener("click", async () => {
+            await api("/api/agent/rules", { method: "DELETE", body: JSON.stringify({ conversation_id: chat.current.id, rule }) });
+            openRules();
+        });
+        return el("li", {}, el("code", { className: "skill-text" }, rule), del);
+    }));
+    if (!rules.length) {
+        list.append(el("li", { className: "muted" },
+            "Aucune règle. Sur une demande d'accord de commande, « Toujours autoriser dans ce projet » en ajoute une."));
+    }
+}
+
+$("#btn-rules").addEventListener("click", () => chat.current && openRules());
+$("#btn-rules-close").addEventListener("click", () => $("#rules-dialog").close());
 $("#btn-skill-new").addEventListener("click", () => editSkill(null));
 $("#btn-skill-cancel").addEventListener("click", openSkills);
 
@@ -526,7 +550,8 @@ function toolNode(m, pendingPlan = false, activeQuestion = false) {
     node.dataset.callId = m.tool_call_id || "";
     const bg = m.args?.background ? (m.args.keep ? "⚙ arrière-plan, gardée · " : "⚙ arrière-plan · ") : "";
     const syntax = m.syntax === false ? " · ⚠ syntaxe" : m.syntax === true ? " · ✓ syntaxe" : "";
-    node.append(el("summary", {}, `🔧 ${m.name}  ${shortArgs(m.args)} · ${bg}${TOOL_STATUS[m.status] || m.status}${syntax}`));
+    const rule = m.rule ? ` · ✓ autorisée par la règle « ${m.rule} »` : "";
+    node.append(el("summary", {}, `🔧 ${m.name}  ${shortArgs(m.args)} · ${bg}${TOOL_STATUS[m.status] || m.status}${syntax}${rule}`));
     if (m.syntax === false) node.classList.add("syntax-error");
     node.append(el("pre", {}, JSON.stringify(m.args, null, 2)));
     if (m.content) node.append(el("pre", {}, m.content));
@@ -568,18 +593,21 @@ function approvalNode(ev) {
         write: `L'agent veut modifier ${ev.path} :`,
     }[ev.kind];
     const buttons = el("div", { className: "row" });
-    const decide = async (decision, label) => {
-        for (const b of buttons.children) b.disabled = true;
+    const decide = async (decision, label, rule = null) => {
+        for (const b of box.querySelectorAll("button")) b.disabled = true;
         try {
             await api("/api/agent/approve", {
                 method: "POST",
-                body: JSON.stringify({ approval_id: ev.approval_id, decision }),
+                body: JSON.stringify({ approval_id: ev.approval_id, decision, rule }),
             });
             buttons.replaceChildren(el("span", { className: "muted small" }, label));
+            ruleBox?.remove();
         } catch (err) {
+            for (const b of box.querySelectorAll("button")) b.disabled = false;
             showChatError(err.message);
         }
     };
+    let ruleBox = null;
     const allow = el("button", { className: "primary" }, "Autoriser");
     allow.addEventListener("click", () => decide("allow", "Autorisé ✓"));
     buttons.append(allow);
@@ -588,6 +616,31 @@ function approvalNode(ev) {
         const session = el("button", { className: "ghost" }, label);
         session.addEventListener("click", () => decide("allow_session", "Autorisé pour cette conversation ✓"));
         buttons.append(session);
+    }
+    if (ev.kind === "command" && ev.command) {
+        // « Toujours autoriser dans ce projet » : la commande exacte, ou un début de commande (modifiable)
+        const always = el("button", { className: "ghost" }, "Toujours autoriser dans ce projet ▾");
+        always.addEventListener("click", () => {
+            if (ruleBox) { ruleBox.hidden = !ruleBox.hidden; return; }
+            const name = `regle-${ev.approval_id}`;
+            const exact = el("input", { type: "radio", name, checked: true });
+            const prefixRadio = el("input", { type: "radio", name });
+            const prefix = el("input", { className: "mono", value: ev.rule_prefix || "" });
+            prefix.addEventListener("focus", () => { prefixRadio.checked = true; });
+            const confirmRule = el("button", { className: "primary" }, "Autoriser et retenir");
+            confirmRule.addEventListener("click", () => {
+                const rule = exact.checked ? ev.command : prefix.value.trim();
+                decide("allow_rule", `Autorisé, règle retenue pour ce projet : ${rule} ✓`, rule);
+            });
+            ruleBox = el("div", { className: "rule-box" },
+                el("label", { className: "check-line" }, exact, " cette commande exacte"),
+                el("label", { className: "check-line" }, prefixRadio, " toutes celles qui commencent par ", prefix),
+                el("p", { className: "muted small" },
+                    "Une règle ne couvre jamais une suite avec ; & | > $ (enchaînement) : l'agent te redemandera."),
+                confirmRule);
+            box.insertBefore(ruleBox, buttons.nextSibling);
+        });
+        buttons.append(always);
     }
     const deny = el("button", { className: "ghost danger" }, "Refuser");
     deny.addEventListener("click", () => decide("deny", "Refusé ✗"));
@@ -927,7 +980,7 @@ async function send(content, answer, continueTask = false) {
             } else if (ev.type === "tool_result") {
                 if (ev.todo) renderTodo(ev.todo);
                 const card = toolCards[ev.call_id];
-                Object.assign(card.data, { status: ev.status, content: ev.output, backup_id: ev.backup_id, syntax: ev.syntax });
+                Object.assign(card.data, { status: ev.status, content: ev.output, backup_id: ev.backup_id, syntax: ev.syntax, rule: ev.rule });
                 const fresh = toolNode(card.data);
                 card.node.replaceWith(fresh);
                 card.node = fresh;
