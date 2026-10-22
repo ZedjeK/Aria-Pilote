@@ -4,13 +4,13 @@ import asyncio
 import json
 import uuid
 
-from . import chat, conversations, hooks, tools
+from . import chat, conversations, hooks, permissions, tools
 
 # Types d'outils soumis à accord, et le drapeau qui les autorise pour toute la conversation
 # (None : jamais d'autorisation globale)
 APPROVAL_FLAGS = {"write": "auto_write", "web": "auto_web", "command": None}
 
-# Accords en attente : approval_id -> (future, conversation_id, type d'outil)
+# Accords en attente : approval_id -> (future, conversation_id, type d'outil, dossier de travail, commande)
 _approvals = {}
 
 
@@ -18,13 +18,21 @@ class ApprovalError(Exception):
     pass
 
 
-def resolve_approval(approval_id, decision):
-    if decision not in ("allow", "deny", "allow_session"):
+def resolve_approval(approval_id, decision, rule=None):
+    if decision not in ("allow", "deny", "allow_session", "allow_rule"):
         raise ApprovalError("Décision inconnue.")
     pending = _approvals.get(approval_id)
     if pending is None:
         raise ApprovalError("Cette demande n'est plus en attente.")
-    future, cid, kind = pending
+    future, cid, kind, root, command = pending
+    if decision == "allow_rule":
+        # « Toujours autoriser dans ce projet » : la règle doit couvrir la commande en attente
+        if kind != "command":
+            raise ApprovalError("Les règles ne concernent que les commandes.")
+        try:
+            permissions.add(root, rule or command, command)
+        except permissions.RuleError as exc:
+            raise ApprovalError(str(exc))
     if decision == "allow_session":
         flag = APPROVAL_FLAGS[kind]
         if flag is None:
@@ -79,10 +87,12 @@ async def run_tool(cid, root, name, args, call_id, out, allowed=None, parent_id=
 
     settings = conversations.get(cid).get("agent") or {}
     decision = "allow"
-    if tool.kind in APPROVAL_FLAGS and not settings.get(APPROVAL_FLAGS[tool.kind] or "", False):
+    command = prepared.get("command") if tool.kind == "command" else None
+    rule = permissions.find(root, command) if command else None  # « toujours autoriser » dans ce projet
+    if tool.kind in APPROVAL_FLAGS and rule is None and not settings.get(APPROVAL_FLAGS[tool.kind] or "", False):
         approval_id = uuid.uuid4().hex[:12]
         future = asyncio.get_running_loop().create_future()
-        _approvals[approval_id] = (future, cid, tool.kind)
+        _approvals[approval_id] = (future, cid, tool.kind, root, command)
         yield chat.event({
             "type": "approval",
             "approval_id": approval_id,
@@ -91,6 +101,8 @@ async def run_tool(cid, root, name, args, call_id, out, allowed=None, parent_id=
             "kind": tool.kind,
             "path": prepared.get("rel"),
             "preview": prepared["preview"],
+            "command": command,
+            "rule_prefix": permissions.suggest_prefix(command) if command else None,
         })
         try:
             decision = await future
@@ -105,6 +117,8 @@ async def run_tool(cid, root, name, args, call_id, out, allowed=None, parent_id=
         out["result"] = {"status": "error", "output": str(exc)}
     except OSError as exc:
         out["result"] = {"status": "error", "output": f"Erreur système : {exc}"}
+    if rule:
+        out["result"]["rule"] = rule  # affiché sur la carte : autorisée sans te demander, par cette règle
 
     # Hooks « apres_outil » : leur sortie complète le résultat que voit le modèle (linter, tests…)
     after = await hooks.run("apres_outil", root, name, args, out["result"])

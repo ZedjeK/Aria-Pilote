@@ -47,6 +47,7 @@
                     <input id="plan-toggle" type="checkbox"> Mode Plan</label>
                 <input id="agent-root" class="mono" placeholder="Dossier de travail, ex. C:\Users\zeman\Desktop\mon-projet">
                 <button id="btn-agent-root" class="ghost">Valider</button>
+                <button id="btn-rules" class="ghost" title="Commandes toujours autorisées dans ce projet" hidden>Règles</button>
                 <span id="agent-info" class="muted small"></span>
             </div>
             <div id="hooks-banner" hidden></div>
@@ -180,6 +181,17 @@
                 <button value="save" class="primary">Enregistrer</button>
             </div>
         </form>
+    </dialog>
+
+    <dialog id="rules-dialog" class="skills-dialog">
+        <div class="skills-head">
+            <h2>Commandes toujours autorisées</h2>
+            <button id="btn-rules-close" class="ghost">Fermer</button>
+        </div>
+        <p class="muted small">Dans ce dossier de travail, l'agent lance ces commandes sans te demander. Une règle terminée
+            par * couvre les commandes qui commencent ainsi, jamais une suite avec ; &amp; | &gt; $ (enchaînement).
+            La liste noire reste prioritaire.</p>
+        <ul id="rules-list" class="skills-list"></ul>
     </dialog>
 
     <dialog id="skills-dialog" class="skills-dialog">
