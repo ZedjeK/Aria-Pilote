@@ -319,15 +319,35 @@ function renderVramTip(result) {
         return;
     }
     const heavy = result.others_used > 1.5 * 1024 ** 3;
+    let ignored = false;
+    try {
+        ignored = localStorage.getItem("aria-vram-tip-ignored") === "1";
+    } catch {
+        // stockage indisponible : on affiche le conseil
+    }
+    // « Ignorer » est retenu ; le conseil ne revient que si les autres applications prennent beaucoup de VRAM
+    if (ignored && !heavy) {
+        box.hidden = true;
+        return;
+    }
     const apps = result.gpu_apps.length ? ` Applications détectées sur la carte graphique : ${result.gpu_apps.join(", ")}.` : "";
     const again = el("button", { type: "button", className: "ghost" }, "↻ Recalculer");
     again.addEventListener("click", () => $("#btn-optimize").click());
+    const skip = el("button", { type: "button", className: "ghost" }, "Ignorer");
+    skip.addEventListener("click", () => {
+        try {
+            localStorage.setItem("aria-vram-tip-ignored", "1");
+        } catch {
+            // tant pis : masqué pour cette fois seulement
+        }
+        box.hidden = true;
+    });
     box.className = `optimize-tip small${heavy ? " heavy" : ""}`;
     box.replaceChildren(
         el("span", {}, `💡 Pour un résultat fiable, ferme d'abord les applications inutiles qui utilisent la carte graphique `
             + "(jeux, ComfyUI, navigateur chargé, fonds d'écran animés…) : elles prennent de la VRAM et faussent le calcul "
             + `comme l'essai. En ce moment, elles occupent environ ${gio(result.others_used)}.${apps} `),
-        again);
+        again, skip);
     box.hidden = false;
 }
 
