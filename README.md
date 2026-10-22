@@ -18,7 +18,8 @@
 
 | Fonction | Ce que ça fait | Moteur |
 | --- | --- | --- |
-| **Modèles locaux** | Trouve tes fichiers GGUF et lit leur en-tête : quantification, contexte maximal, nombre de couches, projecteur vision. Contexte, couches GPU, threads et flash attention se règlent et se mémorisent par modèle | llama.cpp |
+| **Modèles locaux** | Trouve tes fichiers GGUF et lit leur en-tête : quantification, contexte maximal, nombre de couches, projecteur vision. Contexte, couches GPU, threads, flash attention et cache de contexte (normal, ou compressé q8_0 / q4_0 pour un contexte plus grand) se règlent et se mémorisent par modèle | llama.cpp |
+| **Optimiser mes modèles** | Dans les Réglages : scan du PC (carte graphique et VRAM libre, RAM, processeur), puis calcul pour chaque modèle des meilleurs réglages d'après son en-tête GGUF — tout sur le GPU si possible, le plus grand contexte qui tient, cache compressé seulement s'il fait gagner un palier. Profil Équilibré (jusqu'à 32k) ou Contexte max. Aperçu avant d'appliquer | — |
 | **Bonsai 2 et formats ternaires** | Les fichiers PQ2_0 et PTQ1_0 de PrismML partent tout seuls sur le bon moteur. Si le moteur officiel refuse un fichier, Aria bascule et retient le choix | Fork PrismML de llama.cpp |
 | **Découvrir** | Recherche sur Hugging Face, fichiers d'un dépôt avec leur taille et une estimation « tient sur le GPU / GPU + RAM / trop gros ». Téléchargement avec reprise, vérification SHA-256 et rangement automatique. Un modèle supprimé part à la corbeille | Hugging Face |
 | **Chat** | Réponses en streaming, presets (prompt système, échantillonnage, réflexion activée ou non), réflexion du modèle repliable, Markdown avec blocs de code copiables, historique des conversations | llama-server (API compatible OpenAI) |
@@ -60,6 +61,7 @@ Pour développer sans construire : `run.ps1` lance l'appli depuis le code source
 ```powershell
 py -3.11 tools/bench.py --models qwen,bonsai
 py -3.11 tools/bench.py --models qwen --tasks 2,6 --runs 3
+py -3.11 tools/bench.py --models qwen,bonsai --ctx 0   # avec les réglages mémorisés de chaque modèle
 ```
 
 Chaque tâche part d'une copie neuve de ses fichiers dans un dossier temporaire, et son vérificateur contrôle le résultat réel (fichiers, tests, réponse). Le script démarre l'appli de dev si besoin, valide les accords à ta place (sauf les commandes piégées, refusées), refuse le web par défaut (`--web` pour l'autoriser) et compare chaque run au précédent. Les rapports détaillés vont dans `bench\results\`. Pour ajouter une tâche : un dossier `bench\tasks\NN-nom\` avec `task.json`, `fixture\` et `check.py`.

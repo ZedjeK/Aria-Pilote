@@ -11,8 +11,8 @@ from fastapi.responses import PlainTextResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from . import (VERSION, agent, background, backups, chat, config, conversations, downloads, engines, hooks, hub, models,
-               permissions, presets, searxng, skills, subagents, workspace)
+from . import (VERSION, agent, background, backups, chat, config, conversations, downloads, engines, hardware, hooks,
+               hub, models, optimizer, permissions, presets, searxng, skills, subagents, workspace)
 from .server import EngineMissing, manager
 
 STATIC_DIR = Path(__file__).parent / "static"
@@ -68,6 +68,7 @@ class LoadRequest(BaseModel):
     threads: int | None = None
     flash_attn: str | None = None
     use_mmproj: bool | None = None
+    cache_type: str | None = None
     remember: bool = False
 
 
@@ -193,6 +194,8 @@ async def load(req: LoadRequest):
             settings[field] = value
     if settings["engine"] != "auto" and settings["engine"] not in engines.ENGINES:
         raise HTTPException(400, f"Moteur inconnu : {settings['engine']}")
+    if settings.get("cache_type", "f16") not in config.CACHE_TYPES:
+        raise HTTPException(400, f"Type de cache inconnu : {settings['cache_type']}")
     if req.remember:
         config.save_model_settings(model.key, settings)
     auto = settings["engine"] == "auto"
@@ -208,6 +211,64 @@ async def load(req: LoadRequest):
 async def unload():
     await manager.unload()
     return manager.status()
+
+
+class OptimizeRequest(BaseModel):
+    profile: str = "equilibre"
+
+
+class OptimizeItem(BaseModel):
+    model_id: str
+    settings: dict
+
+
+class OptimizeApply(BaseModel):
+    items: list[OptimizeItem]
+
+
+def _meta_of(model):
+    meta = models._read_meta(Path(model.path))
+    return meta if isinstance(meta, dict) else {}
+
+
+@app.get("/api/hardware")
+def get_hardware():
+    return hardware.scan()
+
+
+@app.post("/api/optimize")
+def optimize(req: OptimizeRequest):
+    """Réglages proposés pour chaque modèle, d'après le matériel et la VRAM libre (rien n'est appliqué)."""
+    if req.profile not in optimizer.PROFILES:
+        raise HTTPException(400, f"Profil inconnu : {req.profile}")
+    hw = hardware.scan()
+    budget = sum(g["vram_free"] for g in hw["gpus"]) if hw["gpus"] else None
+    loaded = manager.model if manager.state in ("loading", "ready") else None
+    if budget is not None and loaded is not None:
+        # La VRAM du modèle chargé redeviendra libre quand il sera rechargé avec les nouveaux réglages
+        budget += optimizer.footprint(loaded, _meta_of(loaded), manager._settings or {})
+    plans = [optimizer.plan(m, _meta_of(m), config.model_settings(m.key), budget, req.profile, hw["cpu"]["cores"])
+             for m in models.scan()]
+    return {"hardware": hw, "budget": budget, "loaded": loaded.name if loaded else None, "plans": plans}
+
+
+@app.post("/api/optimize/apply")
+def optimize_apply(req: OptimizeApply):
+    """Mémorise les réglages choisis pour chaque modèle (pris en compte au prochain chargement)."""
+    checks = {"ctx_size": lambda v: isinstance(v, int) and v >= 512, "gpu_layers": lambda v: isinstance(v, int) and v >= 0,
+              "threads": lambda v: isinstance(v, int) and v >= 0, "cache_type": lambda v: v in config.CACHE_TYPES,
+              "flash_attn": lambda v: v in ("auto", "on", "off")}
+    applied = []
+    for item in req.items:
+        model = models.get(item.model_id)
+        if model is None:
+            raise HTTPException(404, f"Modèle introuvable : {item.model_id}")
+        bad = [k for k, v in item.settings.items() if k not in checks or not checks[k](v)]
+        if bad:
+            raise HTTPException(400, f"Réglage invalide pour {model.name} : {', '.join(bad)}")
+        config.save_model_settings(model.key, {**config.model_settings(model.key), **item.settings})
+        applied.append(model.name)
+    return {"applied": applied}
 
 
 @app.get("/api/logs")

@@ -114,6 +114,13 @@
                             <option value="off">Off</option>
                         </select>
                     </label>
+                    <label title="Compresser le cache de contexte permet un contexte plus grand dans la même VRAM">Cache de contexte
+                        <select name="cache_type">
+                            <option value="f16">Normal (f16)</option>
+                            <option value="q8_0">Compressé ×2 (q8_0)</option>
+                            <option value="q4_0">Compressé ×4 (q4_0, perte sensible)</option>
+                        </select>
+                    </label>
                     <label class="check"><input name="use_mmproj" type="checkbox"> Vision (mmproj)</label>
                     <label class="check"><input name="remember" type="checkbox"> Mémoriser pour ce modèle</label>
                     <button type="submit" class="primary">Charger</button>
@@ -162,6 +169,19 @@
     <dialog id="settings">
         <form method="dialog" id="settings-form" class="form">
             <h2>Réglages</h2>
+            <fieldset class="hardware">
+                <legend>Matériel</legend>
+                <div id="hw-info" class="muted small">Scan en cours…</div>
+                <div class="row">
+                    <label>Profil
+                        <select id="opt-profile">
+                            <option value="equilibre">Équilibré (contexte jusqu'à 32k)</option>
+                            <option value="max">Contexte max (autant que la VRAM le permet)</option>
+                        </select>
+                    </label>
+                    <button type="button" id="btn-optimize" class="primary">⚡ Optimiser mes modèles</button>
+                </div>
+            </fieldset>
             <label>Dossiers de modèles (un par ligne)
                 <textarea name="model_dirs" rows="5" class="mono"></textarea>
             </label>
@@ -181,6 +201,24 @@
                 <button value="save" class="primary">Enregistrer</button>
             </div>
         </form>
+    </dialog>
+
+    <dialog id="optimize-dialog" class="skills-dialog optimize-dialog">
+        <div class="skills-head">
+            <h2>Optimiser mes modèles</h2>
+            <button id="btn-optimize-close" class="ghost">Fermer</button>
+        </div>
+        <p id="optimize-intro" class="muted small"></p>
+        <table class="optimize-table">
+            <thead><tr><th></th><th>Modèle</th><th>Actuel</th><th>Proposé</th><th>VRAM estimée</th></tr></thead>
+            <tbody id="optimize-rows"></tbody>
+        </table>
+        <p class="muted small">Estimations calibrées sur des chargements réels, avec une marge de sécurité. Les réglages
+            appliqués sont mémorisés par modèle et servent à son prochain chargement.</p>
+        <p id="optimize-error" class="error" hidden></p>
+        <div class="row">
+            <button id="btn-optimize-apply" class="primary">Appliquer la sélection</button>
+        </div>
     </dialog>
 
     <dialog id="rules-dialog" class="skills-dialog">

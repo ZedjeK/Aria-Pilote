@@ -39,8 +39,14 @@ def build_args(model, settings, port, app_port):
     ]
     if settings.get("threads"):
         args += ["-t", str(settings["threads"])]
-    if settings.get("flash_attn") in ("on", "off"):
-        args += ["-fa", settings["flash_attn"]]
+    cache = settings.get("cache_type") or "f16"
+    flash = settings.get("flash_attn")
+    if cache != "f16":
+        # Cache de contexte compressé ; llama.cpp exige la flash attention pour compresser la partie V
+        args += ["-ctk", cache, "-ctv", cache]
+        flash = "on"
+    if flash in ("on", "off"):
+        args += ["-fa", flash]
     if settings.get("use_mmproj") and model.mmproj:
         args += ["--mmproj", model.mmproj]
     return args

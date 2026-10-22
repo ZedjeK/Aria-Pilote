@@ -111,6 +111,7 @@ function renderDetail() {
     form.gpu_layers.value = s.gpu_layers;
     form.threads.value = s.threads || "";
     form.flash_attn.value = s.flash_attn;
+    form.cache_type.value = s.cache_type || "f16";
     form.use_mmproj.checked = s.use_mmproj;
     form.use_mmproj.disabled = !m.mmproj;
     form.remember.checked = false;
@@ -127,6 +128,7 @@ $("#load-form").addEventListener("submit", async (event) => {
         gpu_layers: Number(form.gpu_layers.value),
         threads: Number(form.threads.value || 0),
         flash_attn: form.flash_attn.value,
+        cache_type: form.cache_type.value,
         use_mmproj: form.use_mmproj.checked,
         remember: form.remember.checked,
     };
@@ -253,6 +255,91 @@ $("#btn-settings").addEventListener("click", async () => {
     $("#settings-form").hooks.value = hooksInfo.global;
     $("#settings-error").hidden = true;
     $("#settings").showModal();
+    renderHardware();
+});
+
+// --- Matériel et optimisation des modèles ----------------------------------
+
+const gio = (bytes) => `${(bytes / 1024 ** 3).toLocaleString("fr-FR", { maximumFractionDigits: 1 })} Go`;
+
+async function renderHardware() {
+    const box = $("#hw-info");
+    box.textContent = "Scan en cours…";
+    try {
+        const hw = await api("/api/hardware");
+        const gpus = hw.gpus.length
+            ? hw.gpus.map((g) => `${g.name} : ${gio(g.vram_total)} de VRAM, ${gio(g.vram_free)} libres`).join(" · ")
+            : "Aucune carte NVIDIA détectée";
+        const cpu = hw.cpu.name ? `${hw.cpu.name} (${hw.cpu.cores} cœurs, ${hw.cpu.threads} threads)` : `${hw.cpu.threads} threads`;
+        const ram = hw.ram.total ? `${gio(hw.ram.total)} de RAM (${gio(hw.ram.free)} libres)` : "";
+        box.replaceChildren(el("div", {}, `🎮 ${gpus}`), el("div", {}, `🧠 ${cpu}${ram ? " · " + ram : ""}`));
+    } catch (err) {
+        box.textContent = `Scan impossible : ${err.message}`;
+    }
+}
+
+function describeSettings(s) {
+    const cache = s.cache_type && s.cache_type !== "f16" ? ` · cache ${s.cache_type}` : "";
+    const gpu = s.gpu_layers >= 99 ? "tout sur le GPU" : `${s.gpu_layers} couches GPU`;
+    return `${Math.round(s.ctx_size / 1024)}k · ${gpu}${cache}`;
+}
+
+let optimizePlans = [];
+
+$("#btn-optimize").addEventListener("click", async () => {
+    const button = $("#btn-optimize");
+    button.disabled = true;
+    $("#optimize-error").hidden = true;
+    try {
+        const result = await api("/api/optimize", { method: "POST", body: JSON.stringify({ profile: $("#opt-profile").value }) });
+        optimizePlans = result.plans;
+        const used = result.hardware.gpus.reduce((sum, g) => sum + g.vram_used, 0);
+        const intro = [result.budget === null ? "Pas de carte NVIDIA : réglages pour le processeur."
+            : `VRAM disponible pour un modèle : ${gio(result.budget)}.`];
+        if (result.loaded) intro.push(`Le modèle chargé (${result.loaded}) est compté comme libéré.`);
+        if (used > 3 * 1024 ** 3 && !result.loaded) {
+            intro.push(`⚠ D'autres applications occupent ${gio(used)} de VRAM : les réglages seront prudents. `
+                + "Relance l'optimisation quand elles sont fermées pour en profiter.");
+        }
+        $("#optimize-intro").textContent = intro.join(" ");
+        $("#optimize-rows").replaceChildren(...optimizePlans.map((p, i) => {
+            const pick = el("input", { type: "checkbox", checked: p.changed, disabled: !p.changed });
+            pick.dataset.index = i;
+            const notes = p.notes.length ? el("div", { className: "muted small" }, p.notes.join(" ")) : "";
+            return el("tr", {},
+                el("td", {}, pick),
+                el("td", {}, el("strong", {}, p.name), notes),
+                el("td", {}, describeSettings(p.current)),
+                el("td", { className: p.changed ? "changed" : "" }, p.changed ? describeSettings(p.proposed) : "déjà optimal"),
+                el("td", {}, p.vram_estimate ? gio(p.vram_estimate) : "—"));
+        }));
+        $("#optimize-dialog").showModal();
+    } catch (err) {
+        $("#hw-info").textContent = `Optimisation impossible : ${err.message}`;
+    } finally {
+        button.disabled = false;
+    }
+});
+
+$("#btn-optimize-close").addEventListener("click", () => $("#optimize-dialog").close());
+
+$("#btn-optimize-apply").addEventListener("click", async () => {
+    const items = [...$("#optimize-rows").querySelectorAll("input:checked")].map((box) => {
+        const p = optimizePlans[Number(box.dataset.index)];
+        return { model_id: p.model_id, settings: p.proposed };
+    });
+    if (!items.length) {
+        $("#optimize-dialog").close();
+        return;
+    }
+    try {
+        await api("/api/optimize/apply", { method: "POST", body: JSON.stringify({ items }) });
+        $("#optimize-dialog").close();
+        await loadModels();
+    } catch (err) {
+        $("#optimize-error").textContent = err.message;
+        $("#optimize-error").hidden = false;
+    }
 });
 
 $("#settings").addEventListener("close", async () => {
