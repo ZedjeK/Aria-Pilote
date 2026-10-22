@@ -173,12 +173,6 @@
                 <legend>Matériel</legend>
                 <div id="hw-info" class="muted small">Scan en cours…</div>
                 <div class="row">
-                    <label>Profil
-                        <select id="opt-profile">
-                            <option value="equilibre">Équilibré (contexte jusqu'à 32k)</option>
-                            <option value="max">Contexte max (autant que la VRAM le permet)</option>
-                        </select>
-                    </label>
                     <button type="button" id="btn-optimize" class="primary">⚡ Optimiser mes modèles</button>
                 </div>
             </fieldset>
@@ -208,15 +202,19 @@
             <h2>Optimiser mes modèles</h2>
             <button id="btn-optimize-close" class="ghost">Fermer</button>
         </div>
+        <div id="optimize-tip" class="optimize-tip small" hidden></div>
         <p id="optimize-intro" class="muted small"></p>
+        <div id="optimize-profiles" class="profile-cards"></div>
         <table class="optimize-table">
-            <thead><tr><th></th><th>Modèle</th><th>Actuel</th><th>Proposé</th><th>VRAM estimée</th></tr></thead>
+            <thead><tr><th></th><th>Modèle</th><th>Actuel</th><th>Proposé</th><th>VRAM estimée</th><th>Essai réel</th></tr></thead>
             <tbody id="optimize-rows"></tbody>
         </table>
         <p class="muted small">Estimations calibrées sur des chargements réels, avec une marge de sécurité. Les réglages
             appliqués sont mémorisés par modèle et servent à son prochain chargement.</p>
         <p id="optimize-error" class="error" hidden></p>
         <div class="row">
+            <button id="btn-optimize-test" class="ghost" title="Charge chaque modèle coché, mesure la VRAM et la vitesse, et descend d'un palier si ça ne tient pas">🔬 Vérifier par un essai réel</button>
+            <button id="btn-optimize-stop" class="ghost danger" hidden>Arrêter l'essai</button>
             <button id="btn-optimize-apply" class="primary">Appliquer la sélection</button>
         </div>
     </dialog>

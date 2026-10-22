@@ -38,6 +38,38 @@ def _gpus():
     return gpus
 
 
+# Composants de Windows qui passent par la carte graphique : impossibles ou inutiles à fermer
+_SYSTEM_APPS = {"explorer", "dwm", "searchhost", "searchapp", "shellexperiencehost", "startmenuexperiencehost",
+                "textinputhost", "applicationframehost", "systemsettings", "crossdeviceresume", "shellhost",
+                "chxsmartscreen", "lockapp", "widgets", "phoneexperiencehost", "msedgewebview2", "llama-server",
+                "csrss", "winlogon", "nvcontainer", "nvidia overlay", "nvidia share"}
+_FRIENDLY = {"wallpaper64": "Wallpaper Engine", "wallpaper32": "Wallpaper Engine", "opera": "Opera", "chrome": "Chrome",
+             "msedge": "Edge", "firefox": "Firefox", "brave": "Brave", "discord": "Discord", "steam": "Steam",
+             "steamwebhelper": "Steam", "claude": "Claude", "obs64": "OBS", "spotify": "Spotify",
+             "python": "Python (ComfyUI ? un autre script ?)", "pythonw": "Python (ComfyUI ? un autre script ?)",
+             "code": "VS Code", "blender": "Blender", "lmstudio": "LM Studio", "ollama": "Ollama"}
+
+
+def gpu_apps():
+    """Applications (hors Windows et hors Aria) qui utilisent la carte graphique, par nom lisible.
+
+    Windows ne donne pas la VRAM de chacune (« N/A ») : seulement la liste."""
+    exe = shutil.which("nvidia-smi")
+    if exe is None:
+        return []
+    try:
+        out = subprocess.run([exe, "--query-compute-apps=process_name", "--format=csv,noheader"],
+                             capture_output=True, text=True, timeout=10, creationflags=_NO_WINDOW).stdout
+    except (OSError, subprocess.SubprocessError):
+        return []
+    names = set()
+    for line in out.splitlines():
+        stem = os.path.splitext(os.path.basename(line.strip()))[0]
+        if stem and stem.lower() not in _SYSTEM_APPS:
+            names.add(_FRIENDLY.get(stem.lower(), stem))
+    return sorted(names, key=str.lower)
+
+
 class _MemoryStatus(ctypes.Structure):
     _fields_ = [("dwLength", ctypes.c_ulong), ("dwMemoryLoad", ctypes.c_ulong),
                 ("ullTotalPhys", ctypes.c_ulonglong), ("ullAvailPhys", ctypes.c_ulonglong),
