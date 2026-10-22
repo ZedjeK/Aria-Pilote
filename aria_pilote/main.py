@@ -108,6 +108,12 @@ class UndoRequest(BaseModel):
     backup_id: str
 
 
+class UndoTaskRequest(BaseModel):
+    conversation_id: str
+    task_id: str
+    force: bool = False  # restaurer aussi les fichiers retouchés depuis la tâche
+
+
 class SkillRequest(BaseModel):
     name: str
     description: str
@@ -118,6 +124,7 @@ class ChatRequest(BaseModel):
     conversation_id: str
     content: str | None = None  # None = régénérer la dernière réponse
     answer: str | None = None  # réponse à la question en attente de l'agent ("" : il décide lui-même)
+    continue_task: bool = False  # bouton « Continuer » : le message prolonge la tâche en cours
     preset_id: str | None = None
 
 
@@ -324,6 +331,8 @@ async def chat_endpoint(req: ChatRequest):
         if match and match.group(1) in skills.discover(_agent_root(conv)):
             skill, content = match.group(1), (match.group(2) or "").strip()
         conversations.add_user_message(conv, content, skill)
+        if not req.continue_task:
+            conv["task_id"] = backups.new_task_id()  # nouvelle demande, nouvelle tâche (réponses et reprises la prolongent)
     else:
         conversations.drop_trailing_assistant(conv)
         if not conv["messages"]:
@@ -438,6 +447,27 @@ def undo(req: UndoRequest):
     except backups.BackupError as exc:
         raise HTTPException(404, str(exc))
     return {"ok": True, "path": meta["path"]}
+
+
+def _task_or_409(req_cid, task_id):
+    if backups.is_running(req_cid):
+        raise HTTPException(409, "L'agent travaille encore dans cette conversation : attends la fin ou arrête-le.")
+    if not backups.ID_RE.match(task_id):
+        raise HTTPException(400, "Identifiant de tâche invalide.")
+
+
+@app.get("/api/agent/undo-task")
+def undo_task_preview(conversation_id: str, task_id: str):
+    conv = _conversation_or_404(conversation_id)
+    _task_or_409(conversation_id, task_id)
+    return agent.task_preview(conv, task_id)
+
+
+@app.post("/api/agent/undo-task")
+def undo_task(req: UndoTaskRequest):
+    _conversation_or_404(req.conversation_id)
+    _task_or_409(req.conversation_id, req.task_id)
+    return agent.undo_task(req.conversation_id, req.task_id, req.force)
 
 
 # --- Hugging Face et téléchargements ---------------------------------------------

@@ -310,6 +310,8 @@ button.danger-text { color: var(--err); }
 .plan-card { align-self: stretch; display: grid; gap: 8px; padding: 10px 12px; border: 1px solid var(--accent); border-radius: 10px; background: var(--panel-2); }
 .plan-card .approval-title { color: var(--accent); }
 .plan-card .row { display: flex; gap: 8px; flex-wrap: wrap; }
+.task-actions { align-self: flex-start; }
+.task-actions button { padding: 3px 12px; font-size: 12px; }
 .question-card { align-self: stretch; display: grid; gap: 8px; padding: 10px 12px; border: 1px solid var(--action); border-radius: 10px; background: var(--panel-2); }
 .question-card .row { display: flex; gap: 8px; flex-wrap: wrap; }
 .question-card .row button { padding: 4px 12px; font-size: 13px; }

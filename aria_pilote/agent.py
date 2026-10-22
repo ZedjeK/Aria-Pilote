@@ -1,6 +1,7 @@
 """Boucle d'agent : le modèle appelle des outils, Aria Pilote les exécute (avec ton accord si besoin)."""
 
 import json
+from pathlib import Path
 
 import httpx
 
@@ -106,6 +107,51 @@ def undo(cid, backup_id):
 
     conversations.update(cid, mark)
     return meta
+
+
+def _relative(conv, path):
+    root = (conv.get("agent") or {}).get("workspace")
+    try:
+        return Path(path).relative_to(root).as_posix() if root else path
+    except ValueError:
+        return path
+
+
+def _task_commands(conv, task_id):
+    """Commandes réellement lancées pendant la tâche (sous-agents compris) : leurs effets ne s'annulent pas."""
+    commands = []
+    for m in conv["messages"]:
+        if m.get("task_id") != task_id or m["role"] != "tool":
+            continue
+        if m["name"] == "run_command" and m.get("status") in ("ok", "error"):
+            commands.append(str(m["args"].get("command", "")))
+        for step in (m.get("subagent") or {}).get("steps", []):
+            if step["name"] == "run_command" and step["status"] in ("ok", "error"):
+                commands.append(str(step["args"].get("command", "")))
+    return commands
+
+
+def task_preview(conv, task_id):
+    plan = backups.task_plan(conv["id"], task_id)
+    return {"files": [{"path": _relative(conv, e["path"]), "action": e["action"], "conflict": e["conflict"]} for e in plan],
+            "commands": _task_commands(conv, task_id)}
+
+
+def undo_task(cid, task_id, force=False):
+    """Annule toute une tâche ; les cartes de ses modifications passent en « annulé » et un résumé est gardé."""
+    plan = backups.task_plan(cid, task_id)
+    result = backups.undo_task(cid, task_id, force)
+    done = {b for e in plan if e["path"] in result["restored"] + result["deleted"] for b in e["backups"]}
+
+    def mark(conv):
+        for m in conv["messages"]:
+            if m.get("backup_id") in done:
+                m["undone"] = True
+        conv.setdefault("undone_tasks", {})[task_id] = {
+            key: [_relative(conv, p) for p in paths] if key != "errors" else paths for key, paths in result.items()}
+
+    conversations.update(cid, mark)
+    return conversations.get(cid)["undone_tasks"][task_id]
 
 
 def pending_question(conv):
@@ -217,6 +263,7 @@ async def _execute(cid, root, call, run_ctx):
         "args": args,
         "content": result["output"],
         "status": result["status"],
+        "task_id": run_ctx["task_id"],
     }
     if result.get("backup_id"):
         message["backup_id"] = result["backup_id"]
@@ -234,6 +281,20 @@ async def _execute(cid, root, call, run_ctx):
 
 
 async def run(conv, preset, model_name):
+    """Une tâche de l'agent ; ses sauvegardes et ses messages portent l'identifiant de la tâche (conv["task_id"])."""
+    task_id = conv.get("task_id")
+    if not task_id:  # conversation d'avant les tâches : on lui en ouvre une
+        task_id = backups.new_task_id()
+        conversations.update(conv["id"], lambda c: c.__setitem__("task_id", task_id))
+    backups.set_running(conv["id"], task_id)
+    try:
+        async for ev in _run(conv, preset, model_name, task_id):
+            yield ev
+    finally:
+        backups.set_running(conv["id"], None)
+
+
+async def _run(conv, preset, model_name, task_id):
     cid = conv["id"]
     try:
         root = str(workspace.validate_root(conv["agent"]["workspace"]))
@@ -272,7 +333,7 @@ async def run(conv, preset, model_name):
         schemas.append(PROPOSE_PLAN_SCHEMA)
         system_prompt += "\n\n" + PLAN_PROMPT
     run_ctx = {"preset": preset, "model": model_name, "plan": plan_mode, "allowed": allowed,
-               "seen": {}, "stuck": False, "planned": False, "asked": False}
+               "seen": {}, "stuck": False, "planned": False, "asked": False, "task_id": task_id}
     calls_done = 0
     retried = False
 
@@ -300,6 +361,7 @@ async def run(conv, preset, model_name):
         finally:
             if chat.has_output(out):
                 message = chat.assistant_message(out, model_name, preset)
+                message["task_id"] = task_id
                 conversations.append_message(cid, message)
         retried = False
         usage = context.record_usage(cid, message["stats"]) if message else None
@@ -323,7 +385,7 @@ async def run(conv, preset, model_name):
                 # Appels écrits après la question : ils attendront ta réponse
                 conversations.append_message(cid, {"role": "tool", "tool_call_id": call["id"],
                                                    "name": call["function"]["name"], "args": toolrun.parse_args(call)[0],
-                                                   "content": QUESTION_SKIPPED, "status": "skipped"})
+                                                   "content": QUESTION_SKIPPED, "status": "skipped", "task_id": task_id})
                 continue
             if calls_done >= MAX_TOOL_CALLS:
                 yield chat.event({
