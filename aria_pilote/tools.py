@@ -230,6 +230,7 @@ async def run_write(prepared, cid):
         target.parent.mkdir(parents=True, exist_ok=True)
         with open(target, "w", encoding="utf-8", newline="") as f:
             f.write(prepared["content"])
+        backups.record_after(cid, backup_id, target)
         return backup_id
 
     backup_id = await asyncio.to_thread(write)

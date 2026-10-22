@@ -584,6 +584,62 @@ async function undoChange(backupId, button) {
     }
 }
 
+async function undoTask(taskId, button) {
+    if (chat.controller) return;
+    const cid = chat.current.id;
+    const query = `conversation_id=${cid}&task_id=${taskId}`;
+    try {
+        const preview = await api(`/api/agent/undo-task?${query}`);
+        if (!preview.files.length) {
+            showChatError("Rien à annuler : les modifications de cette tâche sont déjà annulées.");
+            return;
+        }
+        const ok = preview.files.filter((f) => !f.conflict);
+        const conflicts = preview.files.filter((f) => f.conflict);
+        const line = (f) => `  • ${f.path} (${f.action === "supprimer" ? "créé par l'agent : supprimé" : "restauré"})`;
+        let text = "Annuler toute la tâche ?\n\n";
+        if (ok.length) text += `${ok.length} fichier(s) remis dans leur état d'avant :\n${ok.map(line).join("\n")}\n\n`;
+        if (conflicts.length) {
+            text += `${conflicts.length} fichier(s) retouché(s) depuis la tâche, laissé(s) tel(s) quel(s) :\n`
+                + conflicts.map((f) => `  • ${f.path}`).join("\n") + "\n\n";
+        }
+        if (preview.commands.length) {
+            text += `${preview.commands.length} commande(s) lancée(s) : leurs effets ne s'annulent pas.\n`
+                + preview.commands.slice(0, 5).map((c) => `  • ${c.slice(0, 80)}`).join("\n") + "\n\n";
+        }
+        text += "Les versions actuelles partent à la corbeille.";
+        if (!confirm(text)) return;
+        const force = conflicts.length > 0
+            && confirm(`Restaurer aussi les ${conflicts.length} fichier(s) retouché(s) depuis la tâche ?\n`
+                + "Tes changements faits après la tâche partiront à la corbeille.");
+        if (!ok.length && !force) return;
+        button.disabled = true;
+        await api("/api/agent/undo-task", {
+            method: "POST",
+            body: JSON.stringify({ conversation_id: cid, task_id: taskId, force }),
+        });
+        await openConversation(cid);
+    } catch (err) {
+        button.disabled = false;
+        showChatError(err.message);
+    }
+}
+
+function taskFooterNode(taskId, undone) {
+    // Sous la dernière étape d'une tâche qui a modifié des fichiers : annuler le tout, ou le bilan de l'annulation
+    if (undone) {
+        const parts = [];
+        if (undone.restored.length) parts.push(`${undone.restored.length} fichier(s) restauré(s)`);
+        if (undone.deleted.length) parts.push(`${undone.deleted.length} supprimé(s)`);
+        if (undone.skipped.length) parts.push(`${undone.skipped.length} retouché(s) depuis, laissé(s) tel(s) quel(s)`);
+        if (undone.errors.length) parts.push(`${undone.errors.length} erreur(s) : ${undone.errors.join(" ; ")}`);
+        return el("div", { className: "summary-divider" }, `↩ Tâche annulée : ${parts.join(", ") || "rien à restaurer"}`);
+    }
+    const button = el("button", { className: "ghost" }, "↩ Annuler toute la tâche");
+    button.addEventListener("click", () => undoTask(taskId, button));
+    return el("div", { className: "task-actions" }, button);
+}
+
 function renderMessages() {
     const box = $("#messages");
     const messages = chat.current?.messages || [];
@@ -602,6 +658,15 @@ function renderMessages() {
     const last = messages.at(-1);
     const textPlan = planMode && !planPending && messages.length - 1 > lastUser && last?.role === "assistant" && last.content;
     const question = pendingQuestionIndex(messages);
+    // Tâches qui ont modifié des fichiers (directement ou par un sous-agent) : leur dernier message
+    const taskEnd = {};
+    const taskWrites = new Set();
+    messages.forEach((m, index) => {
+        if (!m.task_id) return;
+        taskEnd[m.task_id] = index;
+        if (m.backup_id || m.name === "delegate") taskWrites.add(m.task_id);
+    });
+    const undoneTasks = chat.current?.undone_tasks || {};
     messages.forEach((m, index) => {
         if (summary && index === summary.upto) nodes.push(summaryNode(summary, summary.upto));
         if (m.role === "tool") {
@@ -610,6 +675,9 @@ function renderMessages() {
             // simple appel d'outil : la carte de l'outil suffit
         } else {
             nodes.push(messageNode(m));
+        }
+        if (m.task_id && taskEnd[m.task_id] === index && (taskWrites.has(m.task_id) || undoneTasks[m.task_id])) {
+            nodes.push(taskFooterNode(m.task_id, undoneTasks[m.task_id]));
         }
     });
     if (textPlan) {
@@ -641,7 +709,7 @@ function showChatError(message, continuable = false) {
     if (continuable) {
         // Limite d'appels atteinte ou réponse coupée : on relance sans retaper la demande
         const button = el("button", { type: "button", className: "primary continue" }, "▶ Continuer");
-        button.addEventListener("click", () => send(CONTINUE_PROMPT));
+        button.addEventListener("click", () => send(CONTINUE_PROMPT, undefined, true));
         box.append(" ", button);
     }
     box.hidden = false;
@@ -674,8 +742,9 @@ async function readEvents(resp, onEvent) {
     }
 }
 
-async function send(content, answer) {
+async function send(content, answer, continueTask = false) {
     // answer : réponse à la question en attente de l'agent (content vaut alors null)
+    // continueTask : bouton « Continuer », le message prolonge la tâche en cours
     if (chat.controller) return;
     $("#chat-error").hidden = true;
     if (state.status?.state !== "ready") {
@@ -762,7 +831,10 @@ async function send(content, answer) {
         const resp = await fetch("/api/chat", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ conversation_id: chat.current.id, content, answer, preset_id: $("#preset-select").value }),
+            body: JSON.stringify({
+                conversation_id: chat.current.id, content, answer, continue_task: continueTask,
+                preset_id: $("#preset-select").value,
+            }),
             signal: chat.controller.signal,
         });
         if (!resp.ok) {
