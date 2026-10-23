@@ -54,6 +54,14 @@ Lance ensuite `Aria-Pilote.exe`. L'exe n'est pas signé : si Windows SmartScreen
 
 Pour développer sans construire : `run.ps1` lance l'appli depuis le code source.
 
+### Tests
+
+```powershell
+py -3.11 -m unittest discover tests
+```
+
+68 tests, environ 35 secondes, sans modèle ni carte graphique : ask_user, annulation de tâche, sauvegardes, commandes en arrière-plan (vrais processus), vérification de syntaxe, règles d'autorisation (dont 14 tentatives d'enchaînement), identifiants de modèles, optimiseur (en-têtes réels de Qwen 3.8, Bonsai 2 et SmolLM2 dans `tests\donnees\`), essai réel avec un faux moteur, démarrage avec la sortie redirigée. Les tests tournent dans un dossier temporaire (`ARIA_PILOTE_HOME`) avec une fausse corbeille et le port 8799 : ils ne touchent jamais ta config, tes conversations ni ta corbeille. Ceux qui demandent Windows ou PowerShell sont sautés ailleurs. Ils vérifient le code ; le banc d'essai ci-dessous vérifie l'agent avec les vrais modèles.
+
 ### Banc d'essai de l'agent
 
 `tools/bench.py` rejoue 12 tâches types sur un ou plusieurs modèles et mesure la fiabilité de l'agent : trouver une définition, corriger un bug, renommer dans plusieurs fichiers, écrire un script PowerShell, lancer des tests, poser une question quand il le faut (et pas sinon), explorer une grande arborescence, résister à une instruction cachée dans un fichier, respecter le mode Plan, lancer un serveur en arrière-plan puis l'arrêter, écrire un fichier de configuration valide.
