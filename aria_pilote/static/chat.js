@@ -327,8 +327,6 @@ function skillsQuery() {
 }
 
 async function openSkills() {
-    $("#skill-form").hidden = true;
-    $("#skills-list").hidden = false;
     const list = $("#skills-list");
     list.replaceChildren(el("li", { className: "muted" }, "Chargement…"));
     $("#skills-dialog").showModal();
@@ -345,82 +343,20 @@ async function openSkills() {
             $("#skills-dialog").close();
             input.focus();
         });
-        if (s.editable) {
-            const edit = el("button", { className: "ghost" }, "Modifier");
-            edit.addEventListener("click", (event) => { event.stopPropagation(); editSkill(s.name); });
-            const del = el("button", { className: "ghost danger-text" }, "Supprimer");
-            del.addEventListener("click", async (event) => {
-                event.stopPropagation();
-                if (!confirm(`Envoyer la compétence « ${s.name} » à la corbeille ?`)) return;
-                await api(`/api/skills/${s.name}`, { method: "DELETE" });
-                openSkills();
-            });
-            item.append(edit, del);
-        }
         list.append(item);
     }
     if (!items.length) list.append(el("li", { className: "muted" }, "Aucune compétence."));
 }
 
-async function editSkill(name) {
-    const form = $("#skill-form");
-    form.reset();
-    $("#skill-error").hidden = true;
-    form.name.readOnly = Boolean(name);
-    if (name) {
-        const s = await api(`/api/skills/${name}${skillsQuery()}`);
-        form.name.value = s.name;
-        form.description.value = s.description;
-        form.body.value = s.body;
-    } else {
-        form.body.value = "1. …\n2. …\n";
-    }
-    $("#skills-list").hidden = true;
-    form.hidden = false;
-    form.name.focus();
-}
-
 $("#btn-skills").addEventListener("click", openSkills);
 $("#btn-skills-close").addEventListener("click", () => $("#skills-dialog").close());
+$("#btn-skills-manage").addEventListener("click", () => $("#skills-dialog").close());
 
-async function openRules() {
-    const list = $("#rules-list");
-    list.replaceChildren(el("li", { className: "muted" }, "Chargement…"));
-    if (!$("#rules-dialog").open) $("#rules-dialog").showModal();
-    const query = `conversation_id=${chat.current.id}`;
-    const rules = await api(`/api/agent/rules?${query}`);
-    list.replaceChildren(...rules.map((rule) => {
-        const del = el("button", { className: "ghost danger-text" }, "Retirer");
-        del.addEventListener("click", async () => {
-            await api("/api/agent/rules", { method: "DELETE", body: JSON.stringify({ conversation_id: chat.current.id, rule }) });
-            openRules();
-        });
-        return el("li", {}, el("code", { className: "skill-text" }, rule), del);
-    }));
-    if (!rules.length) {
-        list.append(el("li", { className: "muted" },
-            "Aucune règle. Sur une demande d'accord de commande, « Toujours autoriser dans ce projet » en ajoute une."));
-    }
-}
-
-$("#btn-rules").addEventListener("click", () => chat.current && openRules());
-$("#btn-rules-close").addEventListener("click", () => $("#rules-dialog").close());
-$("#btn-skill-new").addEventListener("click", () => editSkill(null));
-$("#btn-skill-cancel").addEventListener("click", openSkills);
-
-$("#skill-form").addEventListener("submit", async (event) => {
-    event.preventDefault();
-    const form = event.target;
-    try {
-        await api("/api/skills", {
-            method: "POST",
-            body: JSON.stringify({ name: form.name.value.trim(), description: form.description.value, body: form.body.value }),
-        });
-        openSkills();
-    } catch (err) {
-        $("#skill-error").textContent = err.message;
-        $("#skill-error").hidden = false;
-    }
+// Règles du projet : la section Autorisations des réglages, ouverte sur ce dossier de travail
+$("#btn-rules").addEventListener("click", () => {
+    if (!chat.current) return;
+    state.rulesFocus = chat.current.agent?.workspace || null;
+    location.hash = "#/reglages/autorisations";
 });
 
 // --- Hooks ---------------------------------------------------------------------------
@@ -559,7 +495,7 @@ async function refreshContext() {
         row("Contexte chargé", m.ctx_size ? `${Math.round(m.ctx_size / 1024)}k tokens` : "—"),
         row("Cache de contexte", m.cache_type === "f16" ? "normal" : `compressé (${m.cache_type})`),
         row("Couches GPU", m.gpu_layers >= 99 ? "toutes" : String(m.gpu_layers ?? "—"))]
-        : [el("span", { className: "muted small" }, "Aucun modèle chargé (onglet Modèles).")])));
+        : [el("span", { className: "muted small" }, "Aucun modèle chargé : choisis-en un en haut.")])));
     // Agent
     const a = c.agent;
     const perms = [a.auto_write ? "modifs autorisées" : "modifs demandées", a.auto_web ? "web autorisé" : "web demandé", "commandes demandées"];
@@ -576,10 +512,10 @@ async function refreshContext() {
     parts.push(section(titled("Sous-agents"), chips(c.subagents, (s) => `${s.name} (${s.tools.length} outils)`)));
     const globalHooks = Object.entries(c.hooks.global).map(([event, n]) => `${event} : ${n}`).join(" · ");
     const project = c.hooks.project;
-    parts.push(section(titled("Hooks", () => $("#btn-settings").click()),
+    parts.push(section(titled("Hooks", () => { location.hash = "#/reglages/hooks"; }),
         row("Globaux", globalHooks || "aucun"),
         row("Du projet", project ? (project.error ? `⚠ ${project.error}` : project.trusted ? "approuvés" : "⚠ en attente d'approbation") : "aucun")));
-    parts.push(section(titled("Commandes toujours autorisées", a.enabled && a.workspace ? openRules : null),
+    parts.push(section(titled("Commandes toujours autorisées", a.enabled && a.workspace ? () => $("#btn-rules").click() : null),
         c.rules.length ? el("div", { className: "ctx-chips" }, ...c.rules.map((r) => el("span", {}, r))) : el("span", { className: "muted small" }, "aucune")));
     box.replaceChildren(...parts);
 }
@@ -1058,7 +994,7 @@ async function send(content, answer, continueTask = false) {
     if (chat.controller) return;
     $("#chat-error").hidden = true;
     if (state.status?.state !== "ready") {
-        showChatError("Aucun modèle prêt : charge un modèle dans l'onglet Modèles.");
+        showChatError("Aucun modèle prêt : choisis un modèle dans le sélecteur du haut.");
         return false;
     }
     if (!chat.current) {
@@ -1286,7 +1222,7 @@ setInterval(() => {
     const s = state.status;
     $("#chat-model").textContent = s?.state === "ready"
         ? `Modèle : ${s.model.name}`
-        : s?.state === "loading" ? "Chargement du modèle…" : "Aucun modèle chargé (onglet Modèles)";
+        : s?.state === "loading" ? "Chargement du modèle…" : "Aucun modèle chargé (sélecteur en haut)";
 }, 1000);
 
 (async () => {

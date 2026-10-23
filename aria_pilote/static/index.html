@@ -10,18 +10,14 @@
 <body>
     <header class="topbar">
         <div class="brand"><img class="brand-logo" src="favicon.png" alt="">Aria<span>Pilote</span><small id="app-version"></small></div>
-        <nav class="tabs">
-            <button class="tab" data-view="chat">Chat</button>
-            <button class="tab" data-view="models">Modèles</button>
-            <button class="tab" data-view="discover">Découvrir</button>
-        </nav>
         <div id="status" class="status idle">
             <span class="dot"></span>
-            <span id="status-text">Aucun modèle chargé</span>
+            <select id="model-pick" title="Modèle chargé : en choisir un le charge avec ses réglages"></select>
+            <span id="status-text" class="small"></span>
         </div>
         <div class="actions">
-            <button id="btn-unload" class="ghost" hidden>Éjecter</button>
-            <button id="btn-settings" class="ghost">Réglages</button>
+            <button id="btn-unload" class="ghost" hidden title="Décharger le modèle">⏏ Éjecter</button>
+            <a id="btn-settings" class="button ghost" href="#/reglages">⚙ Réglages</a>
             <button id="btn-quit" class="ghost danger-text" title="Arrêter Aria Pilote">⏻ Quitter</button>
         </div>
     </header>
@@ -95,130 +91,274 @@
         </aside>
     </main>
 
-    <main id="view-models" class="layout" hidden>
-        <section class="panel">
-            <div class="panel-head">
-                <h2>Mes modèles</h2>
-                <button id="btn-refresh" class="ghost" title="Rescanner les dossiers">↻</button>
-            </div>
-            <input id="filter" class="filter" placeholder="Filtrer…">
-            <ul id="model-list" class="model-list"></ul>
-            <h3>Moteurs</h3>
-            <ul id="engines" class="engines"></ul>
-        </section>
-
-        <section class="panel">
-            <p id="empty" class="muted">Choisis un modèle à gauche.</p>
-            <div id="detail" hidden>
-                <h2 id="d-name"></h2>
-                <p id="d-path" class="mono muted small"></p>
-                <dl id="d-meta" class="meta"></dl>
-                <form id="load-form" class="form">
-                    <label>Moteur
-                        <select name="engine">
-                            <option value="auto">Auto</option>
-                            <option value="llama.cpp">llama.cpp officiel</option>
-                            <option value="prism">PrismML (Bonsai)</option>
-                        </select>
-                    </label>
-                    <label>Contexte (tokens)
-                        <input name="ctx_size" type="number" min="512" step="512" required>
-                    </label>
-                    <label>Couches GPU
-                        <input name="gpu_layers" type="number" min="0" required>
-                    </label>
-                    <label>Threads CPU
-                        <input name="threads" type="number" min="0" placeholder="0 = auto">
-                    </label>
-                    <label>Flash attention
-                        <select name="flash_attn">
-                            <option value="auto">Auto</option>
-                            <option value="on">On</option>
-                            <option value="off">Off</option>
-                        </select>
-                    </label>
-                    <label title="Compresser le cache de contexte permet un contexte plus grand dans la même VRAM">Cache de contexte
-                        <select name="cache_type">
-                            <option value="f16">Normal (f16)</option>
-                            <option value="q8_0">Compressé ×2 (q8_0)</option>
-                            <option value="q4_0">Compressé ×4 (q4_0, perte sensible)</option>
-                        </select>
-                    </label>
-                    <label class="check"><input name="use_mmproj" type="checkbox"> Vision (mmproj)</label>
-                    <label class="check"><input name="remember" type="checkbox"> Mémoriser pour ce modèle</label>
-                    <button type="submit" class="primary">Charger</button>
-                </form>
-                <p id="form-error" class="error" hidden></p>
-                <button id="btn-delete-model" class="ghost danger-text">🗑 Envoyer ce modèle à la corbeille</button>
+    <main id="view-settings" class="settings-layout" hidden>
+        <nav class="settings-nav" aria-label="Réglages">
+            <a href="#/chat" class="settings-back">← Retour au chat</a>
+            <div class="nav-group">Application</div>
+            <a href="#/reglages/general" data-section="general">🎛 Général</a>
+            <div class="nav-group">Modèles</div>
+            <a href="#/reglages/modele-defaut" data-section="modele-defaut">⭐ Modèle par défaut</a>
+            <a href="#/reglages/mes-modeles" data-section="mes-modeles">📦 Mes modèles</a>
+            <a href="#/reglages/decouvrir" data-section="decouvrir">🔎 Découvrir</a>
+            <a href="#/reglages/moteurs" data-section="moteurs">🔧 Moteurs</a>
+            <a href="#/reglages/materiel" data-section="materiel">⚡ Matériel et optimisation</a>
+            <div class="nav-group">Agents</div>
+            <a href="#/reglages/autorisations" data-section="autorisations">🛡 Autorisations</a>
+            <a href="#/reglages/competences" data-section="competences">📚 Compétences et sous-agents</a>
+            <a href="#/reglages/hooks" data-section="hooks">🪝 Hooks</a>
+        </nav>
+        <div class="settings-body">
+            <div class="settings-head">
+                <h2 id="settings-title"></h2>
+                <span id="saved-flag" class="saved-flag" hidden>✓ Enregistré</span>
             </div>
 
-            <h3>Journal du moteur</h3>
-            <pre id="logs" class="logs"></pre>
-        </section>
-    </main>
-
-    <main id="view-discover" class="layout" hidden>
-        <section class="panel">
-            <form id="hub-form" class="hub-search">
-                <input id="hub-query" placeholder="Rechercher un modèle GGUF (ex. bonsai, qwen 27b)…" required>
-                <button type="submit" class="primary">Chercher</button>
-            </form>
-            <p id="hub-error" class="error" hidden></p>
-            <ul id="hub-results" class="model-list"></ul>
-        </section>
-
-        <section class="panel">
-            <p id="hub-empty" class="muted">Lance une recherche, puis choisis un dépôt.</p>
-            <div id="hub-detail" hidden>
-                <h2 id="hub-repo"></h2>
-                <p id="hub-dest" class="mono muted small"></p>
-                <label id="hub-vision-wrap" class="check-line"><input id="hub-vision" type="checkbox" checked> Ajouter la vision (<span id="hub-mmproj"></span>)</label>
-                <div class="table-wrap">
-                    <table class="files">
-                        <thead>
-                            <tr><th>Fichier</th><th>Quant</th><th>Taille</th><th>Moteur</th><th>Machine</th><th></th></tr>
-                        </thead>
-                        <tbody id="hub-files"></tbody>
-                    </table>
+            <section class="settings-section" data-section="general" data-title="Général" hidden>
+                <div class="set-card">
+                    <div class="set-row">
+                        <div><div class="set-label">Version</div><div class="muted small">Tes modèles en local, avec un agent</div></div>
+                        <span id="set-version" class="mono"></span>
+                    </div>
+                    <div class="set-row">
+                        <div><div class="set-label">Code source</div><div class="muted small">github.com/ZedjeK/Aria-Pilote</div></div>
+                        <a class="button ghost" href="https://github.com/ZedjeK/Aria-Pilote" target="_blank" rel="noopener">Ouvrir ↗</a>
+                    </div>
                 </div>
-                <p class="muted small">« Machine » est une estimation : taille du fichier + ~1,5 Go pour le contexte, comparée à ta VRAM et ta RAM.</p>
-            </div>
+            </section>
 
-            <h3>Téléchargements</h3>
-            <ul id="dl-list" class="dl-list"></ul>
-        </section>
-    </main>
-
-    <dialog id="settings">
-        <form method="dialog" id="settings-form" class="form">
-            <h2>Réglages</h2>
-            <fieldset class="hardware">
-                <legend>Matériel</legend>
-                <div id="hw-info" class="muted small">Scan en cours…</div>
-                <div class="row">
-                    <button type="button" id="btn-optimize" class="primary">⚡ Optimiser mes modèles</button>
+            <section class="settings-section" data-section="modele-defaut" data-title="Modèle par défaut" hidden>
+                <p class="muted">Celui que le sélecteur du haut propose, et que tu peux faire charger dès l'ouverture d'Aria.</p>
+                <div class="set-card">
+                    <label class="set-row">
+                        <div><div class="set-label">Modèle</div><div class="muted small">Chargé avec ses réglages mémorisés, sinon ceux par défaut des moteurs</div></div>
+                        <select id="set-default-model" data-config="default_model"></select>
+                    </label>
+                    <label class="set-row">
+                        <div><div class="set-label">Charger au démarrage</div><div class="muted small">Le modèle est prêt dès que la page s'ouvre</div></div>
+                        <input id="set-autoload" type="checkbox" class="switch" data-config="autoload">
+                    </label>
+                    <label class="set-row">
+                        <div><div class="set-label">Vision</div><div class="muted small">Joindre le projecteur vision (mmproj) quand le modèle en a un. Un réglage mémorisé pour un modèle passe avant.</div></div>
+                        <input id="set-vision" type="checkbox" class="switch" data-config="load_defaults.use_mmproj">
+                    </label>
                 </div>
-            </fieldset>
-            <label>Dossiers de modèles (un par ligne)
-                <textarea name="model_dirs" rows="5" class="mono"></textarea>
-            </label>
-            <label>Hooks globaux (hooks.json) : commandes PowerShell lancées autour du travail de l'agent
-                <textarea name="hooks" rows="10" class="mono" spellcheck="false"
-                    placeholder='{
+            </section>
+
+            <section class="settings-section" data-section="mes-modeles" data-title="Mes modèles" hidden>
+                <div class="layout settings-split">
+                <section class="panel">
+                    <div class="panel-head">
+                        <h3>Dans tes dossiers</h3>
+                        <button id="btn-refresh" class="ghost" title="Rescanner les dossiers">↻</button>
+                    </div>
+                    <input id="filter" class="filter" placeholder="Filtrer…">
+                    <ul id="model-list" class="model-list"></ul>
+                </section>
+
+                <section class="panel">
+                    <p id="empty" class="muted">Choisis un modèle à gauche.</p>
+                    <div id="detail" hidden>
+                        <h2 id="d-name"></h2>
+                        <p id="d-path" class="mono muted small"></p>
+                        <dl id="d-meta" class="meta"></dl>
+                        <form id="load-form" class="form">
+                            <label>Moteur
+                                <select name="engine">
+                                    <option value="auto">Auto</option>
+                                    <option value="llama.cpp">llama.cpp officiel</option>
+                                    <option value="prism">PrismML (Bonsai)</option>
+                                </select>
+                            </label>
+                            <label>Contexte (tokens)
+                                <input name="ctx_size" type="number" min="512" step="512" required>
+                            </label>
+                            <label>Couches GPU
+                                <input name="gpu_layers" type="number" min="0" required>
+                            </label>
+                            <label>Threads CPU
+                                <input name="threads" type="number" min="0" placeholder="0 = auto">
+                            </label>
+                            <label>Flash attention
+                                <select name="flash_attn">
+                                    <option value="auto">Auto</option>
+                                    <option value="on">On</option>
+                                    <option value="off">Off</option>
+                                </select>
+                            </label>
+                            <label title="Compresser le cache de contexte permet un contexte plus grand dans la même VRAM">Cache de contexte
+                                <select name="cache_type">
+                                    <option value="f16">Normal (f16)</option>
+                                    <option value="q8_0">Compressé ×2 (q8_0)</option>
+                                    <option value="q4_0">Compressé ×4 (q4_0, perte sensible)</option>
+                                </select>
+                            </label>
+                            <label class="check"><input name="use_mmproj" type="checkbox"> Vision (mmproj)</label>
+                            <label class="check"><input name="remember" type="checkbox"> Mémoriser pour ce modèle</label>
+                            <button type="submit" class="primary">Charger</button>
+                        </form>
+                        <p id="form-error" class="error" hidden></p>
+                        <button id="btn-delete-model" class="ghost danger-text">🗑 Envoyer ce modèle à la corbeille</button>
+                    </div>
+
+                </section>
+                </div>
+            </section>
+
+            <section class="settings-section" data-section="decouvrir" data-title="Découvrir" hidden>
+                <div class="layout settings-split">
+                <section class="panel">
+                    <form id="hub-form" class="hub-search">
+                        <input id="hub-query" placeholder="Rechercher un modèle GGUF (ex. bonsai, qwen 27b)…" required>
+                        <button type="submit" class="primary">Chercher</button>
+                    </form>
+                    <p id="hub-error" class="error" hidden></p>
+                    <ul id="hub-results" class="model-list"></ul>
+                </section>
+
+                <section class="panel">
+                    <p id="hub-empty" class="muted">Lance une recherche, puis choisis un dépôt.</p>
+                    <div id="hub-detail" hidden>
+                        <h2 id="hub-repo"></h2>
+                        <p id="hub-dest" class="mono muted small"></p>
+                        <label id="hub-vision-wrap" class="check-line"><input id="hub-vision" type="checkbox" checked> Ajouter la vision (<span id="hub-mmproj"></span>)</label>
+                        <div class="table-wrap">
+                            <table class="files">
+                                <thead>
+                                    <tr><th>Fichier</th><th>Quant</th><th>Taille</th><th>Moteur</th><th>Machine</th><th></th></tr>
+                                </thead>
+                                <tbody id="hub-files"></tbody>
+                            </table>
+                        </div>
+                        <p class="muted small">« Machine » est une estimation : taille du fichier + ~1,5 Go pour le contexte, comparée à ta VRAM et ta RAM.</p>
+                    </div>
+
+                    <h3>Téléchargements</h3>
+                    <ul id="dl-list" class="dl-list"></ul>
+                </section>
+                </div>
+            </section>
+
+            <section class="settings-section" data-section="moteurs" data-title="Moteurs" hidden>
+                <div class="set-card">
+                    <div class="set-card-title">Moteurs installés</div>
+                    <ul id="engines" class="engines"></ul>
+                    <p class="muted small">llama.cpp officiel pour la plupart des modèles, le fork PrismML pour les modèles ternaires comme Bonsai. « Auto » choisit selon le modèle.</p>
+                </div>
+                <div class="set-card">
+                    <div class="set-card-title">Réglages de chargement par défaut</div>
+                    <p class="muted small">Pour les modèles sans réglage mémorisé : ceux d'⚡ Optimiser ou de « Mémoriser pour ce modèle » passent avant.</p>
+                    <form id="defaults-form" class="form">
+                        <label>Moteur
+                            <select name="engine" data-config="load_defaults.engine">
+                                <option value="auto">Auto</option>
+                                <option value="llama.cpp">llama.cpp officiel</option>
+                                <option value="prism">PrismML (Bonsai)</option>
+                            </select>
+                        </label>
+                        <label>Contexte (tokens)
+                            <input name="ctx_size" type="number" min="512" step="512" data-config="load_defaults.ctx_size">
+                        </label>
+                        <label>Couches GPU
+                            <input name="gpu_layers" type="number" min="0" data-config="load_defaults.gpu_layers">
+                        </label>
+                        <label>Threads CPU
+                            <input name="threads" type="number" min="0" placeholder="0 = auto" data-config="load_defaults.threads">
+                        </label>
+                        <label>Flash attention
+                            <select name="flash_attn" data-config="load_defaults.flash_attn">
+                                <option value="auto">Auto</option>
+                                <option value="on">On</option>
+                                <option value="off">Off</option>
+                            </select>
+                        </label>
+                        <label>Cache de contexte
+                            <select name="cache_type" data-config="load_defaults.cache_type">
+                                <option value="f16">Normal (f16)</option>
+                                <option value="q8_0">Compressé ×2 (q8_0)</option>
+                                <option value="q4_0">Compressé ×4 (q4_0, perte sensible)</option>
+                            </select>
+                        </label>
+                    </form>
+                </div>
+                <div class="set-card">
+                    <div class="set-card-title">Journal du moteur</div>
+                    <pre id="logs" class="logs"></pre>
+                </div>
+            </section>
+
+            <section class="settings-section" data-section="materiel" data-title="Matériel et optimisation" hidden>
+                <div class="set-card">
+                    <div class="set-card-title">Ta machine</div>
+                    <div id="hw-info" class="muted small">Scan en cours…</div>
+                    <div class="row">
+                        <button type="button" id="btn-optimize" class="primary">⚡ Optimiser mes modèles</button>
+                    </div>
+                </div>
+                <div class="set-card">
+                    <div class="set-card-title">Dossiers de modèles</div>
+                    <p class="muted small">Un par ligne. Le premier reçoit les téléchargements ; celui de LM Studio est lu s'il existe.</p>
+                    <textarea id="set-model-dirs" rows="4" class="mono" spellcheck="false"></textarea>
+                </div>
+            </section>
+
+            <section class="settings-section" data-section="autorisations" data-title="Autorisations" hidden>
+                <p class="muted">Commandes que l'agent lance sans te demander, projet par projet. Une règle terminée par * couvre
+                    les commandes qui commencent ainsi, jamais une suite avec ; &amp; | &gt; $ (enchaînement). La liste noire reste prioritaire.</p>
+                <div id="rules-all"></div>
+            </section>
+
+            <section class="settings-section" data-section="competences" data-title="Compétences et sous-agents" hidden>
+                <div class="set-card">
+                    <div class="set-card-head">
+                        <div class="set-card-title">Compétences</div>
+                        <button id="btn-skill-new" class="ghost">+ Nouvelle</button>
+                    </div>
+                    <p class="muted small">Des instructions que l'agent charge quand une tâche y correspond, ou que tu appelles avec « /nom ».
+                        Celles d'un projet (.aria/skills) apparaissent depuis le chat.</p>
+                    <ul id="skills-manage" class="skills-list"></ul>
+                    <form id="skill-form" class="form" hidden>
+                        <label>Nom (minuscules, chiffres, tirets)
+                            <input name="name" required pattern="[a-z0-9][a-z0-9\-]{0,39}">
+                        </label>
+                        <label>Description (dit à l'agent quand s'en servir)
+                            <input name="description" required>
+                        </label>
+                        <label>Instructions
+                            <textarea name="body" rows="12" class="mono" required></textarea>
+                        </label>
+                        <p id="skill-error" class="error" hidden></p>
+                        <div class="row">
+                            <button type="button" id="btn-skill-cancel" class="ghost">Annuler</button>
+                            <button type="submit" class="primary">Enregistrer</button>
+                        </div>
+                    </form>
+                </div>
+                <div class="set-card">
+                    <div class="set-card-title">Sous-agents</div>
+                    <p class="muted small">Des agents spécialisés que l'agent principal lance pour une sous-tâche, avec leurs propres outils.</p>
+                    <ul id="subagents-list" class="skills-list"></ul>
+                </div>
+            </section>
+
+            <section class="settings-section" data-section="hooks" data-title="Hooks" hidden>
+                <p class="muted">Commandes PowerShell lancées autour du travail de l'agent, dans tous les projets (hooks.json).</p>
+                <div class="set-card">
+                    <textarea id="set-hooks" rows="14" class="mono" spellcheck="false"
+                        placeholder='{
     "avant_outil": [{"outils": ["run_command"], "commande": "if ($env:ARIA_ARGS -match \"git push\") { \"Pousser se fait à la main.\"; exit 2 }"}],
     "apres_outil": [{"outils": ["write_file", "edit_file", "multi_edit"], "commande": "if ($env:ARIA_FICHIER -like \"*.py\") { python -m py_compile $env:ARIA_FICHIER }"}],
     "debut_tache": [{"commande": "git status --short"}]
 }'></textarea>
-            </label>
-            <p class="muted small">Événements : avant_outil (code de sortie 2 = action bloquée), apres_outil (sortie ajoutée au résultat),
-                debut_tache (sortie donnée à l'agent), fin_tache. Variables : ARIA_OUTIL, ARIA_ARGS, ARIA_FICHIER, ARIA_STATUT.</p>
-            <p id="settings-error" class="error" hidden></p>
-            <div class="row">
-                <button value="cancel" class="ghost">Annuler</button>
-                <button value="save" class="primary">Enregistrer</button>
-            </div>
-        </form>
-    </dialog>
+                    <p class="muted small">Événements : avant_outil (code de sortie 2 = action bloquée), apres_outil (sortie ajoutée au résultat),
+                        debut_tache (sortie donnée à l'agent), fin_tache. Variables : ARIA_OUTIL, ARIA_ARGS, ARIA_FICHIER, ARIA_STATUT.</p>
+                    <p id="hooks-error" class="error" hidden></p>
+                    <div class="row">
+                        <button id="btn-hooks-save" class="primary">Enregistrer les hooks</button>
+                    </div>
+                </div>
+            </section>
+        </div>
+    </main>
 
     <dialog id="optimize-dialog" class="skills-dialog optimize-dialog">
         <div class="skills-head">
@@ -242,42 +382,15 @@
         </div>
     </dialog>
 
-    <dialog id="rules-dialog" class="skills-dialog">
-        <div class="skills-head">
-            <h2>Commandes toujours autorisées</h2>
-            <button id="btn-rules-close" class="ghost">Fermer</button>
-        </div>
-        <p class="muted small">Dans ce dossier de travail, l'agent lance ces commandes sans te demander. Une règle terminée
-            par * couvre les commandes qui commencent ainsi, jamais une suite avec ; &amp; | &gt; $ (enchaînement).
-            La liste noire reste prioritaire.</p>
-        <ul id="rules-list" class="skills-list"></ul>
-    </dialog>
-
     <dialog id="skills-dialog" class="skills-dialog">
         <div class="skills-head">
             <h2>Compétences</h2>
-            <button id="btn-skill-new" class="ghost">+ Nouvelle</button>
+            <a id="btn-skills-manage" class="button ghost" href="#/reglages/competences">⚙ Gérer</a>
             <button id="btn-skills-close" class="ghost">Fermer</button>
         </div>
         <p class="muted small">Clique sur une compétence pour l'ajouter à ton message (« /nom » au début). En mode Agent,
             il les charge aussi tout seul quand une tâche y correspond.</p>
         <ul id="skills-list" class="skills-list"></ul>
-        <form id="skill-form" class="form" hidden>
-            <label>Nom (minuscules, chiffres, tirets)
-                <input name="name" required pattern="[a-z0-9][a-z0-9\-]{0,39}">
-            </label>
-            <label>Description (dit à l'agent quand s'en servir)
-                <input name="description" required>
-            </label>
-            <label>Instructions
-                <textarea name="body" rows="12" class="mono" required></textarea>
-            </label>
-            <p id="skill-error" class="error" hidden></p>
-            <div class="row">
-                <button type="button" id="btn-skill-cancel" class="ghost">Annuler</button>
-                <button type="submit" class="primary">Enregistrer</button>
-            </div>
-        </form>
     </dialog>
 
     <dialog id="preset-dialog">
@@ -318,5 +431,6 @@
     <script src="app.js"></script>
     <script src="chat.js"></script>
     <script src="discover.js"></script>
+    <script src="settings.js"></script>
 </body>
 </html>
