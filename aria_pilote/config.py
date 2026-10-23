@@ -27,6 +27,9 @@ DEFAULTS = {
         "~/.lmstudio/models",
     ],
     "engines_dir": "engines",
+    # Modèle proposé par le sélecteur du haut (identifiant, "" : aucun), chargé au démarrage si autoload
+    "default_model": "",
+    "autoload": False,
     "searxng_url": "http://127.0.0.1:8888",
     # Vérification de la syntaxe des fichiers que l'agent écrit (Python, JSON, YAML, PowerShell…)
     "auto_check": True,

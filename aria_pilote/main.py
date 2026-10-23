@@ -25,10 +25,30 @@ async def lifespan(app):
         await asyncio.to_thread(backups.cleanup, conversations.ids(), config.get().get("backup_retention_days", 30))
     except OSError as exc:
         print(f"Ménage des sauvegardes impossible : {exc}")
+    autoload = asyncio.create_task(_autoload())
     yield
+    autoload.cancel()
     await asyncio.to_thread(background.stop_all)  # le job object les tuerait de toute façon : ici, proprement
     await manager.shutdown()
     await searxng.manager.stop()
+
+
+async def _autoload():
+    """Charge le modèle par défaut au démarrage, si « Charger au démarrage » est coché dans les réglages."""
+    cfg = config.get()
+    if not (cfg.get("autoload") and cfg.get("default_model")):
+        return
+    await asyncio.to_thread(models.scan)
+    model = models.get(cfg["default_model"])
+    if model is None:
+        print("Modèle par défaut introuvable : rien n'est chargé au démarrage.")
+        return
+    settings = config.model_settings(model.key)
+    auto = settings["engine"] == "auto"
+    try:
+        await manager.load(model, settings, model.engine_auto if auto else settings["engine"], auto)
+    except Exception as exc:  # le démarrage de l'appli ne doit jamais en dépendre
+        print(f"Chargement du modèle par défaut impossible : {exc}")
 
 
 app = FastAPI(title="Aria Pilote", lifespan=lifespan)
@@ -75,6 +95,8 @@ class LoadRequest(BaseModel):
 class ConfigPatch(BaseModel):
     model_dirs: list[str] | None = None
     load_defaults: dict | None = None
+    default_model: str | None = None
+    autoload: bool | None = None
 
 
 class Preset(BaseModel):
@@ -557,6 +579,27 @@ def delete_rule(req: RuleDelete):
     except permissions.RuleError as exc:
         raise HTTPException(404, str(exc))
     return permissions.rules(root)
+
+
+class ProjectRuleDelete(BaseModel):
+    root: str
+    rule: str
+
+
+@app.get("/api/rules")
+def all_rules():
+    """Règles « toujours autoriser » de tous les projets, pour la page Réglages."""
+    stored = config.get().get("command_rules", {})
+    return [{"root": root, "rules": items} for root, items in sorted(stored.items()) if items]
+
+
+@app.delete("/api/rules")
+def delete_project_rule(req: ProjectRuleDelete):
+    try:
+        permissions.remove(req.root, req.rule)
+    except permissions.RuleError as exc:
+        raise HTTPException(404, str(exc))
+    return all_rules()
 
 
 @app.post("/api/agent/undo")

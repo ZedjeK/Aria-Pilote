@@ -38,7 +38,35 @@ async function loadModels(refresh = false) {
     state.models = await api(`/api/models${refresh ? "?refresh=1" : ""}`);
     renderList();
     renderDetail();
+    renderPicker();
 }
+
+// --- Sélecteur de modèle (barre du haut) -------------------------------------
+
+function renderPicker() {
+    const pick = $("#model-pick");
+    if (document.activeElement === pick) return;  // pas pendant que tu choisis
+    const active = ["loading", "ready"].includes(state.status?.state);
+    const current = active ? state.status.model?.id : "";
+    const usable = state.models.filter((m) => !m.error && !/mmproj/i.test(m.file));
+    const placeholder = el("option", { value: "" }, usable.length ? "Choisir un modèle…" : "Aucun modèle (Réglages › Découvrir)");
+    pick.replaceChildren(placeholder, ...usable.map((m) =>
+        el("option", { value: m.id }, `${m.id === state.config?.default_model ? "⭐ " : ""}${m.name}`)));
+    pick.value = current && usable.some((m) => m.id === current) ? current : "";
+}
+
+$("#model-pick").addEventListener("change", async (event) => {
+    const id = event.target.value;
+    event.target.blur();
+    if (!id || id === state.status?.model?.id) return;
+    try {
+        state.status = await api("/api/load", { method: "POST", body: JSON.stringify({ model_id: id }) });
+    } catch (err) {
+        alert(err.message);
+    }
+    renderStatus();
+    renderList();
+});
 
 function renderList() {
     const filter = $("#filter").value.toLowerCase();
@@ -152,14 +180,16 @@ function renderStatus() {
     box.className = `status ${s.state}`;
     const name = s.model?.name;
     const engine = ENGINE_LABELS[s.engine] || s.engine;
-    const text = {
+    box.title = {
         idle: "Aucun modèle chargé",
         loading: `Chargement de ${name} (${engine})…`,
         ready: `${name} · ${engine} · ${s.api_url}`,
         error: s.error || "Erreur",
     }[s.state];
-    $("#status-text").textContent = text;
+    // Le nom est dans le sélecteur : le texte ne sert qu'aux états de passage
+    $("#status-text").textContent = { loading: "chargement…", error: s.error || "erreur" }[s.state] || "";
     $("#btn-unload").hidden = !["loading", "ready"].includes(s.state);
+    renderPicker();
 }
 
 async function pollStatus() {
@@ -245,17 +275,6 @@ $("#btn-quit").addEventListener("click", async () => {
             el("p", { className: "small" }, "Pour la relancer : double-clic sur « Aria-Pilote.exe »."),
         ))
     );
-});
-
-// --- Réglages --------------------------------------------------------------
-
-$("#btn-settings").addEventListener("click", async () => {
-    const [cfg, hooksInfo] = await Promise.all([api("/api/config"), api("/api/hooks")]);
-    $("#settings-form").model_dirs.value = cfg.model_dirs.join("\n");
-    $("#settings-form").hooks.value = hooksInfo.global;
-    $("#settings-error").hidden = true;
-    $("#settings").showModal();
-    renderHardware();
 });
 
 // --- Matériel et optimisation des modèles ----------------------------------
@@ -466,54 +485,10 @@ $("#btn-optimize-apply").addEventListener("click", async () => {
     }
 });
 
-$("#settings").addEventListener("close", async () => {
-    if ($("#settings").returnValue !== "save") return;
-    const form = $("#settings-form");
-    const dirs = form.model_dirs.value
-        .split("\n")
-        .map((d) => d.trim())
-        .filter(Boolean);
-    await api("/api/config", { method: "PUT", body: JSON.stringify({ model_dirs: dirs }) });
-    try {
-        await api("/api/hooks/global", { method: "PUT", body: JSON.stringify({ content: form.hooks.value }) });
-    } catch (err) {
-        // hooks.json invalide : on rouvre les réglages avec l'erreur, sans perdre la saisie
-        $("#settings-error").textContent = err.message;
-        $("#settings-error").hidden = false;
-        $("#settings").showModal();
-        return;
-    }
-    await loadModels();
-});
-
-// --- Onglets ---------------------------------------------------------------
-
-function showView(name) {
-    for (const view of ["chat", "models", "discover"]) {
-        $(`#view-${view}`).hidden = view !== name;
-        $(`.tab[data-view="${view}"]`).classList.toggle("active", view === name);
-    }
-    try {
-        localStorage.setItem("aria-view", name);
-    } catch {
-        // stockage indisponible : on garde juste l'onglet courant
-    }
-}
-
-for (const tab of document.querySelectorAll(".tab")) {
-    tab.addEventListener("click", () => showView(tab.dataset.view));
-}
-
 // --- Démarrage --------------------------------------------------------------
 
 (async () => {
-    let view = "chat";
-    try {
-        view = localStorage.getItem("aria-view") || "chat";
-    } catch {
-        // idem
-    }
-    showView(view);
+    state.config = await api("/api/config");
     await pollStatus();
     await Promise.all([loadModels(), loadEngines(), pollLogs()]);
     setInterval(pollStatus, 1000);
