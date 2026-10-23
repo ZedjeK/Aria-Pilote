@@ -27,5 +27,5 @@ def check(ws, run):
                                        ("SMS", any("sms" in v for v in values))] if not ok]
     if missing:
         return False, f"réglages absents : {', '.join(missing)}"
-    warned = [c for c in run["calls"] if c["name"] in ("write_file", "edit_file") and c.get("syntax") is False]
+    warned = [c for c in run["calls"] if c["name"] in ("write_file", "edit_file", "multi_edit") and c.get("syntax") is False]
     return True, "ok (corrigé après l'avertissement)" if warned else "ok"
