@@ -186,7 +186,10 @@ async function refreshDownloads() {
     }
     let finished = false;
     for (const job of jobs) {
-        if (job.status === "done" && hubState.jobStatus[job.id] && hubState.jobStatus[job.id] !== "done") finished = true;
+        if (job.status === "done" && hubState.jobStatus[job.id] && hubState.jobStatus[job.id] !== "done") {
+            finished = true;
+            notify("download", "Téléchargement terminé", job.label);
+        }
         hubState.jobStatus[job.id] = job.status;
 
         const head = el("div", { className: "dl-head" }, el("span", { className: "dl-label" }, job.label));

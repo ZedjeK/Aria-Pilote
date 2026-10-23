@@ -106,7 +106,95 @@ for (const field of document.querySelectorAll("#view-settings [data-config]")) {
 
 function loadGeneral() {
     $("#set-version").textContent = state.status?.version ? `v${state.status.version}` : "?";
+    fillConfigFields($('.settings-section[data-section="general"]'));
+    renderNotifications();
+    loadUpdate(false);
 }
+
+// --- Mises à jour ------------------------------------------------------------------------
+
+function since(seconds) {
+    const minutes = Math.round((Date.now() / 1000 - seconds) / 60);
+    if (minutes < 1) return "à l'instant";
+    if (minutes < 60) return `il y a ${minutes} min`;
+    const hours = Math.round(minutes / 60);
+    return hours < 24 ? `il y a ${hours} h` : `il y a ${Math.round(hours / 24)} j`;
+}
+
+function renderUpdateBadge(u) {
+    const badge = $("#update-badge");
+    badge.hidden = !u?.newer;
+    if (u?.newer) badge.textContent = `v${u.latest} disponible`;
+}
+
+function renderUpdate(u) {
+    const box = $("#update-info");
+    let line;
+    if (u.error) line = el("div", { className: "error small" }, `⚠ ${u.error}`);
+    else if (!u.checked_at) line = el("div", { className: "muted small" }, "Pas encore vérifié : clique sur « Vérifier maintenant ».");
+    else if (u.newer) line = el("div", { className: "update-new" }, `🎉 La version ${u.latest} est disponible (tu as la ${u.current}).`);
+    else if (u.dev) line = el("div", { className: "small" }, `🧪 Version de développement : plus récente que la dernière publiée (${u.latest}).`);
+    else if (!u.latest) line = el("div", { className: "muted small" }, "Aucune version publiée sur GitHub pour l'instant.");
+    else line = el("div", { className: "ok-text small" }, `✓ À jour : la ${u.current} est la dernière version publiée.`);
+    const when = u.checked_at ? el("div", { className: "muted small" }, `Dernière vérification ${since(u.checked_at)}.`) : "";
+    box.replaceChildren(line, when);
+    $("#update-howto").hidden = !u.newer;
+    if (u.changes_url) $("#update-changes").href = u.changes_url;
+    renderUpdateBadge(u);
+}
+
+async function loadUpdate(force) {
+    const button = $("#btn-update-check");
+    button.disabled = true;
+    try {
+        renderUpdate(await api(force ? "/api/update/check" : "/api/update", force ? { method: "POST" } : {}));
+    } catch (err) {
+        $("#update-info").replaceChildren(el("div", { className: "error small" }, err.message));
+    } finally {
+        button.disabled = false;
+    }
+}
+
+$("#btn-update-check").addEventListener("click", () => loadUpdate(true));
+
+// --- Notifications -----------------------------------------------------------------------
+
+function renderNotifications() {
+    const supported = "Notification" in window;
+    const permission = supported ? Notification.permission : "denied";
+    const enabled = Boolean(state.config.notifications?.enabled);
+    $("#set-notif").checked = enabled && permission === "granted";
+    $("#set-notif").disabled = !supported;
+    $("#notif-perm").textContent = !supported ? "Ce navigateur ne gère pas les notifications."
+        : permission === "denied" ? "Refusées par le navigateur : clique sur le cadenas à gauche de l'adresse, autorise les notifications, puis réactive ici."
+            : permission === "granted" ? "Autorisées par le navigateur. Un clic sur une notification ramène l'onglet d'Aria."
+                : "Le navigateur te demandera l'autorisation quand tu les activeras.";
+    for (const box of document.querySelectorAll('[data-config^="notifications."]')) box.disabled = !$("#set-notif").checked;
+    $("#btn-notif-test").disabled = !$("#set-notif").checked;
+}
+
+$("#set-notif").addEventListener("change", async () => {
+    const box = $("#set-notif");
+    if (box.checked && Notification.permission !== "granted") {
+        // La demande d'autorisation du navigateur n'arrive qu'ici, sur ton clic
+        const permission = await Notification.requestPermission();
+        if (permission !== "granted") {
+            box.checked = false;
+            renderNotifications();
+            return;
+        }
+    }
+    try {
+        await saveConfig({ notifications: { enabled: box.checked } });
+    } catch (err) {
+        alert(err.message);
+    }
+    renderNotifications();
+});
+
+$("#btn-notif-test").addEventListener("click", () => {
+    showNotification("Aria Pilote", "Les notifications fonctionnent 👋 Clique ici pour revenir à Aria.", "aria-test");
+});
 
 function loadDefaultModel() {
     const pick = $("#set-default-model");
@@ -397,4 +485,12 @@ const LOADERS = {
 (async function startRouting() {
     while (!state.config) await new Promise((resolve) => setTimeout(resolve, 50));
     route();
+    // La pastille « nouvelle version » de la barre du haut (GitHub n'est interrogé que si c'est activé)
+    if (state.config.update_check) {
+        try {
+            renderUpdateBadge(await api("/api/update"));
+        } catch {
+            // hors ligne : pas de pastille
+        }
+    }
 })();

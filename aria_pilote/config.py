@@ -48,6 +48,11 @@ DEFAULTS = {
     "searxng_idle_minutes": 0,
     # Conversations inactives depuis ce nombre de jours envoyées à la corbeille au démarrage (0 : jamais)
     "conversation_retention_days": 0,
+    # Recherche d'une nouvelle version sur GitHub au démarrage (une requête anonyme, au plus une fois par jour)
+    "update_check": True,
+    # Notifications du navigateur (centre de notifications de Windows) : coupées tant que tu ne les actives pas
+    "notifications": {"enabled": False, "only_background": True, "task": True, "waiting": True,
+                      "model": True, "download": True},
     # Réglages de chargement par défaut ; threads = 0 laisse llama.cpp choisir.
     "load_defaults": {
         "engine": "auto",

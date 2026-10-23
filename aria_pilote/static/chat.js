@@ -1079,6 +1079,7 @@ async function send(content, answer, continueTask = false) {
     let aborted = false;
     let ok = true;
     let errorShown = null;  // réaffichée après le rechargement final de la conversation
+    let waiting = false;  // l'agent t'a demandé quelque chose : la notification « terminée » n'aurait pas de sens
     try {
         const resp = await fetch("/api/chat", {
             method: "POST",
@@ -1108,12 +1109,20 @@ async function send(content, answer, continueTask = false) {
                 const node = toolNode(data);
                 toolCards[ev.call_id] = { data, node };
                 append(node);
+                if (ev.name === "ask_user") {
+                    waiting = true;
+                    notify("waiting", "Aria te pose une question", ev.args?.question || chat.current.title);
+                } else if (ev.name === "propose_plan") {
+                    waiting = true;
+                    notify("waiting", "Un plan attend ta validation", chat.current.title);
+                }
             } else if (ev.type === "approval") {
                 // Une demande d'un sous-agent s'affiche dans la carte de sa délégation
                 const card = toolCards[ev.call_id] || toolCards[ev.parent_id];
                 card.node.open = true;
                 card.node.append(approvalNode(ev));
                 card.node.scrollIntoView({ block: "nearest" });
+                notify("waiting", "Aria attend ton accord", chat.current.title);
             } else if (ev.type === "hook") {
                 append(hookNote(ev));
             } else if (ev.type === "hooks_untrusted") {
@@ -1183,6 +1192,10 @@ async function send(content, answer, continueTask = false) {
     }
 
     const id = chat.current.id;
+    if (!aborted && !waiting) {
+        if (errorShown || !ok) notify("task", "Tâche arrêtée", errorShown?.message || chat.current.title);
+        else notify("task", agentSettings().enabled ? "Tâche terminée" : "Réponse prête", chat.current.title);
+    }
     if (aborted) {
         // Le serveur enregistre la réponse partielle de son côté : on l'affiche tout de suite
         if (live) {

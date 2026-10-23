@@ -125,6 +125,13 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--a
 .set-row > div:first-child { flex: 1; min-width: 0; }
 .set-row select { width: auto; min-width: 220px; max-width: 360px; }
 .set-label { font-weight: 600; }
+.update-badge { font-size: 12px; color: var(--bg); background: var(--ok); border-radius: 10px; padding: 2px 10px;
+    text-decoration: none; font-weight: 600; white-space: nowrap; }
+.update-new { color: var(--ok); font-weight: 600; }
+.update-howto { display: grid; gap: 8px; justify-items: start; }
+.update-cmds { margin: 0; padding: 8px 12px; background: var(--deep); border: 1px solid var(--border); border-radius: 8px;
+    font: 12px/1.6 var(--mono); user-select: all; }
+.ok-text { color: var(--ok); }
 .set-row .set-wide { width: min(420px, 50%); }
 .set-row .set-num { width: 110px; }
 .set-row .badge { flex: none; }
@@ -139,6 +146,7 @@ input.switch::after { content: ""; position: absolute; top: 2px; left: 2px; widt
     background: var(--muted); transition: left .15s, background .15s; }
 input.switch:checked { background: var(--accent-2); border-color: var(--accent-2); }
 input.switch:checked::after { left: 20px; background: var(--text); }
+input.switch:disabled { opacity: .35; cursor: not-allowed; }
 
 @media (max-width: 800px) {
     .settings-layout { grid-template-columns: 1fr; height: auto; }
