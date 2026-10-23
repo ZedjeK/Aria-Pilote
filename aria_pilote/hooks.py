@@ -3,7 +3,7 @@
 Fichier hooks.json, global (dans l'appli) ou de projet (<dossier de travail>/.aria/hooks.json) :
     {
         "avant_outil": [{"outils": ["run_command"], "commande": "..."}],
-        "apres_outil": [{"outils": ["write_file", "edit_file"], "commande": "..."}],
+        "apres_outil": [{"outils": ["write_file", "edit_file", "multi_edit"], "commande": "..."}],
         "debut_tache": [{"commande": "git status --short"}],
         "fin_tache":   [{"commande": "..."}]
     }

@@ -183,7 +183,7 @@
                 <textarea name="hooks" rows="10" class="mono" spellcheck="false"
                     placeholder='{
     "avant_outil": [{"outils": ["run_command"], "commande": "if ($env:ARIA_ARGS -match \"git push\") { \"Pousser se fait à la main.\"; exit 2 }"}],
-    "apres_outil": [{"outils": ["write_file", "edit_file"], "commande": "if ($env:ARIA_FICHIER -like \"*.py\") { python -m py_compile $env:ARIA_FICHIER }"}],
+    "apres_outil": [{"outils": ["write_file", "edit_file", "multi_edit"], "commande": "if ($env:ARIA_FICHIER -like \"*.py\") { python -m py_compile $env:ARIA_FICHIER }"}],
     "debut_tache": [{"commande": "git status --short"}]
 }'></textarea>
             </label>

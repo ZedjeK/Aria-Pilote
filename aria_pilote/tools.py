@@ -197,14 +197,14 @@ def prepare_write_file(root, args):
     return {"target": target, "content": content, "rel": rel, "preview": _diff(old, content, rel), "before": old if target.exists() else None}
 
 
-def prepare_edit_file(root, args):
-    target = _resolve(root, args.get("path", ""))
-    if not target.is_file():
-        raise ToolError("Fichier introuvable.")
-    old_string, new_string = args.get("old_string"), args.get("new_string")
+MAX_EDITS = 20
+
+
+def _replace(text, edit):
+    """Applique un remplacement {old_string, new_string, replace_all} ; renvoie le texte modifié."""
+    old_string, new_string = edit.get("old_string"), edit.get("new_string")
     if not isinstance(old_string, str) or not old_string or not isinstance(new_string, str):
         raise ToolError("« old_string » (non vide) et « new_string » sont obligatoires.")
-    text = _read_text(target)
     count = text.count(old_string)
     if count == 0 and "\r\n" in text:
         # Le modèle écrit des \n alors que le fichier est en CRLF
@@ -212,11 +212,43 @@ def prepare_edit_file(root, args):
         count = text.count(old_string)
     if count == 0:
         raise ToolError("Passage introuvable : relis le fichier et copie le texte exact.")
+    if edit.get("replace_all"):
+        return text.replace(old_string, new_string)
     if count > 1:
-        raise ToolError(f"Le passage apparaît {count} fois : ajoute du contexte pour qu'il soit unique.")
-    content = text.replace(old_string, new_string, 1)
+        raise ToolError(f"Le passage apparaît {count} fois : ajoute du contexte pour qu'il soit unique, "
+                        "ou mets replace_all pour tous les remplacer.")
+    return text.replace(old_string, new_string, 1)
+
+
+def _prepare_edits(root, path, edits):
+    target = _resolve(root, path)
+    if not target.is_file():
+        raise ToolError("Fichier introuvable.")
+    text = content = _read_text(target)
+    for number, edit in enumerate(edits, 1):
+        try:
+            content = _replace(content, edit if isinstance(edit, dict) else {})
+        except ToolError as exc:
+            # Tout ou rien : le fichier n'est jamais laissé à moitié modifié
+            prefix = f"Remplacement n° {number} : " if len(edits) > 1 else ""
+            suffix = " Aucun remplacement n'a été appliqué." if len(edits) > 1 else ""
+            raise ToolError(f"{prefix}{exc}{suffix}")
     rel = workspace.relative(root, target)
     return {"target": target, "content": content, "rel": rel, "preview": _diff(text, content, rel), "before": text}
+
+
+def prepare_edit_file(root, args):
+    return _prepare_edits(root, args.get("path", ""), [args])
+
+
+def prepare_multi_edit(root, args):
+    edits = args.get("edits")
+    if not isinstance(edits, list) or not edits:
+        raise ToolError("« edits » doit être une liste de remplacements {old_string, new_string}.")
+    if len(edits) > MAX_EDITS:
+        raise ToolError(f"{len(edits)} remplacements : {MAX_EDITS} au plus par appel. Au-delà, réécris le fichier "
+                        "avec write_file.")
+    return _prepare_edits(root, args.get("path", ""), edits)
 
 
 async def run_write(prepared, cid):
@@ -581,8 +613,33 @@ TOOLS = {t.name: t for t in [
             "path": _PATH,
             "old_string": {"type": "string", "description": "Texte exact à remplacer (doit être unique)."},
             "new_string": {"type": "string", "description": "Nouveau texte."},
+            "replace_all": {"type": "boolean", "default": False,
+                            "description": "Remplacer toutes les occurrences (pour un renommage)."},
         }, ["path", "old_string", "new_string"]),
         prepare_edit_file, run_write,
+    ),
+    Tool(
+        "multi_edit", "write",
+        "Plusieurs remplacements dans un même fichier, en un seul appel et un seul accord. Appliqués dans "
+        f"l'ordre, chacun sur le résultat du précédent ; tout ou rien. {MAX_EDITS} au plus.",
+        _schema({
+            "path": _PATH,
+            "edits": {
+                "type": "array",
+                "maxItems": MAX_EDITS,
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "old_string": {"type": "string", "description": "Texte exact à remplacer (unique, sauf replace_all)."},
+                        "new_string": {"type": "string", "description": "Nouveau texte."},
+                        "replace_all": {"type": "boolean", "default": False,
+                                        "description": "Remplacer toutes les occurrences."},
+                    },
+                    "required": ["old_string", "new_string"],
+                },
+            },
+        }, ["path", "edits"]),
+        prepare_multi_edit, run_write,
     ),
     Tool(
         "run_command", "command",
