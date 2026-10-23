@@ -37,6 +37,17 @@ DEFAULTS = {
     "backup_retention_days": 30,
     # Règles « toujours autoriser » des commandes de l'agent, par dossier de projet (voir permissions.py)
     "command_rules": {},
+    # Réglages de départ d'une nouvelle conversation (modifiables ensuite dans la barre Agent).
+    # Jamais d'« écriture autorisée d'office » : ce droit saute exprès à chaque changement de dossier.
+    "new_conversation": {"workspace": "", "enabled": False, "plan_mode": False, "auto_web": False},
+    # Appels d'outils au plus par tâche de l'agent
+    "max_tool_calls": 25,
+    # Recherche web : coupée, l'agent ne voit plus web_search ni web_fetch (ni les sous-agents qui n'ont que ça)
+    "web": {"enabled": True, "results": 8, "language": "auto", "safesearch": 0},
+    # SearXNG arrêté après ce nombre de minutes sans recherche (0 : tourne jusqu'à la fermeture d'Aria)
+    "searxng_idle_minutes": 0,
+    # Conversations inactives depuis ce nombre de jours envoyées à la corbeille au démarrage (0 : jamais)
+    "conversation_retention_days": 0,
     # Réglages de chargement par défaut ; threads = 0 laisse llama.cpp choisir.
     "load_defaults": {
         "engine": "auto",
@@ -50,6 +61,8 @@ DEFAULTS = {
     # Réglages mémorisés par modèle, indexés par chemin du fichier GGUF.
     "model_overrides": {},
 }
+
+WEB_LANGUAGES = ("auto", "fr", "en", "de", "es", "it", "ja")
 
 _lock = threading.Lock()
 _data = None
@@ -87,6 +100,10 @@ def get():
             _data = _merge(DEFAULTS, stored)
             _save_locked()
         return copy.deepcopy(_data)
+
+
+def web_enabled():
+    return bool(get()["web"].get("enabled", True))
 
 
 def update(patch):

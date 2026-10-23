@@ -2,7 +2,7 @@
 // S'appuie sur $, api, el, state, loadModels, loadEngines, renderHardware (app.js) et SKILL_SOURCES (chat.js).
 
 const SECTIONS = ["general", "modele-defaut", "mes-modeles", "decouvrir", "moteurs", "materiel",
-    "autorisations", "competences", "hooks"];
+    "comportement", "autorisations", "competences", "hooks", "web", "donnees"];
 
 // --- Navigation ------------------------------------------------------------------
 
@@ -58,6 +58,7 @@ async function saveConfig(patch) {
     state.config = await api("/api/config", { method: "PUT", body: JSON.stringify(patch) });
     flashSaved();
     renderPicker();
+    if (patch.new_conversation) resetPendingAgent();  // une conversation pas encore créée prend les nouveaux réglages
 }
 
 // data-config="load_defaults.ctx_size" → {load_defaults: {ctx_size: valeur}}
@@ -78,6 +79,7 @@ for (const field of document.querySelectorAll("#view-settings [data-config]")) {
     field.addEventListener("change", async () => {
         let value = field.value;
         if (field.type === "checkbox") value = field.checked;
+        else if (field.hasAttribute("data-number")) value = Number(field.value);
         else if (field.type === "number") {
             // Une valeur hors limites n'est pas enregistrée : le champ passe en rouge
             if (field.value === "" ? field.name !== "threads" : !field.checkValidity()) {
@@ -91,9 +93,11 @@ for (const field of document.querySelectorAll("#view-settings [data-config]")) {
         const patch = keys.reduceRight((inner, key) => ({ [key]: inner }), value);
         try {
             await saveConfig(patch);
+            if (field.type === "text") fillConfigFields(field.closest(".settings-section"));  // chemin normalisé par le serveur
         } catch (err) {
-            field.classList.add("invalid");
+            // Refusé par le serveur (dossier introuvable, agent sans dossier…) : on remet la valeur enregistrée
             alert(err.message);
+            fillConfigFields(field.closest(".settings-section"));
         }
     });
 }
@@ -256,6 +260,122 @@ $("#btn-hooks-save").addEventListener("click", async () => {
     }
 });
 
+// --- Web et SearXNG ---------------------------------------------------------------------
+
+async function loadSearx() {
+    $("#sx-error").hidden = true;
+    const s = await api("/api/searxng");
+    const button = $("#btn-sx-toggle");
+    $("#sx-state").textContent = !s.installed ? "non installé" : s.running ? "en marche" : "à la demande";
+    $("#sx-state").className = `badge${s.running ? " loaded" : ""}`;
+    $("#sx-detail").textContent = s.installed
+        ? `${s.url} · démarré tout seul à la première recherche`
+        : "Lance tools/install_searxng.py pour l'installer.";
+    button.hidden = !s.installed;
+    button.textContent = s.running ? "⏹ Arrêter" : "▶ Démarrer";
+    button.dataset.running = s.running ? "1" : "";
+}
+
+$("#btn-sx-toggle").addEventListener("click", async () => {
+    const button = $("#btn-sx-toggle");
+    button.disabled = true;
+    $("#sx-error").hidden = true;
+    if (!button.dataset.running) button.textContent = "Démarrage…";
+    try {
+        await api(`/api/searxng/${button.dataset.running ? "stop" : "start"}`, { method: "POST" });
+    } catch (err) {
+        $("#sx-error").textContent = err.message;
+        $("#sx-error").hidden = false;
+    } finally {
+        button.disabled = false;
+        loadSearx();
+    }
+});
+
+// --- Données ---------------------------------------------------------------------------
+
+function humanSize(bytes) {
+    if (bytes < 1024) return `${bytes} o`;
+    const units = ["Ko", "Mo", "Go"];
+    let value = bytes / 1024;
+    let unit = 0;
+    while (value >= 1024 && unit < units.length - 1) {
+        value /= 1024;
+        unit += 1;
+    }
+    return `${value.toLocaleString("fr-FR", { maximumFractionDigits: 1 })} ${units[unit]}`;
+}
+
+function showDataError(message) {
+    $("#data-error").textContent = message;
+    $("#data-error").hidden = !message;
+}
+
+function renderData(d) {
+    const n = d.conversations.count;
+    $("#data-conv").textContent = `${n} conversation${n > 1 ? "s" : ""} · ${humanSize(d.conversations.bytes)}`;
+    $("#data-backups").textContent = `${humanSize(d.backups.bytes)} de sauvegardes`;
+    $("#data-app").textContent = d.app;
+    $("#data-logs").replaceChildren(...d.logs.map((log) => {
+        const open = el("button", { className: "ghost", disabled: !log.exists }, "Ouvrir");
+        open.addEventListener("click", () => openPlace(log.name));
+        return el("li", { className: "static" },
+            el("div", { className: "skill-text" }, el("div", { className: "skill-name" }, log.name),
+                el("div", { className: "skill-desc" }, log.exists ? humanSize(log.bytes) : "pas encore créé")),
+            open);
+    }));
+    $("#btn-conv-trash").disabled = !n;
+}
+
+async function loadData() {
+    showDataError("");
+    fillConfigFields($('.settings-section[data-section="donnees"]'));
+    renderData(await api("/api/data"));
+}
+
+async function openPlace(target) {
+    showDataError("");
+    try {
+        await api("/api/data/open", { method: "POST", body: JSON.stringify({ target }) });
+    } catch (err) {
+        showDataError(err.message);
+    }
+}
+
+for (const button of document.querySelectorAll("[data-open]")) {
+    button.addEventListener("click", () => openPlace(button.dataset.open));
+}
+
+$("#btn-conv-trash").addEventListener("click", async () => {
+    const n = chat.conversations.length;
+    if (!confirm(`Envoyer tes ${n} conversation${n > 1 ? "s" : ""} (et leurs sauvegardes) à la corbeille ?\n`
+        + "Tu pourras les récupérer depuis la corbeille de Windows.")) return;
+    showDataError("");
+    try {
+        const result = await api("/api/data/conversations/trash", { method: "POST" });
+        renderData(result);
+        await openConversation(null);
+        await loadConversations();
+        flashSaved();
+    } catch (err) {
+        showDataError(err.message);
+    }
+});
+
+$("#btn-backups-clean").addEventListener("click", async () => {
+    showDataError("");
+    try {
+        const result = await api("/api/data/backups/cleanup", { method: "POST" });
+        renderData(result);
+        showDataError("");
+        $("#data-backups").textContent += result.trashed
+            ? ` · ${result.trashed} dossier${result.trashed > 1 ? "s" : ""} envoyé${result.trashed > 1 ? "s" : ""} à la corbeille`
+            : " · rien à ranger";
+    } catch (err) {
+        showDataError(err.message);
+    }
+});
+
 const LOADERS = {
     general: loadGeneral,
     "modele-defaut": loadDefaultModel,
@@ -265,6 +385,12 @@ const LOADERS = {
     autorisations: loadRules,
     competences: loadSkills,
     hooks: loadHooks,
+    comportement: () => fillConfigFields($('.settings-section[data-section="comportement"]')),
+    web: () => {
+        fillConfigFields($('.settings-section[data-section="web"]'));
+        loadSearx();
+    },
+    donnees: loadData,
 };
 
 // app.js lit la config au démarrage : on attend qu'elle soit là avant d'afficher une section

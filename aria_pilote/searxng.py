@@ -18,9 +18,12 @@ SRC_DIR = SERVICE_DIR / "src"
 SETTINGS_PATH = SERVICE_DIR / "settings.yml"
 LOG_PATH = config.ROOT / "data" / "searxng.log"
 START_TIMEOUT_S = 60
+IDLE_CHECK_S = 30
 
 
 class SearxManager:
+    last_used = 0.0
+
     def __init__(self):
         self.proc = None
         self._lock = asyncio.Lock()
@@ -52,6 +55,7 @@ class SearxManager:
 
     async def ensure_running(self):
         """Démarre SearXNG s'il est installé et ne répond pas déjà (un SearXNG externe est aussi accepté)."""
+        self.last_used = time.monotonic()
         async with self._lock:
             if await self.healthy():
                 return
@@ -105,6 +109,24 @@ class SearxManager:
 
     def running(self):
         return self.proc is not None and self.proc.poll() is None
+
+    def idle_expired(self, minutes, now=None):
+        """Lancé par Aria, sans recherche depuis `minutes` minutes (0 : jamais)."""
+        if not minutes or not self.running():
+            return False
+        return (now or time.monotonic()) - self.last_used > minutes * 60
+
+    async def watch_idle(self):
+        """Tourne avec l'appli : arrête SearXNG après l'inactivité choisie dans les réglages."""
+        while True:
+            await asyncio.sleep(IDLE_CHECK_S)
+            if self.idle_expired(config.get().get("searxng_idle_minutes", 0)):
+                await self.stop()
+
+    def status(self):
+        url = self.url()
+        return {"installed": self.installed(), "running": self.running(), "url": url,
+                "port": url.rsplit(":", 1)[-1], "idle_minutes": config.get().get("searxng_idle_minutes", 0)}
 
 
 manager = SearxManager()

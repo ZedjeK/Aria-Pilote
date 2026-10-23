@@ -4,9 +4,9 @@ import json
 import re
 import threading
 import uuid
-from datetime import datetime
+from datetime import datetime, timedelta
 
-from . import config
+from . import config, trash
 
 DATA_DIR = config.ROOT / "data" / "conversations"
 DEFAULT_TITLE = "Nouvelle conversation"
@@ -81,6 +81,22 @@ def list_all():
             "message_count": len(conv["messages"]),
         })
     return sorted(items, key=lambda c: c["updated_at"], reverse=True)
+
+
+def inactive_since(days, now=None):
+    """Conversations sans activité depuis `days` jours (0 : aucune)."""
+    if not days or not DATA_DIR.is_dir():
+        return []
+    limit = ((now or datetime.now()) - timedelta(days=days)).isoformat(timespec="seconds")
+    return [c["id"] for c in list_all() if c["updated_at"] < limit]
+
+
+def to_trash(cids):
+    """Envoie ces conversations à la corbeille en un seul lot ; renvoie celles qui y sont parties."""
+    paths = [_path(cid) for cid in cids if ID_RE.match(cid) and _path(cid).exists()]
+    if paths:
+        trash.to_recycle_bin(paths)
+    return [p.stem for p in paths]
 
 
 def delete(cid):

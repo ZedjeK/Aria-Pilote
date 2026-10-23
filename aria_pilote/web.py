@@ -126,12 +126,22 @@ async def fetch(url):
     raise WebError("Trop de redirections.")
 
 
-async def search(query, limit=8):
+def search_params(query):
+    """Paramètres envoyés à SearXNG : langue et SafeSearch des réglages, sans toucher à son settings.yml."""
+    web = config.get()["web"]
+    params = {"q": query, "format": "json", "safesearch": int(web.get("safesearch", 0))}
+    if web.get("language", "auto") != "auto":
+        params["language"] = web["language"]
+    return params
+
+
+async def search(query, limit=None):
+    limit = limit or config.get()["web"].get("results", 8)
     await searxng.manager.ensure_running()
     base = config.get()["searxng_url"].rstrip("/")
     try:
         async with httpx.AsyncClient(timeout=20) as client:
-            resp = await client.get(f"{base}/search", params={"q": query, "format": "json"})
+            resp = await client.get(f"{base}/search", params=search_params(query))
     except httpx.HTTPError:
         if not searxng.manager.installed():
             raise WebError("SearXNG n'est pas installé : lance tools/install_searxng.py.")

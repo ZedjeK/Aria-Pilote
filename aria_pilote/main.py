@@ -1,6 +1,7 @@
 """Application web d'Aria Pilote : API REST + interface statique."""
 
 import asyncio
+import os
 import re
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -9,7 +10,7 @@ import httpx
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import PlainTextResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from . import (VERSION, agent, background, backups, chat, config, conversations, downloads, engines, hardware, hooks,
                hub, models, optimizer, permissions, presets, searxng, skills, subagents, tools, trial, workspace)
@@ -20,14 +21,25 @@ STATIC_DIR = Path(__file__).parent / "static"
 
 @asynccontextmanager
 async def lifespan(app):
+    # Conversations inactives depuis trop longtemps (si tu l'as demandé) → corbeille, avant le ménage des sauvegardes
+    days = config.get().get("conversation_retention_days", 0)
+    if days:
+        try:
+            gone = await asyncio.to_thread(lambda: conversations.to_trash(conversations.inactive_since(days)))
+            if gone:
+                print(f"{len(gone)} conversation(s) inactive(s) depuis plus de {days} jours envoyée(s) à la corbeille.")
+        except OSError as exc:
+            print(f"Ménage des conversations impossible : {exc}")
     # Ménage des sauvegardes de l'agent : conversations disparues et sauvegardes trop anciennes → corbeille
     try:
         await asyncio.to_thread(backups.cleanup, conversations.ids(), config.get().get("backup_retention_days", 30))
     except OSError as exc:
         print(f"Ménage des sauvegardes impossible : {exc}")
     autoload = asyncio.create_task(_autoload())
+    idle = asyncio.create_task(searxng.manager.watch_idle())
     yield
     autoload.cancel()
+    idle.cancel()
     await asyncio.to_thread(background.stop_all)  # le job object les tuerait de toute façon : ici, proprement
     await manager.shutdown()
     await searxng.manager.stop()
@@ -92,11 +104,32 @@ class LoadRequest(BaseModel):
     remember: bool = False
 
 
+class NewAgentSettings(BaseModel):
+    workspace: str | None = None
+    enabled: bool | None = None
+    plan_mode: bool | None = None
+    auto_web: bool | None = None
+
+
+class WebSettings(BaseModel):
+    enabled: bool | None = None
+    results: int | None = Field(None, ge=3, le=20)
+    language: str | None = None
+    safesearch: int | None = Field(None, ge=0, le=2)
+
+
 class ConfigPatch(BaseModel):
     model_dirs: list[str] | None = None
     load_defaults: dict | None = None
     default_model: str | None = None
     autoload: bool | None = None
+    new_conversation: NewAgentSettings | None = None
+    max_tool_calls: int | None = Field(None, ge=10, le=100)
+    auto_check: bool | None = None
+    web: WebSettings | None = None
+    searxng_idle_minutes: int | None = Field(None, ge=0, le=1440)
+    backup_retention_days: int | None = Field(None, ge=0, le=3650)
+    conversation_retention_days: int | None = Field(None, ge=0, le=3650)
 
 
 class Preset(BaseModel):
@@ -114,6 +147,7 @@ class Preset(BaseModel):
 
 class ConversationCreate(BaseModel):
     preset_id: str | None = None
+    agent: NewAgentSettings | None = None  # absent : les réglages de départ (Réglages › Comportement)
 
 
 class AgentSettings(BaseModel):
@@ -323,7 +357,21 @@ def get_config():
 
 @app.put("/api/config")
 def put_config(patch: ConfigPatch):
-    cfg = config.update(patch.model_dump(exclude_none=True))
+    data = patch.model_dump(exclude_none=True)
+    language = data.get("web", {}).get("language")
+    if language is not None and language not in config.WEB_LANGUAGES:
+        raise HTTPException(400, f"Langue inconnue : {language}")
+    new = data.get("new_conversation")
+    if new is not None:
+        if new.get("workspace"):
+            try:
+                new["workspace"] = str(workspace.validate_root(new["workspace"]))
+            except workspace.WorkspaceError as exc:
+                raise HTTPException(400, str(exc))
+        merged = {**config.get()["new_conversation"], **new}
+        if merged.get("enabled") and not merged.get("workspace"):
+            raise HTTPException(400, "Pour activer l'agent d'office, choisis d'abord un dossier de travail par défaut.")
+    cfg = config.update(data)
     if patch.model_dirs is not None:
         models.scan(force=True)
     return cfg
@@ -372,9 +420,35 @@ def list_conversations():
     return conversations.list_all()
 
 
+def _initial_agent(wanted, strict):
+    """Réglages Agent d'une nouvelle conversation. `strict` : un dossier introuvable est une erreur ;
+    sinon (réglages de départ) il est simplement ignoré, et l'agent reste coupé."""
+    root = None
+    if wanted.get("workspace"):
+        try:
+            root = str(workspace.validate_root(wanted["workspace"]))
+        except workspace.WorkspaceError as exc:
+            if strict:
+                raise HTTPException(400, str(exc))
+    enabled = bool(wanted.get("enabled")) and root is not None
+    if strict and wanted.get("enabled") and root is None:
+        raise HTTPException(400, "Choisis d'abord un dossier de travail.")
+    agent = {"enabled": enabled, "workspace": root, "plan_mode": bool(wanted.get("plan_mode")),
+             "auto_web": bool(wanted.get("auto_web")), "auto_write": False}
+    return agent if root or agent["plan_mode"] or agent["auto_web"] else None
+
+
 @app.post("/api/conversations")
 def create_conversation(req: ConversationCreate):
-    return conversations.create(req.preset_id)
+    if req.agent is not None:
+        agent_settings = _initial_agent(req.agent.model_dump(exclude_none=True), strict=True)
+    else:
+        agent_settings = _initial_agent(config.get()["new_conversation"], strict=False)
+    conv = conversations.create(req.preset_id)
+    if agent_settings:
+        conv["agent"] = agent_settings
+        conv = conversations.save(conv)
+    return conv
 
 
 @app.get("/api/conversations/{cid}")
@@ -579,6 +653,108 @@ def delete_rule(req: RuleDelete):
     except permissions.RuleError as exc:
         raise HTTPException(404, str(exc))
     return permissions.rules(root)
+
+
+@app.get("/api/searxng")
+def searxng_status():
+    return searxng.manager.status()
+
+
+@app.post("/api/searxng/start")
+async def searxng_start():
+    if not searxng.manager.installed():
+        raise HTTPException(409, "SearXNG n'est pas installé : lance tools/install_searxng.py.")
+    await searxng.manager.ensure_running()
+    if not await searxng.manager.healthy():
+        raise HTTPException(502, "SearXNG ne répond pas : regarde data/searxng.log.")
+    return searxng.manager.status()
+
+
+@app.post("/api/searxng/stop")
+async def searxng_stop():
+    await searxng.manager.stop()
+    return searxng.manager.status()
+
+
+# --- Données (Réglages › Données) ------------------------------------------------------
+
+def _size(path):
+    if path.is_file():
+        return path.stat().st_size
+    if not path.is_dir():
+        return 0
+    total = 0
+    for p in path.rglob("*"):
+        try:
+            if p.is_file():
+                total += p.stat().st_size
+        except OSError:
+            continue
+    return total
+
+
+def _data_places():
+    """Ce que la section Données montre et sait ouvrir : une liste fermée, jamais un chemin venu de la page."""
+    data = config.ROOT / "data"
+    return {"app": config.ROOT, "conversations": conversations.DATA_DIR, "backups": backups.BACKUP_DIR,
+            "aria_pilote.log": data / "aria_pilote.log", "searxng.log": data / "searxng.log"}
+
+
+@app.get("/api/data")
+def data_overview():
+    places = _data_places()
+    cfg = config.get()
+    return {
+        "app": str(places["app"]),
+        "conversations": {"count": len(conversations.ids()), "bytes": _size(places["conversations"]),
+                          "retention_days": cfg.get("conversation_retention_days", 0)},
+        "backups": {"bytes": _size(places["backups"]), "retention_days": cfg.get("backup_retention_days", 30)},
+        "logs": [{"name": name, "bytes": _size(places[name]), "exists": places[name].exists()}
+                 for name in ("aria_pilote.log", "searxng.log")],
+    }
+
+
+class DataTarget(BaseModel):
+    target: str
+
+
+@app.post("/api/data/open")
+def data_open(req: DataTarget):
+    path = _data_places().get(req.target)
+    if path is None:
+        raise HTTPException(400, "Emplacement inconnu.")
+    if not path.exists():
+        if path.suffix:
+            raise HTTPException(404, "Ce fichier n'existe pas encore.")
+        path.mkdir(parents=True, exist_ok=True)
+    if not hasattr(os, "startfile"):
+        raise HTTPException(501, f"Ouverture possible seulement sous Windows : {path}")
+    os.startfile(path)  # l'Explorateur pour un dossier, l'éditeur par défaut pour un journal
+    return {"ok": True}
+
+
+@app.post("/api/data/conversations/trash")
+def data_trash_conversations():
+    cids = sorted(conversations.ids())
+    if any(backups.is_running(cid) for cid in cids):
+        raise HTTPException(409, "Une tâche de l'agent est en cours : attends sa fin ou arrête-la d'abord.")
+    for cid in cids:
+        background.stop_conversation(cid)
+    try:
+        gone = conversations.to_trash(cids)
+        backups.cleanup(conversations.ids(), config.get().get("backup_retention_days", 30))
+    except OSError as exc:
+        raise HTTPException(500, f"Envoi à la corbeille impossible : {exc}")
+    return {"trashed": len(gone), **data_overview()}
+
+
+@app.post("/api/data/backups/cleanup")
+def data_cleanup_backups():
+    try:
+        count = backups.cleanup(conversations.ids(), config.get().get("backup_retention_days", 30))
+    except OSError as exc:
+        raise HTTPException(500, f"Ménage impossible : {exc}")
+    return {"trashed": count, **data_overview()}
 
 
 class ProjectRuleDelete(BaseModel):

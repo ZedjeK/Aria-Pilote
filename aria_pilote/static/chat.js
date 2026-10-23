@@ -6,7 +6,7 @@ const chat = {
     current: null,
     presets: [],
     controller: null,
-    pendingAgent: { enabled: false, workspace: "" },  // réglages d'une conversation pas encore créée
+    pendingAgent: { enabled: false, workspace: "" },  // réglages d'une conversation pas encore créée (voir resetPendingAgent)
 };
 
 // --- Presets ---------------------------------------------------------------
@@ -82,6 +82,14 @@ $("#preset-dialog").addEventListener("close", async () => {
 });
 
 // --- Mode Agent ---------------------------------------------------------------
+
+// Une conversation pas encore créée part des réglages de départ (Réglages › Comportement)
+function resetPendingAgent() {
+    const d = state.config?.new_conversation || {};
+    chat.pendingAgent = { enabled: Boolean(d.enabled && d.workspace), workspace: d.workspace || "",
+        plan_mode: Boolean(d.plan_mode), auto_web: Boolean(d.auto_web) };
+    if (!chat.current) syncAgentBar();
+}
 
 function agentSettings() {
     return chat.current ? chat.current.agent || { enabled: false, workspace: "" } : chat.pendingAgent;
@@ -300,7 +308,7 @@ async function openConversation(id) {
     if (chat.controller) return;
     if (id !== chat.current?.id) chat.memoryLoaded = false;
     chat.current = id ? await api(`/api/conversations/${id}`) : null;
-    if (!id) chat.pendingAgent = { enabled: false, workspace: "" };
+    if (!id) resetPendingAgent();
     $("#conv-title").textContent = chat.current?.title || "Nouvelle conversation";
     $("#btn-rename").hidden = !chat.current;
     if (chat.current?.preset_id && chat.presets.some((p) => p.id === chat.current.preset_id)) {
@@ -999,20 +1007,18 @@ async function send(content, answer, continueTask = false) {
     }
     if (!chat.current) {
         const pending = chat.pendingAgent;
-        chat.current = await api("/api/conversations", {
-            method: "POST",
-            body: JSON.stringify({ preset_id: $("#preset-select").value }),
-        });
-        if (pending.enabled || pending.workspace) {
-            try {
-                chat.current = await api(`/api/conversations/${chat.current.id}`, {
-                    method: "PATCH",
-                    body: JSON.stringify({ agent: { enabled: pending.enabled, workspace: pending.workspace || null } }),
-                });
-            } catch (err) {
-                showChatError(err.message);
-                return false;
-            }
+        try {
+            chat.current = await api("/api/conversations", {
+                method: "POST",
+                body: JSON.stringify({
+                    preset_id: $("#preset-select").value,
+                    agent: { enabled: Boolean(pending.enabled), workspace: pending.workspace || null,
+                        plan_mode: Boolean(pending.plan_mode), auto_web: Boolean(pending.auto_web) },
+                }),
+            });
+        } catch (err) {
+            showChatError(err.message);
+            return false;
         }
         $("#btn-rename").hidden = false;
         syncAgentBar();
@@ -1231,7 +1237,8 @@ setInterval(() => {
     if (chat.conversations.length) {
         await openConversation(chat.conversations[0].id);
     } else {
-        syncAgentBar();
+        while (!state.config) await new Promise((resolve) => setTimeout(resolve, 50));  // lue par app.js
+        resetPendingAgent();
         renderMessages();
     }
 })();
