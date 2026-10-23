@@ -52,7 +52,6 @@
                 <span id="agent-info" class="muted small"></span>
             </div>
             <div id="hooks-banner" hidden></div>
-            <div id="bg-commands" class="bg-commands" hidden></div>
             <div id="messages" class="messages"></div>
             <p id="chat-error" class="error" hidden></p>
             <form id="chat-form" class="composer">
@@ -74,7 +73,9 @@
         <aside id="side-panel" class="panel side-panel" hidden>
             <div class="side-tabs" role="tablist">
                 <button class="side-tab" data-tab="plan" role="tab">📋 Plan</button>
-                <button class="side-tab" data-tab="changes" role="tab">✏️ Modifications <span id="side-changes-count" class="side-count"></span></button>
+                <button class="side-tab" data-tab="changes" role="tab">✏️ Modifs <span id="side-changes-count" class="side-count"></span></button>
+                <button class="side-tab" data-tab="background" role="tab">⚙ <span id="side-bg-count" class="side-count"></span></button>
+                <button class="side-tab" data-tab="context" role="tab">🧠 Contexte</button>
                 <button id="btn-side-close" class="ghost side-close" title="Replier le panneau">✕</button>
             </div>
             <div class="side-body" data-tab="plan">
@@ -84,6 +85,12 @@
             </div>
             <div class="side-body" data-tab="changes" hidden>
                 <div id="side-changes"></div>
+            </div>
+            <div class="side-body" data-tab="background" hidden>
+                <div id="side-background"></div>
+            </div>
+            <div class="side-body" data-tab="context" hidden>
+                <div id="side-context"></div>
             </div>
         </aside>
     </main>

@@ -8,6 +8,7 @@ Toutes sont rattachées au job object : elles meurent avec Aria Pilote, même en
 
 import codecs
 import os
+import re
 import subprocess
 import threading
 import time
@@ -16,6 +17,10 @@ from dataclasses import dataclass, field
 from . import jobs
 
 MAX_PER_CONVERSATION = 3
+MAX_FINISHED = 10       # commandes terminées gardées par conversation (sortie consultable dans le panneau)
+PANEL_CHARS = 20_000    # fin de sortie montrée dans le panneau
+# Codes de couleur des terminaux (ESC[…m) : illisibles dans le panneau
+ANSI = re.compile(r"\[[0-9;?]*[A-Za-z]")
 BUFFER_CHARS = 200_000  # on garde la fin de la sortie
 START_WAIT_S = 3        # le temps d'attraper un plantage immédiat (port pris, fichier introuvable…)
 MAX_WAIT_S = 30
@@ -38,6 +43,8 @@ class Command:
     total: int = 0       # caractères reçus depuis le lancement
     read_upto: int = 0   # caractères déjà renvoyés à l'agent
     returncode: int | None = None
+    finished_at: float | None = None
+    stopped: bool = False  # arrêtée par stop_command, le bouton Arrêter ou la fin de tâche
     changed: threading.Condition = field(default_factory=threading.Condition)
 
     @property
@@ -47,6 +54,8 @@ class Command:
     def state(self):
         if self.running:
             return f"en cours depuis {int(time.time() - self.started_at)} s"
+        if self.stopped:
+            return "arrêtée"
         return f"terminée (code de sortie {self.returncode})"
 
 
@@ -70,8 +79,19 @@ def _reader(cmd, cleanup):
     code = cmd.proc.wait()
     with cmd.changed:
         cmd.returncode = code
+        cmd.finished_at = time.time()
         cmd.changed.notify_all()
     cleanup()
+    _forget_old(cmd.cid)
+
+
+def _forget_old(cid):
+    """Le registre ne garde que les MAX_FINISHED dernières commandes terminées de la conversation."""
+    with _lock:
+        finished = sorted((c for c in _commands.values() if c.cid == cid and not c.running),
+                          key=lambda c: c.finished_at or 0)
+        for cmd in finished[:-MAX_FINISHED] if len(finished) > MAX_FINISHED else []:
+            _commands.pop(cmd.id, None)
 
 
 def start(cid, task_id, command, argv, cwd, keep=False, cleanup=lambda: None):
@@ -130,6 +150,7 @@ def wait_exit(cmd, timeout):
 
 def stop(cmd):
     if cmd.running:
+        cmd.stopped = True
         jobs.kill_tree(cmd.proc.pid)
         try:
             cmd.proc.wait(timeout=10)
@@ -161,3 +182,25 @@ def stop_all():
 def running(cid):
     return [{"id": c.id, "command": c.command, "keep": c.keep, "state": c.state()}
             for c in _commands.values() if c.cid == cid and c.running]
+
+
+def peek(cmd, max_chars=PANEL_CHARS):
+    """Fin de la sortie, pour le panneau latéral : ne touche pas à ce que l'agent n'a pas encore lu."""
+    with cmd.changed:
+        text = cmd.text[-max_chars:]
+    # Fins de ligne Windows (PowerShell) et codes couleur : illisibles dans le panneau
+    return ANSI.sub("", text).replace("\r\n", "\n").replace("\r", "")
+
+
+def listing(cid, output=False):
+    """Commandes de la conversation pour le panneau : celles qui tournent, puis les terminées, plus récentes d'abord."""
+    cmds = sorted((c for c in _commands.values() if c.cid == cid),
+                  key=lambda c: (not c.running, -(c.finished_at or c.started_at)))
+    items = []
+    for c in cmds:
+        item = {"id": c.id, "command": c.command, "keep": c.keep, "running": c.running, "returncode": c.returncode,
+                "state": c.state(), "started_at": c.started_at, "finished_at": c.finished_at}
+        if output:
+            item["output"] = peek(c)
+        items.append(item)
+    return items

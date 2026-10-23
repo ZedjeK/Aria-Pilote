@@ -360,9 +360,24 @@ fieldset.hardware .row { display: flex; gap: 10px; align-items: flex-end; flex-w
 .change .diff { max-height: 320px; margin: 0 6px 6px; }
 .change .change-actions { display: flex; gap: 8px; align-items: center; padding: 0 8px 8px; font-size: 12px; }
 .change .change-actions button { padding: 2px 10px; font-size: 12px; }
-.bg-commands { display: grid; gap: 4px; padding: 6px 8px; border: 1px solid var(--warn); border-radius: 8px; font-size: 12px; }
-.bg-command { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
-.bg-command button { margin-left: auto; padding: 2px 10px; font-size: 12px; }
+.bg-item { display: grid; gap: 6px; padding: 8px; border: 1px solid var(--border); border-radius: 8px; }
+.bg-item.running { border-color: var(--warn); }
+.bg-head { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; font-size: 12px; }
+.bg-head code { font: 12px var(--mono); }
+.bg-head button { margin-left: auto; padding: 2px 10px; font-size: 12px; }
+.bg-output { margin: 0; max-height: 260px; overflow: auto; background: var(--deep); border-radius: 6px; padding: 6px 8px;
+    font: 11.5px/1.4 var(--mono); white-space: pre-wrap; word-break: break-all; }
+.ctx-section { display: grid; gap: 4px; padding: 8px; border: 1px solid var(--border); border-radius: 8px; font-size: 13px; }
+.ctx-section h4 { margin: 0; font-size: 13px; color: var(--accent); display: flex; align-items: center; gap: 8px; }
+.ctx-section h4 button { margin-left: auto; padding: 1px 8px; font-size: 11px; }
+.ctx-section .ctx-row { display: flex; justify-content: space-between; gap: 10px; }
+.ctx-section .ctx-row span:last-child { text-align: right; }
+.ctx-big { height: 10px; border-radius: 5px; background: var(--panel-2); overflow: hidden; border: 1px solid var(--border); }
+.ctx-big span { display: block; height: 100%; background: var(--accent); }
+.ctx-big.high span { background: var(--warn); }
+.ctx-big.full span { background: var(--err); }
+.ctx-chips { display: flex; flex-wrap: wrap; gap: 4px; }
+.ctx-chips span { padding: 1px 8px; border-radius: 10px; background: var(--panel-2); border: 1px solid var(--border); font-size: 12px; }
 .task-actions { align-self: flex-start; }
 .task-actions button { padding: 3px 12px; font-size: 12px; }
 .question-card { align-self: stretch; display: grid; gap: 8px; padding: 10px 12px; border: 1px solid var(--action); border-radius: 10px; background: var(--panel-2); }

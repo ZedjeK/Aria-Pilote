@@ -120,7 +120,7 @@ function renderTodo(items) {
 
 // --- Panneau latéral (façon Claude Code) ----------------------------------------------
 
-const side = { tab: "changes", active: 0 };
+const side = { tab: "changes", active: 0, running: 0 };
 
 function sidePref(key, value) {
     // Préférence d'affichage (ouvert / onglet), propre à ce navigateur : rien d'important n'y est stocké
@@ -147,7 +147,11 @@ function syncSidePanel() {
     for (const b of document.querySelectorAll(".side-tab")) b.classList.toggle("active", b.dataset.tab === tab);
     for (const body of document.querySelectorAll(".side-body")) body.hidden = body.dataset.tab !== tab;
     $("#side-changes-count").textContent = side.active ? String(side.active) : "";
-    $("#btn-side").textContent = open || !side.active ? "▤" : `▤ ${side.active} modif${side.active > 1 ? "s" : ""}`;
+    $("#side-bg-count").textContent = side.running ? String(side.running) : "";
+    const counts = [];
+    if (side.active) counts.push(`${side.active} modif${side.active > 1 ? "s" : ""}`);
+    if (side.running) counts.push(`⚙ ${side.running}`);
+    $("#btn-side").textContent = open || !counts.length ? "▤" : `▤ ${counts.join(" · ")}`;
 }
 
 $("#btn-side").addEventListener("click", () => {
@@ -162,6 +166,8 @@ for (const button of document.querySelectorAll(".side-tab")) {
     button.addEventListener("click", () => {
         sidePref("aria-side-tab", button.dataset.tab);
         syncSidePanel();
+        if (button.dataset.tab === "background") refreshBackground();
+        if (button.dataset.tab === "context") refreshContext();
     });
 }
 
@@ -309,6 +315,7 @@ async function openConversation(id) {
     refreshBackground();
     syncSidePanel();
     refreshChanges();
+    refreshContext();
 }
 
 // --- Compétences -------------------------------------------------------------------
@@ -451,26 +458,130 @@ function hooksTrustNode(ev) {
 }
 
 async function refreshBackground() {
-    // Commandes de l'agent qui tournent encore (gardées à ta demande) : chacune avec son bouton Arrêter
-    const box = $("#bg-commands");
-    const list = chat.current ? await api(`/api/agent/background?conversation_id=${chat.current.id}`) : [];
-    box.hidden = !list.length;
+    // Onglet Arrière-plan : commandes qui tournent (sortie en direct, bouton Arrêter) puis les dernières terminées
+    const box = $("#side-background");
+    let list = [];
+    if (chat.current) {
+        try {
+            list = await api(`/api/agent/background?conversation_id=${chat.current.id}&all=true&output=true`);
+        } catch {
+            return;
+        }
+    }
+    side.running = list.filter((c) => c.running).length;
+    if (!list.length) {
+        box.replaceChildren(el("p", { className: "muted small" },
+            "Aucune commande en arrière-plan. Quand l'agent lance un serveur ou une commande longue, sa sortie défile ici."));
+        syncSidePanel();
+        return;
+    }
+    // Garde la position de lecture de chaque sortie : collée en bas si tu y étais
+    const stuck = {};
+    for (const pre of box.querySelectorAll(".bg-output")) {
+        stuck[pre.dataset.id] = pre.scrollTop + pre.clientHeight >= pre.scrollHeight - 20;
+    }
     box.replaceChildren(...list.map((c) => {
-        const stop = el("button", { className: "ghost danger" }, "Arrêter");
-        stop.addEventListener("click", async () => {
-            stop.disabled = true;
-            try {
-                await api("/api/agent/background/stop", {
-                    method: "POST", body: JSON.stringify({ conversation_id: chat.current.id, id: c.id }),
-                });
-            } catch (err) {
-                showChatError(err.message);
-            }
-            refreshBackground();
-        });
-        return el("div", { className: "bg-command" },
-            el("span", {}, `⚙ ${c.id} · `), el("code", {}, c.command.slice(0, 80)), el("span", { className: "muted small" }, ` · ${c.state}`), stop);
+        const head = el("div", { className: "bg-head" }, el("strong", {}, c.id), el("code", {}, c.command.slice(0, 70)),
+            el("span", { className: "muted" }, `${c.state}${c.keep ? " · gardée" : ""}`));
+        if (c.running) {
+            const stop = el("button", { className: "ghost danger" }, "Arrêter");
+            stop.addEventListener("click", async () => {
+                stop.disabled = true;
+                try {
+                    await api("/api/agent/background/stop", {
+                        method: "POST", body: JSON.stringify({ conversation_id: chat.current.id, id: c.id }),
+                    });
+                } catch (err) {
+                    showChatError(err.message);
+                }
+                refreshBackground();
+            });
+            head.append(stop);
+        }
+        const lines = (c.output || "").trimEnd().split("\n").slice(-200).join("\n");
+        const pre = el("pre", { className: "bg-output" }, lines || "(pas encore de sortie)");
+        pre.dataset.id = c.id;
+        return el("div", { className: `bg-item${c.running ? " running" : ""}` }, head, pre);
     }));
+    for (const pre of box.querySelectorAll(".bg-output")) {
+        if (stuck[pre.dataset.id] !== false) pre.scrollTop = pre.scrollHeight;
+    }
+    syncSidePanel();
+}
+
+// Sortie en direct : seulement si le panneau est ouvert sur cet onglet et qu'une commande tourne
+setInterval(() => {
+    const tab = sidePref("aria-side-tab") || side.tab;
+    if (chat.current && side.running && sideOpen() && tab === "background") refreshBackground();
+}, 2000);
+
+// --- Onglet Contexte ----------------------------------------------------------------------
+
+async function refreshContext() {
+    const box = $("#side-context");
+    if (!chat.current) {
+        box.replaceChildren(el("p", { className: "muted small" }, "Aucune conversation ouverte."));
+        return;
+    }
+    let c;
+    try {
+        c = await api(`/api/agent/context?conversation_id=${chat.current.id}`);
+    } catch {
+        return;
+    }
+    const row = (label, value) => el("div", { className: "ctx-row" }, el("span", { className: "muted" }, label), el("span", {}, value));
+    const section = (title, ...children) => el("div", { className: "ctx-section" }, title, ...children);
+    const titled = (text, manage) => {
+        const h = el("h4", {}, text);
+        if (manage) {
+            const b = el("button", { className: "ghost" }, "Gérer");
+            b.addEventListener("click", manage);
+            h.append(b);
+        }
+        return h;
+    };
+    const parts = [];
+    // Occupation
+    const u = c.usage;
+    if (u.max) {
+        const pct = Math.min(100, (100 * u.used) / u.max);
+        const bar = el("div", { className: `ctx-big${pct >= 85 ? " full" : pct >= 60 ? " high" : ""}` }, el("span", { style: `width:${pct}%` }));
+        parts.push(section(titled("Occupation"), bar,
+            row("Utilisé", `${u.used.toLocaleString("fr-FR")} / ${u.max.toLocaleString("fr-FR")} tokens (${Math.round(pct)} %)`),
+            row("Anciens échanges résumés", u.summarized ? `${u.summarized} messages` : "aucun"),
+            row("Vieux résultats d'outils", u.squeeze ? `raccourcis (niveau ${u.squeeze})` : "entiers")));
+    } else {
+        parts.push(section(titled("Occupation"), el("span", { className: "muted small" }, "Mesurée après la première réponse du modèle.")));
+    }
+    // Modèle
+    const m = c.model;
+    parts.push(section(titled("Modèle"), ...(m ? [row("Modèle", m.name), row("Moteur", m.engine || "—"),
+        row("Contexte chargé", m.ctx_size ? `${Math.round(m.ctx_size / 1024)}k tokens` : "—"),
+        row("Cache de contexte", m.cache_type === "f16" ? "normal" : `compressé (${m.cache_type})`),
+        row("Couches GPU", m.gpu_layers >= 99 ? "toutes" : String(m.gpu_layers ?? "—"))]
+        : [el("span", { className: "muted small" }, "Aucun modèle chargé (onglet Modèles).")])));
+    // Agent
+    const a = c.agent;
+    const perms = [a.auto_write ? "modifs autorisées" : "modifs demandées", a.auto_web ? "web autorisé" : "web demandé", "commandes demandées"];
+    parts.push(section(titled("Agent"), ...(a.enabled ? [row("Dossier", a.workspace || "—"), row("Mode", a.plan_mode ? "Plan (lecture seule)" : "normal"),
+        row("Accords", perms.join(" · ")), row("Outils", String(a.tools))] : [el("span", { className: "muted small" }, "Mode Agent désactivé.")])));
+    // Ce que l'agent lit
+    const chips = (items, label) => items.length
+        ? el("div", { className: "ctx-chips" }, ...items.map((i) => el("span", { title: i.source || "" }, label(i))))
+        : el("span", { className: "muted small" }, "aucun");
+    parts.push(section(titled("Mémoire du projet"), c.memory
+        ? row(c.memory.file, `${c.memory.chars.toLocaleString("fr-FR")} caractères, lus à chaque tâche`)
+        : el("span", { className: "muted small" }, "Pas de fichier ARIA.md dans le dossier de travail.")));
+    parts.push(section(titled("Compétences", openSkills), chips(c.skills, (s) => `/${s.name}`)));
+    parts.push(section(titled("Sous-agents"), chips(c.subagents, (s) => `${s.name} (${s.tools.length} outils)`)));
+    const globalHooks = Object.entries(c.hooks.global).map(([event, n]) => `${event} : ${n}`).join(" · ");
+    const project = c.hooks.project;
+    parts.push(section(titled("Hooks", () => $("#btn-settings").click()),
+        row("Globaux", globalHooks || "aucun"),
+        row("Du projet", project ? (project.error ? `⚠ ${project.error}` : project.trusted ? "approuvés" : "⚠ en attente d'approbation") : "aucun")));
+    parts.push(section(titled("Commandes toujours autorisées", a.enabled && a.workspace ? openRules : null),
+        c.rules.length ? el("div", { className: "ctx-chips" }, ...c.rules.map((r) => el("span", {}, r))) : el("span", { className: "muted small" }, "aucune")));
+    box.replaceChildren(...parts);
 }
 
 async function refreshHooksBanner() {
@@ -1087,6 +1198,7 @@ async function send(content, answer, continueTask = false) {
                 syncAgentBar();
             } else if (ev.type === "context") {
                 renderGauge(ev);
+                if ((sidePref("aria-side-tab") || side.tab) === "context") refreshContext();
                 if (ev.saturated) showChatError("Le contexte est presque plein et il n'y a plus d'anciens échanges à résumer.");
             } else if (ev.type === "compacted") {
                 renderGauge(ev);
@@ -1100,6 +1212,10 @@ async function send(content, answer, continueTask = false) {
                 if (ev.todo) renderTodo(ev.todo);
                 if (ev.backup_id) refreshChangesSoon();
                 const card = toolCards[ev.call_id];
+                // Commande lancée ou arrêtée en arrière-plan : l'onglet Arrière-plan suit
+                if ((card?.data.name === "run_command" && card.data.args?.background) || card?.data.name === "stop_command") {
+                    refreshBackground();
+                }
                 Object.assign(card.data, { status: ev.status, content: ev.output, backup_id: ev.backup_id, syntax: ev.syntax, rule: ev.rule });
                 const fresh = toolNode(card.data);
                 card.node.replaceWith(fresh);
