@@ -105,14 +105,131 @@ function syncAgentBar() {
     }
     $("#agent-info").textContent = info.join(" · ");
     renderTodo(a.enabled ? a.todo : null);
+    syncSidePanel();  // sans choix de ta part, le panneau suit le mode Agent
 }
 
 const TODO_MARKS = { pending: "☐", in_progress: "▶", completed: "☑" };
 
 function renderTodo(items) {
+    // Onglet Plan du panneau latéral
     const list = $("#agent-todo");
     list.hidden = !items?.length;
+    $("#side-plan-empty").hidden = Boolean(items?.length);
     list.replaceChildren(...(items || []).map((it) => el("li", { className: it.status }, `${TODO_MARKS[it.status] || "☐"} ${it.content}`)));
+}
+
+// --- Panneau latéral (façon Claude Code) ----------------------------------------------
+
+const side = { tab: "changes", active: 0 };
+
+function sidePref(key, value) {
+    // Préférence d'affichage (ouvert / onglet), propre à ce navigateur : rien d'important n'y est stocké
+    try {
+        if (value === undefined) return localStorage.getItem(key);
+        localStorage.setItem(key, value);
+    } catch {
+        return null;
+    }
+    return value;
+}
+
+function sideOpen() {
+    const stored = sidePref("aria-side-open");
+    return stored === null ? Boolean(agentSettings().enabled) : stored === "1";
+}
+
+function syncSidePanel() {
+    const open = sideOpen();
+    $("#side-panel").hidden = !open;
+    $("#view-chat").classList.toggle("with-side", open);
+    $("#btn-side").classList.toggle("active", open);
+    const tab = sidePref("aria-side-tab") || side.tab;
+    for (const b of document.querySelectorAll(".side-tab")) b.classList.toggle("active", b.dataset.tab === tab);
+    for (const body of document.querySelectorAll(".side-body")) body.hidden = body.dataset.tab !== tab;
+    $("#side-changes-count").textContent = side.active ? String(side.active) : "";
+    $("#btn-side").textContent = open || !side.active ? "▤" : `▤ ${side.active} modif${side.active > 1 ? "s" : ""}`;
+}
+
+$("#btn-side").addEventListener("click", () => {
+    sidePref("aria-side-open", sideOpen() ? "0" : "1");
+    syncSidePanel();
+});
+$("#btn-side-close").addEventListener("click", () => {
+    sidePref("aria-side-open", "0");
+    syncSidePanel();
+});
+for (const button of document.querySelectorAll(".side-tab")) {
+    button.addEventListener("click", () => {
+        sidePref("aria-side-tab", button.dataset.tab);
+        syncSidePanel();
+    });
+}
+
+let changesTimer = null;
+
+function refreshChangesSoon() {
+    // Pendant une tâche : une seule mise à jour pour plusieurs écritures rapprochées
+    clearTimeout(changesTimer);
+    changesTimer = setTimeout(refreshChanges, 400);
+}
+
+async function refreshChanges() {
+    const box = $("#side-changes");
+    if (!chat.current) {
+        side.active = 0;
+        box.replaceChildren(el("p", { className: "muted small" }, "Aucune conversation ouverte."));
+        syncSidePanel();
+        return;
+    }
+    let data;
+    try {
+        data = await api(`/api/agent/changes?conversation_id=${chat.current.id}`);
+    } catch {
+        return;
+    }
+    side.active = data.active;
+    if (!data.tasks.length) {
+        box.replaceChildren(el("p", { className: "muted small" },
+            "Aucune modification de fichier dans cette conversation. Chaque écriture de l'agent apparaîtra ici avec son diff."));
+        syncSidePanel();
+        return;
+    }
+    // La tâche la plus récente en haut
+    const tasks = [...data.tasks].reverse();
+    box.replaceChildren(...tasks.map((task, i) => changeTaskNode(task, tasks.length - i)));
+    syncSidePanel();
+}
+
+function changeTaskNode(task, number) {
+    const head = el("div", { className: "change-task-head" }, `Tâche ${number}`);
+    const live = task.changes.filter((c) => !c.undone).length;
+    if (task.undone) {
+        head.append(el("span", { className: "muted small" }, "↩ annulée"));
+    } else if (live && task.task_id !== "sans-tache") {
+        const button = el("button", { className: "ghost" }, "↩ Annuler toute la tâche");
+        button.addEventListener("click", () => undoTask(task.task_id, button));
+        head.append(button);
+    }
+    return el("div", { className: "change-task" }, head, ...task.changes.map((c, i) => changeNode(c, i === task.changes.length - 1)));
+}
+
+function changeNode(change, last) {
+    const marks = [change.tool];
+    if (change.created) marks.push("créé");
+    if (change.syntax === true) marks.push("✓ syntaxe");
+    if (change.syntax === false) marks.push("⚠ syntaxe");
+    if (change.undone) marks.push("annulée");
+    const node = el("details", { className: `change${change.undone ? " undone" : ""}`, open: last && !change.undone },
+        el("summary", {}, `${change.path} · ${marks.join(" · ")}`), diffNode(change.diff, "write"));
+    const actions = el("div", { className: "change-actions" });
+    if (change.note) actions.append(el("span", { className: "muted" }, change.note));
+    if (!change.undone && change.tool !== "sous-agent") {
+        const undo = el("button", { className: "ghost" }, "↩ Annuler cette modif");
+        undo.addEventListener("click", () => undoChange(change.backup_id, undo));
+        actions.append(undo);
+    }
+    if (actions.children.length) node.append(actions);
+    return node;
 }
 
 async function saveAgent(patch) {
@@ -190,6 +307,8 @@ async function openConversation(id) {
     loadConversations();
     refreshHooksBanner();
     refreshBackground();
+    syncSidePanel();
+    refreshChanges();
 }
 
 // --- Compétences -------------------------------------------------------------------
@@ -979,6 +1098,7 @@ async function send(content, answer, continueTask = false) {
                 if (ev.saturated) showChatError("Le contexte reste trop petit pour cette tâche : recharge le modèle avec un contexte plus grand.");
             } else if (ev.type === "tool_result") {
                 if (ev.todo) renderTodo(ev.todo);
+                if (ev.backup_id) refreshChangesSoon();
                 const card = toolCards[ev.call_id];
                 Object.assign(card.data, { status: ev.status, content: ev.output, backup_id: ev.backup_id, syntax: ev.syntax, rule: ev.rule });
                 const fresh = toolNode(card.data);

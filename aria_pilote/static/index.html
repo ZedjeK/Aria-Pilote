@@ -36,6 +36,7 @@
             <div class="chat-head">
                 <h2 id="conv-title">Nouvelle conversation</h2>
                 <button id="btn-rename" class="ghost" title="Renommer" hidden>✎</button>
+                <button id="btn-side" class="ghost side-toggle" title="Panneau latéral : plan et modifications de l'agent">▤</button>
                 <div class="preset-pick">
                     <select id="preset-select" title="Preset"></select>
                     <button id="btn-edit-preset" class="ghost">Modifier</button>
@@ -52,7 +53,6 @@
             </div>
             <div id="hooks-banner" hidden></div>
             <div id="bg-commands" class="bg-commands" hidden></div>
-            <ul id="agent-todo" class="todo" hidden></ul>
             <div id="messages" class="messages"></div>
             <p id="chat-error" class="error" hidden></p>
             <form id="chat-form" class="composer">
@@ -70,6 +70,22 @@
                 </div>
             </form>
         </section>
+
+        <aside id="side-panel" class="panel side-panel" hidden>
+            <div class="side-tabs" role="tablist">
+                <button class="side-tab" data-tab="plan" role="tab">📋 Plan</button>
+                <button class="side-tab" data-tab="changes" role="tab">✏️ Modifications <span id="side-changes-count" class="side-count"></span></button>
+                <button id="btn-side-close" class="ghost side-close" title="Replier le panneau">✕</button>
+            </div>
+            <div class="side-body" data-tab="plan">
+                <ul id="agent-todo" class="todo"></ul>
+                <p id="side-plan-empty" class="muted small">Pas de plan pour l'instant : l'agent écrit sa liste d'étapes
+                    au début d'une tâche en plusieurs étapes.</p>
+            </div>
+            <div class="side-body" data-tab="changes" hidden>
+                <div id="side-changes"></div>
+            </div>
+        </aside>
     </main>
 
     <main id="view-models" class="layout" hidden>
