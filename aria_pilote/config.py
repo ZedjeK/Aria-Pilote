@@ -2,10 +2,13 @@
 
 import copy
 import json
+import os
 import threading
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parent.parent
+# Dossier de l'appli (config, data, modèles…). ARIA_PILOTE_HOME le remplace : la suite de tests fait ainsi
+# tourner Aria dans un dossier temporaire, sans jamais toucher à tes données.
+ROOT = Path(os.environ.get("ARIA_PILOTE_HOME") or Path(__file__).resolve().parent.parent).resolve()
 CONFIG_PATH = ROOT / "config.json"
 
 LOAD_FIELDS = ("engine", "ctx_size", "gpu_layers", "threads", "flash_attn", "use_mmproj", "cache_type")

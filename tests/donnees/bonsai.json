@@ -1,0 +1,29 @@
+{
+  "name": "Ternary-Bonsai-2-27B-PQ2_0",
+  "file": "Ternary-Bonsai-2-27B-PQ2_0.gguf",
+  "key": "prism-ml/Ternary-Bonsai-2-27B-gguf/Ternary-Bonsai-2-27B-PQ2_0.gguf",
+  "size_bytes": 7206168928,
+  "context_length": 262144,
+  "mmproj_bytes": 629246976,
+  "metadata": {
+    "general.architecture": "qwen35",
+    "general.name": "Hf",
+    "qwen35.block_count": 64,
+    "qwen35.context_length": 262144,
+    "qwen35.embedding_length": 5120,
+    "qwen35.feed_forward_length": 17408,
+    "qwen35.attention.head_count": 24,
+    "qwen35.attention.head_count_kv": 4,
+    "qwen35.rope.freq_base": 10000000.0,
+    "qwen35.attention.layer_norm_rms_epsilon": 9.999999974752427e-07,
+    "qwen35.attention.key_length": 256,
+    "qwen35.attention.value_length": 256,
+    "qwen35.ssm.conv_kernel": 4,
+    "qwen35.ssm.state_size": 128,
+    "qwen35.ssm.group_count": 16,
+    "qwen35.ssm.time_step_rank": 48,
+    "qwen35.ssm.inner_size": 6144,
+    "qwen35.full_attention_interval": 4,
+    "qwen35.rope.dimension_count": 64
+  }
+}

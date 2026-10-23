@@ -66,6 +66,7 @@ def _reader(cmd, cleanup):
             cmd.text = (cmd.text + piece)[-BUFFER_CHARS:]
             cmd.total += len(piece)
             cmd.changed.notify_all()
+    cmd.proc.stdout.close()  # sinon le tuyau reste ouvert jusqu'à la fin d'Aria
     code = cmd.proc.wait()
     with cmd.changed:
         cmd.returncode = code
