@@ -55,13 +55,15 @@ Lance ensuite `Aria-Pilote.exe`. L'exe n'est pas signé : si Windows SmartScreen
 
 Pour développer sans construire : `run.ps1` lance l'appli depuis le code source.
 
+La version de développement ne prend jamais les ports de la version installée : `build_portable.py` la règle sur http://127.0.0.1:8710 (moteur 8711, SearXNG 8898), la version installée gardant 8700, 8701 et 8888. Les deux tournent côte à côte, et ouvrir ton Aria pendant un banc d'essai ne t'envoie plus sur la dev. Un port que tu as choisi toi-même dans la config de dev n'est pas touché.
+
 ### Tests
 
 ```powershell
 py -3.11 -m unittest discover tests
 ```
 
-94 tests, environ 40 secondes, sans modèle ni carte graphique : ask_user, multi_edit, annulation de tâche, historique des modifications, sauvegardes, commandes en arrière-plan (vrais processus), vérification de syntaxe, règles d'autorisation (dont 14 tentatives d'enchaînement), identifiants de modèles, optimiseur (en-têtes réels de Qwen 3.8, Bonsai 2 et SmolLM2 dans `tests\donnees\`), essai réel avec un faux moteur, démarrage avec la sortie redirigée. Les tests tournent dans un dossier temporaire (`ARIA_PILOTE_HOME`) avec une fausse corbeille et le port 8799 : ils ne touchent jamais ta config, tes conversations ni ta corbeille. Ceux qui demandent Windows ou PowerShell sont sautés ailleurs. Ils vérifient le code ; le banc d'essai ci-dessous vérifie l'agent avec les vrais modèles.
+96 tests, environ 40 secondes, sans modèle ni carte graphique : ask_user, multi_edit, annulation de tâche, historique des modifications, sauvegardes, commandes en arrière-plan (vrais processus), vérification de syntaxe, règles d'autorisation (dont 14 tentatives d'enchaînement), identifiants de modèles, ports de la version de dev, optimiseur (en-têtes réels de Qwen 3.8, Bonsai 2 et SmolLM2 dans `tests\donnees\`), essai réel avec un faux moteur, démarrage avec la sortie redirigée. Les tests tournent dans un dossier temporaire (`ARIA_PILOTE_HOME`) avec une fausse corbeille et le port 8799 : ils ne touchent jamais ta config, tes conversations ni ta corbeille. Ceux qui demandent Windows ou PowerShell sont sautés ailleurs. Ils vérifient le code ; le banc d'essai ci-dessous vérifie l'agent avec les vrais modèles.
 
 ### Banc d'essai de l'agent
 
