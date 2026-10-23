@@ -13,7 +13,8 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from . import (VERSION, agent, background, backups, chat, config, conversations, downloads, engines, hardware, hooks,
-               hub, models, optimizer, permissions, presets, searxng, skills, subagents, tools, trial, workspace)
+               hub, models, optimizer, permissions, presets, searxng, skills, subagents, tools, trial, updates,
+               workspace)
 from .server import EngineMissing, manager
 
 STATIC_DIR = Path(__file__).parent / "static"
@@ -36,10 +37,14 @@ async def lifespan(app):
     except OSError as exc:
         print(f"Ménage des sauvegardes impossible : {exc}")
     autoload = asyncio.create_task(_autoload())
+    # En tâche de fond : le démarrage n'attend jamais GitHub
+    update = asyncio.create_task(updates.check()) if config.get().get("update_check", True) else None
     idle = asyncio.create_task(searxng.manager.watch_idle())
     yield
     autoload.cancel()
     idle.cancel()
+    if update:
+        update.cancel()
     await asyncio.to_thread(background.stop_all)  # le job object les tuerait de toute façon : ici, proprement
     await manager.shutdown()
     await searxng.manager.stop()
@@ -118,6 +123,15 @@ class WebSettings(BaseModel):
     safesearch: int | None = Field(None, ge=0, le=2)
 
 
+class NotificationSettings(BaseModel):
+    enabled: bool | None = None
+    only_background: bool | None = None
+    task: bool | None = None
+    waiting: bool | None = None
+    model: bool | None = None
+    download: bool | None = None
+
+
 class ConfigPatch(BaseModel):
     model_dirs: list[str] | None = None
     load_defaults: dict | None = None
@@ -130,6 +144,8 @@ class ConfigPatch(BaseModel):
     searxng_idle_minutes: int | None = Field(None, ge=0, le=1440)
     backup_retention_days: int | None = Field(None, ge=0, le=3650)
     conversation_retention_days: int | None = Field(None, ge=0, le=3650)
+    update_check: bool | None = None
+    notifications: NotificationSettings | None = None
 
 
 class Preset(BaseModel):
@@ -653,6 +669,19 @@ def delete_rule(req: RuleDelete):
     except permissions.RuleError as exc:
         raise HTTPException(404, str(exc))
     return permissions.rules(root)
+
+
+@app.get("/api/update")
+async def update_status():
+    """État de la recherche de mises à jour (GitHub n'est interrogé que si c'est activé et que la réponse a vieilli)."""
+    if config.get().get("update_check", True):
+        return await updates.check()
+    return updates.status()
+
+
+@app.post("/api/update/check")
+async def update_check_now():
+    return await updates.check(force=True)
 
 
 @app.get("/api/searxng")

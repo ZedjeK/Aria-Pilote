@@ -195,7 +195,10 @@ function renderStatus() {
 async function pollStatus() {
     try {
         const previous = state.status?.model?.id;
+        const wasLoading = state.status?.state === "loading";
         state.status = await api("/api/status");
+        if (wasLoading && state.status.state === "ready") notify("model", "Modèle prêt", state.status.model?.name || "");
+        if (wasLoading && state.status.state === "error") notify("model", "Chargement impossible", state.status.error || "");
         renderStatus();
         if (state.status.model?.id !== previous) renderList();
     } catch {

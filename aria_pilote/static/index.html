@@ -10,6 +10,7 @@
 <body>
     <header class="topbar">
         <div class="brand"><img class="brand-logo" src="favicon.png" alt="">Aria<span>Pilote</span><small id="app-version"></small></div>
+        <a id="update-badge" class="update-badge" href="#/reglages/general" hidden></a>
         <div id="status" class="status idle">
             <span class="dot"></span>
             <select id="model-pick" title="Modèle chargé : en choisir un le charge avec ses réglages"></select>
@@ -126,6 +127,54 @@
                     <div class="set-row">
                         <div><div class="set-label">Code source</div><div class="muted small">github.com/ZedjeK/Aria-Pilote</div></div>
                         <a class="button ghost" href="https://github.com/ZedjeK/Aria-Pilote" target="_blank" rel="noopener">Ouvrir ↗</a>
+                    </div>
+                </div>
+                <div class="set-card">
+                    <div class="set-card-head">
+                        <div class="set-card-title">Mises à jour</div>
+                        <button id="btn-update-check" class="ghost">↻ Vérifier maintenant</button>
+                    </div>
+                    <div id="update-info"></div>
+                    <div id="update-howto" class="update-howto" hidden>
+                        <p class="muted small">Rien ne s'installe tout seul : depuis le dossier du code source, récupère la nouvelle
+                            version puis construis-la. Elle reprendra tes modèles, tes conversations et ta config.</p>
+                        <pre class="update-cmds">git pull
+py -3.11 tools/build_portable.py</pre>
+                        <a id="update-changes" class="button ghost" target="_blank" rel="noopener">Voir les changements ↗</a>
+                    </div>
+                    <label class="set-row">
+                        <div><div class="set-label">Rechercher au démarrage</div><div class="muted small">Une requête anonyme à GitHub (la liste des versions publiées), au plus une fois par jour. Rien d'autre n'est envoyé.</div></div>
+                        <input type="checkbox" class="switch" data-config="update_check">
+                    </label>
+                </div>
+                <div class="set-card">
+                    <div class="set-card-title">Notifications</div>
+                    <label class="set-row">
+                        <div><div class="set-label">Notifications activées</div><div id="notif-perm" class="muted small"></div></div>
+                        <input id="set-notif" type="checkbox" class="switch">
+                    </label>
+                    <label class="set-row">
+                        <div><div class="set-label">Seulement quand Aria n'est pas au premier plan</div><div class="muted small">Onglet caché, fenêtre réduite ou autre application devant</div></div>
+                        <input type="checkbox" class="switch" data-config="notifications.only_background">
+                    </label>
+                    <label class="set-row">
+                        <div><div class="set-label">Tâche terminée</div><div class="muted small">Réponse prête, tâche de l'agent finie ou arrêtée sur une erreur</div></div>
+                        <input type="checkbox" class="switch" data-config="notifications.task">
+                    </label>
+                    <label class="set-row">
+                        <div><div class="set-label">L'agent t'attend</div><div class="muted small">Demande d'accord, question, plan à valider</div></div>
+                        <input type="checkbox" class="switch" data-config="notifications.waiting">
+                    </label>
+                    <label class="set-row">
+                        <div><div class="set-label">Modèle chargé</div><div class="muted small">Prêt, ou chargement impossible</div></div>
+                        <input type="checkbox" class="switch" data-config="notifications.model">
+                    </label>
+                    <label class="set-row">
+                        <div><div class="set-label">Téléchargement terminé</div><div class="muted small">Un modèle de Découvrir est arrivé</div></div>
+                        <input type="checkbox" class="switch" data-config="notifications.download">
+                    </label>
+                    <div class="row">
+                        <button id="btn-notif-test" class="ghost">🔔 Tester</button>
                     </div>
                 </div>
             </section>
@@ -560,6 +609,7 @@
 
     <script src="markdown.js"></script>
     <script src="app.js"></script>
+    <script src="notify.js"></script>
     <script src="chat.js"></script>
     <script src="discover.js"></script>
     <script src="settings.js"></script>
