@@ -214,13 +214,34 @@ def install_release(staging, releases_dir):
     return target
 
 
+# Ports de la version de développement : à côté de la version installée (8700, 8701, 8888), jamais à sa place.
+# Sinon, ouvrir « son » Aria pendant un banc d'essai mène à la version de dev, et ce qu'on y règle atterrit dans
+# la config de dev.
+DEV_PORTS = {"app_port": (8700, 8710), "llama_port": (8701, 8711)}
+DEV_SEARXNG = (8888, 8898)
+
+
 def point_dev_config(release):
-    """La version de développement utilise les modèles de la version installée (pas de doublon)."""
+    """La version de développement utilise les modèles de la version installée (pas de doublon) et ses propres ports."""
     from aria_pilote import config
 
-    rel = os.path.relpath(release / "models", ROOT).replace("\\", "/")
-    config.update({"model_dirs": [rel]})
+    rel = os.path.relpath(release / "models", config.ROOT).replace("\\", "/")
+    patch = {"model_dirs": [rel]}
+    current = config.get()
+    for key, (default, dev) in DEV_PORTS.items():
+        if current[key] == default:  # un port choisi à la main n'est jamais touché
+            patch[key] = dev
+    old_url, new_url = f"http://127.0.0.1:{DEV_SEARXNG[0]}", f"http://127.0.0.1:{DEV_SEARXNG[1]}"
+    settings = config.ROOT / "services" / "searxng" / "settings.yml"
+    if current["searxng_url"].rstrip("/") == old_url and settings.is_file():
+        text = settings.read_text(encoding="utf-8")
+        if f"port: {DEV_SEARXNG[0]}" in text:
+            settings.write_text(text.replace(f"port: {DEV_SEARXNG[0]}", f"port: {DEV_SEARXNG[1]}"), encoding="utf-8")
+        patch["searxng_url"] = new_url
+    config.update(patch)
     print(f"  config de dev : modèles lus dans {rel}")
+    cfg = config.get()
+    print(f"  ports de dev : interface {cfg['app_port']}, moteur {cfg['llama_port']}, SearXNG {cfg['searxng_url'].rsplit(':', 1)[-1]}")
 
 
 def folder_size(path):

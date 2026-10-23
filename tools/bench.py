@@ -30,7 +30,11 @@ ROOT = Path(__file__).resolve().parent.parent
 BENCH = ROOT / "bench"
 TASKS_DIR = BENCH / "tasks"
 RESULTS_DIR = BENCH / "results"
-BASE = "http://127.0.0.1:8700"
+try:  # le port de l'appli de dev, lu dans sa config (8710 une fois séparée de la version installée)
+    _PORT = json.loads((ROOT / "config.json").read_text(encoding="utf-8")).get("app_port", 8700)
+except (OSError, ValueError):
+    _PORT = 8700
+BASE = f"http://127.0.0.1:{_PORT}"
 ORIGIN = {"Origin": BASE}
 MAX_ANSWERS = 3  # questions de l'agent auxquelles on répond au plus, par passage
 INCIDENTS = {"tourne en rond": "boucle", "Réponse coupée": "coupée", "Limite de": "limite"}
