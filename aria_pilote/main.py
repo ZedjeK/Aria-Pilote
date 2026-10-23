@@ -12,7 +12,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from . import (VERSION, agent, background, backups, chat, config, conversations, downloads, engines, hardware, hooks,
-               hub, models, optimizer, permissions, presets, searxng, skills, subagents, trial, workspace)
+               hub, models, optimizer, permissions, presets, searxng, skills, subagents, tools, trial, workspace)
 from .server import EngineMissing, manager
 
 STATIC_DIR = Path(__file__).parent / "static"
@@ -582,10 +582,53 @@ class BackgroundStop(BaseModel):
 
 
 @app.get("/api/agent/background")
-def list_background(conversation_id: str):
-    """Commandes de l'agent qui tournent encore en arrière-plan (barre Agent)."""
+def list_background(conversation_id: str, all: bool = False, output: bool = False):
+    """Commandes de l'agent en arrière-plan : celles qui tournent, ou toutes (all) avec la fin de leur sortie
+    (output) pour l'onglet Arrière-plan du panneau latéral."""
     _conversation_or_404(conversation_id)
+    if all:
+        return background.listing(conversation_id, output=output)
     return background.running(conversation_id)
+
+
+@app.get("/api/agent/context")
+def agent_context(conversation_id: str):
+    """Onglet Contexte du panneau : occupation, modèle, réglages de l'agent et tout ce qu'il lit."""
+    conv = _conversation_or_404(conversation_id)
+    settings = conv.get("agent") or {}
+    root = settings.get("workspace") if settings.get("enabled") else None
+    try:
+        root = str(workspace.validate_root(root)) if root else None
+    except workspace.WorkspaceError:
+        root = None
+    summary = conv.get("summary") or {}
+    loaded = manager.model if manager.state in ("loading", "ready") else None
+    load = manager._settings or {}
+    memory = None
+    if root:
+        text = agent.load_memory(root)
+        memory = {"file": agent.MEMORY_FILE, "chars": len(text)} if text else None
+    try:
+        global_hooks = hooks._read(hooks.GLOBAL_PATH)[1] if hooks.GLOBAL_PATH.is_file() else {}
+    except hooks.HookError:
+        global_hooks = {}
+    project = hooks.project_status(root) if root else None
+    tool_count = len(tools.TOOLS) + 1 + bool(subagents.discover(root))  # + ask_user, + delegate s'il y a des sous-agents
+    return {
+        "usage": {**(conv.get("context") or {}), "summarized": summary.get("upto", 0) if summary.get("text") else 0,
+                  "squeeze": conv.get("squeeze", 0)},
+        "model": {"name": loaded.name, "state": manager.state, "engine": manager.engine, "ctx_size": load.get("ctx_size"),
+                  "cache_type": load.get("cache_type") or "f16", "gpu_layers": load.get("gpu_layers")} if loaded else None,
+        "agent": {"enabled": bool(settings.get("enabled")), "workspace": root, "plan_mode": bool(settings.get("plan_mode")),
+                  "auto_write": bool(settings.get("auto_write")), "auto_web": bool(settings.get("auto_web")),
+                  "tools": tool_count},
+        "memory": memory,
+        "skills": [{"name": s.name, "source": s.source} for s in skills.discover(root).values()],
+        "subagents": [{"name": a.name, "source": a.source, "tools": a.tools} for a in subagents.discover(root).values()],
+        "hooks": {"global": {event: len(rules) for event, rules in global_hooks.items() if rules},
+                  "project": {"trusted": project["trusted"], "error": project["error"]} if project else None},
+        "rules": permissions.rules(root) if root else [],
+    }
 
 
 @app.post("/api/agent/background/stop")
