@@ -10,7 +10,7 @@ Le sous-agent ne renvoie qu'un rapport : ses lectures n'encombrent pas le contex
 
 import json
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 import httpx
@@ -93,8 +93,23 @@ def discover(root=None):
     return dict(sorted(found.items()))
 
 
+def usable_tools(names):
+    web = config.web_enabled()
+    return [t for t in names if web or tools.TOOLS[t].kind != "web"]
+
+
+def usable(root=None):
+    """Sous-agents que l'agent peut lancer : outils web retirés si le web est coupé, et ceux qui n'ont plus rien écartés."""
+    found = {}
+    for name, agent in discover(root).items():
+        names = usable_tools(agent.tools)
+        if names:
+            found[name] = replace(agent, tools=names)
+    return found
+
+
 def prompt_section(root=None):
-    agents = discover(root)
+    agents = usable(root)
     if not agents:
         return ""
     lines = [f"- {a.name} ({', '.join(a.tools)}) : {a.description}" for a in agents.values()]
@@ -128,7 +143,7 @@ async def run(cid, root, agent, task, preset, model_name, parent_id, out, read_o
 
     `read_only` (mode Plan de l'agent principal) retire au sous-agent tout outil qui modifie quelque chose.
     """
-    allowed = [t for t in agent.tools if not read_only or tools.TOOLS[t].kind in READ_ONLY_KINDS]
+    allowed = [t for t in usable_tools(agent.tools) if not read_only or tools.TOOLS[t].kind in READ_ONLY_KINDS]
     schemas = [s for s in tools.SCHEMAS if s["function"]["name"] in allowed]
     system_prompt = SUB_PROMPT.format(prompt=agent.prompt(), root=root, tools=", ".join(allowed))
     if "load_skill" in allowed:

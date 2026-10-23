@@ -125,6 +125,9 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--a
 .set-row > div:first-child { flex: 1; min-width: 0; }
 .set-row select { width: auto; min-width: 220px; max-width: 360px; }
 .set-label { font-weight: 600; }
+.set-row .set-wide { width: min(420px, 50%); }
+.set-row .set-num { width: 110px; }
+.set-row .badge { flex: none; }
 input.invalid, select.invalid, textarea.invalid { border-color: var(--err); }
 .skills-list li.static { cursor: default; }
 .skills-list li.static:hover { border-color: var(--border); }

@@ -103,9 +103,13 @@
             <a href="#/reglages/moteurs" data-section="moteurs">🔧 Moteurs</a>
             <a href="#/reglages/materiel" data-section="materiel">⚡ Matériel et optimisation</a>
             <div class="nav-group">Agents</div>
+            <a href="#/reglages/comportement" data-section="comportement">🤖 Comportement</a>
             <a href="#/reglages/autorisations" data-section="autorisations">🛡 Autorisations</a>
             <a href="#/reglages/competences" data-section="competences">📚 Compétences et sous-agents</a>
             <a href="#/reglages/hooks" data-section="hooks">🪝 Hooks</a>
+            <a href="#/reglages/web" data-section="web">🌐 Web et SearXNG</a>
+            <div class="nav-group">Système</div>
+            <a href="#/reglages/donnees" data-section="donnees">💾 Données</a>
         </nav>
         <div class="settings-body">
             <div class="settings-head">
@@ -301,6 +305,41 @@
                 </div>
             </section>
 
+            <section class="settings-section" data-section="comportement" data-title="Comportement" hidden>
+                <div class="set-card">
+                    <div class="set-card-title">Nouvelles conversations</div>
+                    <p class="muted small">Les réglages de départ d'une conversation. Tu peux toujours les changer ensuite dans la barre Agent.</p>
+                    <label class="set-row">
+                        <div><div class="set-label">Dossier de travail par défaut</div><div class="muted small">Vide : tu le choisis à chaque conversation</div></div>
+                        <input id="set-nc-workspace" class="mono set-wide" data-config="new_conversation.workspace" placeholder="C:\Users\zeman\Desktop\mon-projet">
+                    </label>
+                    <label class="set-row">
+                        <div><div class="set-label">Agent activé d'office</div><div class="muted small">Seulement avec un dossier de travail par défaut</div></div>
+                        <input type="checkbox" class="switch" data-config="new_conversation.enabled">
+                    </label>
+                    <label class="set-row">
+                        <div><div class="set-label">Mode Plan d'office</div><div class="muted small">L'agent explore en lecture seule, puis te soumet un plan avant d'agir</div></div>
+                        <input type="checkbox" class="switch" data-config="new_conversation.plan_mode">
+                    </label>
+                    <label class="set-row">
+                        <div><div class="set-label">Accès web autorisé d'office</div><div class="muted small">Sinon, chaque recherche et chaque page lue te sont demandées</div></div>
+                        <input type="checkbox" class="switch" data-config="new_conversation.auto_web">
+                    </label>
+                    <p class="muted small">🔒 Les modifications de fichiers ne s'autorisent jamais d'office : ce droit se donne dans la conversation, et il saute à chaque changement de dossier.</p>
+                </div>
+                <div class="set-card">
+                    <div class="set-card-title">Pendant une tâche</div>
+                    <label class="set-row">
+                        <div><div class="set-label">Appels d'outils au plus par tâche</div><div class="muted small">Au-delà, l'agent s'arrête et te propose de continuer (10 à 100)</div></div>
+                        <input type="number" class="set-num" min="10" max="100" step="5" data-config="max_tool_calls">
+                    </label>
+                    <label class="set-row">
+                        <div><div class="set-label">Vérifier la syntaxe après chaque écriture</div><div class="muted small">Python, JSON, YAML, TOML, XML, PowerShell : vérifiés sans être exécutés</div></div>
+                        <input type="checkbox" class="switch" data-config="auto_check">
+                    </label>
+                </div>
+            </section>
+
             <section class="settings-section" data-section="autorisations" data-title="Autorisations" hidden>
                 <p class="muted">Commandes que l'agent lance sans te demander, projet par projet. Une règle terminée par * couvre
                     les commandes qui commencent ainsi, jamais une suite avec ; &amp; | &gt; $ (enchaînement). La liste noire reste prioritaire.</p>
@@ -356,6 +395,98 @@
                         <button id="btn-hooks-save" class="primary">Enregistrer les hooks</button>
                     </div>
                 </div>
+            </section>
+            <section class="settings-section" data-section="web" data-title="Web et SearXNG" hidden>
+                <div class="set-card">
+                    <div class="set-card-title">Recherche web</div>
+                    <label class="set-row">
+                        <div><div class="set-label">Recherche web activée</div><div class="muted small">Coupée, l'agent ne voit plus web_search ni web_fetch, ni les sous-agents qui n'ont que ça</div></div>
+                        <input type="checkbox" class="switch" data-config="web.enabled">
+                    </label>
+                    <label class="set-row">
+                        <div><div class="set-label">Résultats par recherche</div><div class="muted small">De 3 à 20</div></div>
+                        <input type="number" class="set-num" min="3" max="20" data-config="web.results">
+                    </label>
+                    <label class="set-row">
+                        <div><div class="set-label">Langue des résultats</div><div class="muted small">Automatique : SearXNG choisit selon la requête</div></div>
+                        <select data-config="web.language">
+                            <option value="auto">Automatique</option>
+                            <option value="fr">Français</option>
+                            <option value="en">Anglais</option>
+                            <option value="de">Allemand</option>
+                            <option value="es">Espagnol</option>
+                            <option value="it">Italien</option>
+                            <option value="ja">Japonais</option>
+                        </select>
+                    </label>
+                    <label class="set-row">
+                        <div><div class="set-label">SafeSearch</div><div class="muted small">Filtre des contenus adultes chez les moteurs qui le gèrent</div></div>
+                        <select data-config="web.safesearch" data-number>
+                            <option value="0">Aucun</option>
+                            <option value="1">Modéré</option>
+                            <option value="2">Strict</option>
+                        </select>
+                    </label>
+                    <p class="muted small">🔒 Les adresses locales et privées (127.0.0.1, 192.168…, ton réseau) sont toujours refusées à la lecture de pages.</p>
+                </div>
+                <div class="set-card">
+                    <div class="set-card-title">SearXNG</div>
+                    <div class="set-row">
+                        <div><div class="set-label">État</div><div id="sx-detail" class="muted small"></div></div>
+                        <span id="sx-state" class="badge"></span>
+                        <button id="btn-sx-toggle" class="ghost"></button>
+                    </div>
+                    <label class="set-row">
+                        <div><div class="set-label">Arrêter après inactivité</div><div class="muted small">Minutes sans recherche avant l'arrêt (0 : tourne jusqu'à la fermeture d'Aria). Il redémarre tout seul à la recherche suivante.</div></div>
+                        <input type="number" class="set-num" min="0" max="1440" step="5" data-config="searxng_idle_minutes">
+                    </label>
+                    <p id="sx-error" class="error" hidden></p>
+                </div>
+            </section>
+
+            <section class="settings-section" data-section="donnees" data-title="Données" hidden>
+                <p class="muted">Tout reste sur ton PC, dans le dossier de l'appli. Rien n'est supprimé pour de bon : tout part à la corbeille.</p>
+                <div class="set-card">
+                    <div class="set-card-head">
+                        <div class="set-card-title">Conversations</div>
+                        <button class="ghost" data-open="conversations">📂 Ouvrir le dossier</button>
+                    </div>
+                    <div id="data-conv" class="muted small"></div>
+                    <label class="set-row">
+                        <div><div class="set-label">Corbeille automatique</div><div class="muted small">Conversations inactives depuis ce nombre de jours, envoyées à la corbeille au démarrage (0 : jamais)</div></div>
+                        <input type="number" class="set-num" min="0" max="3650" data-config="conversation_retention_days">
+                    </label>
+                    <div class="row">
+                        <button id="btn-conv-trash" class="ghost danger-text">🗑 Tout envoyer à la corbeille</button>
+                    </div>
+                </div>
+                <div class="set-card">
+                    <div class="set-card-head">
+                        <div class="set-card-title">Sauvegardes de l'agent</div>
+                        <button class="ghost" data-open="backups">📂 Ouvrir le dossier</button>
+                    </div>
+                    <div id="data-backups" class="muted small"></div>
+                    <label class="set-row">
+                        <div><div class="set-label">Conservation</div><div class="muted small">Jours pendant lesquels « Annuler » reste possible (0 : toujours). Le ménage se fait au démarrage.</div></div>
+                        <input type="number" class="set-num" min="0" max="3650" data-config="backup_retention_days">
+                    </label>
+                    <div class="row">
+                        <button id="btn-backups-clean" class="ghost">🧹 Faire le ménage maintenant</button>
+                    </div>
+                </div>
+                <div class="set-card">
+                    <div class="set-card-title">Journaux</div>
+                    <p class="muted small">Réécrits à chaque démarrage : ils ne grossissent pas d'une session à l'autre.</p>
+                    <ul id="data-logs" class="skills-list"></ul>
+                </div>
+                <div class="set-card">
+                    <div class="set-card-head">
+                        <div class="set-card-title">Dossier de l'appli</div>
+                        <button class="ghost" data-open="app">📂 Ouvrir dans l'Explorateur</button>
+                    </div>
+                    <div id="data-app" class="mono small"></div>
+                </div>
+                <p id="data-error" class="error" hidden></p>
             </section>
         </div>
     </main>
