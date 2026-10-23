@@ -81,6 +81,8 @@ def record_after(cid, backup_id, target):
     meta = _read_meta(folder)
     meta["after"] = _digest(target)
     _write_meta(folder, meta)
+    # Ce que l'agent a écrit : le diff du panneau latéral reste juste après une annulation ou une retouche
+    shutil.copy2(target, folder / "after")
 
 
 def restore(cid, backup_id):
@@ -99,6 +101,54 @@ def restore(cid, backup_id):
     meta["undone"] = True
     _write_meta(folder, meta)
     return meta
+
+
+# --- Historique des modifications (panneau latéral) ---------------------------------
+
+def _text(path):
+    try:
+        return Path(path).read_bytes().decode("utf-8", errors="replace")
+    except OSError:
+        return None
+
+
+def history(cid):
+    """Toutes les modifications de la conversation, dans l'ordre, avec l'état du fichier avant et après chacune.
+
+    « Après » = ce que l'agent a écrit (copie gardée à l'écriture). Pour les sauvegardes plus anciennes, sans
+    cette copie : l'« avant » de la modification suivante du même fichier, ou le fichier actuel pour la dernière.
+    Texte illisible ou sauvegarde expirée : None."""
+    base = BACKUP_DIR / cid
+    if not ID_RE.match(cid) or not base.is_dir():
+        return []
+    items = []
+    for folder in base.iterdir():
+        try:
+            items.append((folder, _read_meta(folder)))
+        except (OSError, ValueError):
+            continue
+    items.sort(key=lambda item: item[1].get("seq", 0))
+    result = []
+    for i, (folder, meta) in enumerate(items):
+        before = _text(folder / "original") if meta["existed"] else ""
+        later = next((f for f, m in items[i + 1:] if m["path"] == meta["path"]), None)
+        note = None
+        if (folder / "after").exists():
+            after = _text(folder / "after")
+            if later is None and not meta.get("undone") and meta.get("after") is not None \
+                    and _digest(meta["path"]) != meta["after"]:
+                note = "Fichier retouché depuis : le diff montre ce qu'a écrit l'agent."
+        elif later is not None:
+            later_meta = _read_meta(later)
+            after = _text(later / "original") if later_meta["existed"] else ""
+        else:
+            after = _text(meta["path"]) if Path(meta["path"]).is_file() else ""
+            if meta.get("after") is not None and _digest(meta["path"]) != meta["after"]:
+                note = "Fichier retouché depuis : le diff montre aussi ces changements."
+        result.append({"backup_id": folder.name, "path": meta["path"], "task_id": meta.get("task_id"),
+                       "created": not meta["existed"], "undone": bool(meta.get("undone")),
+                       "before": before, "after": after, "note": note})
+    return result
 
 
 # --- Ménage ------------------------------------------------------------------------

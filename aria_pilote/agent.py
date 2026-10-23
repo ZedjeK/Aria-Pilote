@@ -143,6 +143,40 @@ def task_preview(conv, task_id):
             "commands": _task_commands(conv, task_id)}
 
 
+def changes(conv):
+    """Modifications de la conversation pour le panneau latéral, groupées par tâche, avec leur diff."""
+    by_backup = {m["backup_id"]: m for m in conv["messages"] if m.get("backup_id")}
+    undone_tasks = conv.get("undone_tasks") or {}
+    tasks, order = {}, []
+    history = backups.history(conv["id"])
+    known = {item["backup_id"] for item in history}
+    # Sauvegardes expirées : la modification reste listée (d'après la conversation), sans diff
+    expired = [{"backup_id": m["backup_id"], "path": str(Path(conv["agent"]["workspace"]) / m["args"].get("path", "?"))
+                if (conv.get("agent") or {}).get("workspace") else m["args"].get("path", "?"),
+                "task_id": m.get("task_id"), "created": False, "undone": bool(m.get("undone")),
+                "before": None, "after": None, "note": None}
+               for m in conv["messages"] if m.get("backup_id") and m["backup_id"] not in known]
+    for item in expired + history:
+        rel = _relative(conv, item["path"])
+        message = by_backup.get(item["backup_id"])
+        if item["before"] is None or item["after"] is None:
+            diff = "(diff indisponible : la sauvegarde a expiré ou le fichier est illisible)"
+        else:
+            diff = tools._diff(item["before"], item["after"], rel)
+        task_id = item["task_id"] or "sans-tache"
+        if task_id not in tasks:
+            tasks[task_id] = {"task_id": task_id, "undone": undone_tasks.get(task_id), "changes": []}
+            order.append(task_id)
+        tasks[task_id]["changes"].append({
+            "backup_id": item["backup_id"], "path": rel, "created": item["created"],
+            "undone": item["undone"] or bool(message and message.get("undone")),
+            "tool": message["name"] if message else "sous-agent", "syntax": message.get("syntax") if message else None,
+            "diff": diff, "note": item["note"]})
+    groups = [tasks[t] for t in order]
+    active = sum(1 for g in groups for c in g["changes"] if not c["undone"])
+    return {"tasks": groups, "active": active}
+
+
 def undo_task(cid, task_id, force=False):
     """Annule toute une tâche ; les cartes de ses modifications passent en « annulé » et un résumé est gardé."""
     plan = backups.task_plan(cid, task_id)

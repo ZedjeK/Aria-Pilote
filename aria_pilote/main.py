@@ -598,6 +598,12 @@ def stop_background(req: BackgroundStop):
     return background.running(req.conversation_id)
 
 
+@app.get("/api/agent/changes")
+def list_changes(conversation_id: str):
+    """Modifications de la conversation, avec leur diff, pour l'onglet Modifications du panneau latéral."""
+    return agent.changes(_conversation_or_404(conversation_id))
+
+
 @app.get("/api/agent/undo-task")
 def undo_task_preview(conversation_id: str, task_id: str):
     conv = _conversation_or_404(conversation_id)
