@@ -1,4 +1,6 @@
-"""Presets de chat (prompt système + échantillonnage), stockés dans data/presets.json."""
+"""Presets de chat (réflexion et échantillonnage), stockés dans data/presets.json.
+
+Le prompt système n'en fait plus partie : qui parle, c'est le persona ; à qui, c'est la fiche « Toi »."""
 
 import json
 import threading
@@ -13,7 +15,6 @@ DEFAULT_PRESETS = [
     {
         "id": "default",
         "name": "Par défaut",
-        "system_prompt": "Tu es une assistante utile. Réponds en français.",
         "temperature": 0.7,
         "top_p": 0.95,
         "top_k": 40,
@@ -27,7 +28,6 @@ DEFAULT_PRESETS = [
     {
         "id": "reflexion",
         "name": "Réflexion",
-        "system_prompt": "Tu es une assistante utile. Réponds en français.",
         "temperature": 1.0,
         "top_p": 0.95,
         "top_k": 20,
@@ -39,7 +39,6 @@ DEFAULT_PRESETS = [
     {
         "id": "rapide",
         "name": "Rapide",
-        "system_prompt": "Tu es une assistante utile. Réponds en français.",
         "temperature": 0.7,
         "top_p": 0.8,
         "top_k": 20,
@@ -49,6 +48,9 @@ DEFAULT_PRESETS = [
         "thinking": False,
     },
 ]
+
+# Prompts système livrés autrefois avec les presets : supprimés sans rien dire (la langue vient de la fiche « Toi »)
+SHIPPED_PROMPTS = {"Tu es une assistante utile. Réponds en français.", "You are a helpful assistant", ""}
 
 # Anciens presets livrés au nom d'un modèle : renommés s'ils n'ont pas été touchés (leur identifiant ne change pas,
 # pour que les conversations qui les utilisent les retrouvent)
@@ -69,15 +71,32 @@ def list_all():
         if not PRESETS_PATH.exists():
             _write(DEFAULT_PRESETS)
         presets = json.loads(PRESETS_PATH.read_text(encoding="utf-8"))
-        renamed = False
+        changed = False
         for preset in presets:
             old, new = LEGACY_NAMES.get(preset.get("id"), (None, None))
             if old and preset.get("name") == old:
                 preset["name"] = new
-                renamed = True
-        if renamed:
+                changed = True
+            if "system_prompt" in preset:
+                _migrate_prompt(preset)
+                changed = True
+        if changed:
             _write(presets)
         return presets
+
+
+def _migrate_prompt(preset):
+    """Un prompt système écrit à la main devient un persona « <preset> (prompt importé) » : rien ne se perd."""
+    text = (preset.pop("system_prompt", "") or "").strip()
+    if text in SHIPPED_PROMPTS:
+        return
+    from . import persona  # import tardif : persona ne dépend pas des presets
+
+    try:
+        persona.create({"name": f"{preset.get('name', 'Preset')} (prompt importé)"[:40],
+                        "presentation": text[:persona.MAX_PRESENTATION], "gender": "neutre"})
+    except persona.PersonaError as exc:
+        print(f"Prompt du preset « {preset.get('name')} » non importé : {exc}")
 
 
 def get(pid):

@@ -44,6 +44,8 @@ DEFAULTS = {
     "always_plan": False,
     # Preset des nouvelles conversations (et de celles dont le preset a été supprimé)
     "default_preset": "default",
+    # Persona des nouvelles conversations (et de celles dont le persona a été supprimé)
+    "default_persona": "aria",
     # Appels d'outils au plus par tâche de l'agent
     "max_tool_calls": 25,
     # Recherche web : coupée, l'agent ne voit plus web_search ni web_fetch (ni les sous-agents qui n'ont que ça)
