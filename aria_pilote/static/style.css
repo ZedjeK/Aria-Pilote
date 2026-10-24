@@ -245,6 +245,13 @@ dialog .form { grid-template-columns: 1fr; }
 .preset-edit { grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: start; }
 .preset-edit .wide { grid-column: 1 / -1; }
 .field-help { color: var(--muted); font-size: 11px; line-height: 1.35; }
+.preset-help { margin-top: 14px; padding: 12px 14px; border: 1px solid var(--accent-2); border-radius: 10px;
+    background: var(--panel-2); }
+.preset-help-title { font-weight: 600; color: var(--accent); margin-bottom: 6px; }
+.preset-help p { margin: 0 0 8px; word-break: normal; line-height: 1.45; }
+.help-values { display: grid; grid-template-columns: auto 1fr; gap: 3px 12px; margin-top: 4px; padding-top: 8px;
+    border-top: 1px solid var(--border); }
+.help-values .mono { color: var(--accent); white-space: nowrap; }
 .preset-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 12px; }
 button.danger { color: var(--err); margin-right: auto; }
 button.danger-text { color: var(--err); }
