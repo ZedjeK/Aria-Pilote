@@ -494,7 +494,16 @@ button.danger-text { color: var(--err); }
 /* --- Contexte --- */
 
 .ctx-gauge { display: flex; align-items: center; gap: 6px; font: 11px var(--mono); color: var(--muted); }
-.ctx-bar { width: 90px; height: 6px; background: var(--panel-2); border-radius: 3px; overflow: hidden; }
+.ctx-bar { position: relative; width: 90px; height: 6px; background: var(--panel-2); border-radius: 3px; overflow: hidden; }
+.ctx-limit { position: absolute; top: 0; bottom: 0; width: 2px; margin-left: -1px; background: var(--text); opacity: .7; }
+.ctx-alert { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin: 4px 0; padding: 6px 10px;
+    border: 1px solid var(--action); border-radius: 8px; background: var(--panel-2); font-size: 13px; }
+.ctx-alert span { flex: 1; min-width: 220px; }
+.ctx-alert button { padding: 3px 10px; font-size: 12px; }
+.compact-pop { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 8px 10px; margin-bottom: 6px;
+    border: 1px solid var(--accent-2); border-radius: 8px; background: var(--panel-2); }
+.compact-pop span { flex-basis: 100%; color: var(--muted); }
+.compact-pop input { flex: 1; min-width: 240px; }
 .ctx-bar span { display: block; height: 100%; background: var(--accent); }
 .ctx-gauge.high .ctx-bar span { background: var(--action); }
 .ctx-gauge.full .ctx-bar span { background: var(--err); }

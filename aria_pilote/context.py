@@ -37,6 +37,10 @@ class ContextOverflow(Exception):
     """llama-server refuse la requête : elle dépasse le contexte chargé."""
 
 
+class NothingToCompact(Exception):
+    """Compactage demandé, mais il n'y a pas encore d'anciens échanges à résumer."""
+
+
 _tools_tokens_cache = {}
 
 
@@ -56,6 +60,11 @@ def shrink(text, limit):
 def reserve(preset, total):
     """Place gardée pour la réponse du modèle."""
     return min(preset.get("max_tokens") or 4096, total // 4)
+
+
+def limit(preset, total):
+    """Seuil du compactage automatique : au-delà, les anciens échanges sont résumés avant le prochain message."""
+    return total - reserve(preset, total)
 
 
 async def _tokenize(client, text):
@@ -101,8 +110,9 @@ def _transcript(messages, skip=None):
     return lines
 
 
-async def _summarize(conv, upto, cut, model_name, keep=None):
-    """Résume les messages [upto, cut[ (sauf `keep`, la demande en cours, gardée telle quelle)."""
+async def _summarize(conv, upto, cut, model_name, keep=None, instructions=None):
+    """Résume les messages [upto, cut[ (sauf `keep`, la demande en cours, gardée telle quelle).
+    `instructions` : ce que l'utilisateur veut voir gardé en priorité (bouton Compacter, « /compact … »)."""
     previous = (conv.get("summary") or {}).get("text")
     lines = _transcript(conv["messages"][upto:cut], skip=keep - upto if keep is not None and keep >= upto else None)
     if keep is not None:
@@ -121,7 +131,9 @@ async def _summarize(conv, upto, cut, model_name, keep=None):
             body = f"Résumé précédent :\n{previous}\n\nSuite de la conversation :\n{body}"
         resp = await client.post(_url("/v1/chat/completions"), json={
             "model": model_name,
-            "messages": [{"role": "system", "content": SUMMARY_PROMPT}, {"role": "user", "content": body}],
+            "messages": [{"role": "system", "content": SUMMARY_PROMPT + (
+                f"\nConsigne de l'utilisateur pour ce résumé (prioritaire) : {instructions.strip()}"
+                if instructions and instructions.strip() else "")}, {"role": "user", "content": body}],
             "max_tokens": SUMMARY_MAX_TOKENS,
             "temperature": 0.3,
             "chat_template_kwargs": {"enable_thinking": False},
@@ -130,7 +142,7 @@ async def _summarize(conv, upto, cut, model_name, keep=None):
         return resp.json()["choices"][0]["message"]["content"].strip()
 
 
-async def ensure_room(cid, preset, system_prompt, tools=None, force=False):
+async def ensure_room(cid, preset, system_prompt, tools=None, force=False, instructions=None):
     """Résume les anciens échanges si le prochain prompt ne laisse plus assez de place pour la réponse.
 
     Renvoie un événement à transmettre à l'interface : « context » (mesure) ou « compacted ».
@@ -142,9 +154,9 @@ async def ensure_room(cid, preset, system_prompt, tools=None, force=False):
         return None
     conv = conversations.get(cid)
     used = await count_tokens(chat.build_messages(conv, system_prompt), tools)
-    budget = total - reserve(preset, total)
+    budget = limit(preset, total)
     if used <= budget and not force:
-        return {"type": "context", "used": used, "max": total}
+        return {"type": "context", "used": used, "max": total, "limit": budget}
 
     before, compacted, after = used, 0, used
     # Deux passes au plus : d'abord les tours précédents, puis, si ça ne suffit pas,
@@ -154,7 +166,8 @@ async def ensure_room(cid, preset, system_prompt, tools=None, force=False):
         if cut is None:
             break
         upto, keep = cut["upto"], cut["keep"]
-        text = await _summarize(conv, (conv.get("summary") or {}).get("upto", 0), upto, manager.model.name, keep)
+        text = await _summarize(conv, (conv.get("summary") or {}).get("upto", 0), upto, manager.model.name, keep,
+                                instructions)
         summary = {"text": text, "upto": upto, "keep": keep, "created_at": datetime.now().isoformat(timespec="seconds")}
         compacted += upto - (conv.get("summary") or {}).get("upto", 0)
         conv = conversations.update(cid, lambda c: c.__setitem__("summary", summary))
@@ -168,8 +181,9 @@ async def ensure_room(cid, preset, system_prompt, tools=None, force=False):
         after = await count_tokens(chat.build_messages(conv, system_prompt), tools)
         squeezed = True
     if not compacted and not squeezed:
-        return {"type": "context", "used": used, "max": total, "saturated": used > budget}
-    return {"type": "compacted", "before": before, "used": after, "max": total, "messages": compacted,
+        return {"type": "context", "used": used, "max": total, "limit": budget, "saturated": used > budget}
+    conversations.update(cid, lambda c: c.__setitem__("context", {"used": after, "max": total, "limit": budget}))
+    return {"type": "compacted", "before": before, "used": after, "max": total, "limit": budget, "messages": compacted,
             "summary": (conv.get("summary") or {}).get("text", ""), "squeeze": conv.get("squeeze", 0),
             "saturated": after > budget}
 
@@ -192,14 +206,23 @@ def _cut_point(conv):
     return None
 
 
-def record_usage(cid, stats):
-    """Mémorise l'occupation du contexte après une réponse, pour la jauge."""
+def record_usage(cid, stats, preset=None):
+    """Mémorise l'occupation du contexte après une réponse, pour la jauge (avec le seuil du compactage automatique)."""
     total = manager.ctx_size
     used = (stats.get("prompt_tokens") or 0) + (stats.get("completion_tokens") or 0)
     if not total or not used:
         return None
-    conversations.update(cid, lambda c: c.__setitem__("context", {"used": used, "max": total}))
-    return {"type": "context", "used": used, "max": total}
+    usage = {"used": used, "max": total, "limit": limit(preset or {}, total)}
+    conversations.update(cid, lambda c: c.__setitem__("context", usage))
+    return {"type": "context", **usage}
+
+
+async def compact(cid, preset, system_prompt, tools=None, instructions=None):
+    """Compactage à la demande (bouton 🗜, « /compact ») : résume tout de suite les échanges avant ta dernière demande.
+    L'historique reste affiché et enregistré ; seul ce que le modèle relit est remplacé par le résumé."""
+    if _cut_point(conversations.get(cid)) is None:
+        raise NothingToCompact("Rien à résumer pour l'instant : la conversation est encore courte.")
+    return await ensure_room(cid, preset, system_prompt, tools, force=True, instructions=instructions)
 
 
 def is_overflow(body):

@@ -48,15 +48,28 @@
             <div id="hooks-banner" hidden></div>
             <div id="messages" class="messages"></div>
             <p id="chat-error" class="error" hidden></p>
+            <div id="ctx-alert" class="ctx-alert" hidden>
+                <span>⚠️ Le contexte arrive à sa limite : au prochain message, Aria résumera les anciens échanges.</span>
+                <button type="button" id="btn-ctx-compact" class="ghost">🗜 Compacter maintenant</button>
+                <button type="button" id="btn-ctx-new" class="ghost">Nouvelle conversation</button>
+                <button type="button" id="btn-ctx-close" class="ghost" title="Masquer pour cette conversation">✕</button>
+            </div>
             <form id="chat-form" class="composer">
                 <textarea id="chat-input" rows="3" placeholder="Écris ton message… (Entrée pour envoyer, Maj+Entrée pour aller à la ligne)"></textarea>
+                <div id="compact-pop" class="compact-pop" hidden>
+                    <span class="small">🗜 Résumer les anciens échanges pour libérer du contexte. L'historique reste affiché.</span>
+                    <input id="compact-instructions" maxlength="500" placeholder="Que garder en priorité ? (facultatif, ex. les décisions sur la base de données)">
+                    <button type="button" id="btn-compact-go" class="primary">Compacter</button>
+                    <button type="button" id="btn-compact-cancel" class="ghost">Annuler</button>
+                </div>
                 <div class="composer-actions">
                     <span id="chat-model" class="muted small"></span>
                     <select id="preset-select" class="preset-chip" title="Preset : comment le modèle répond (réflexion, longueur, tirage des mots)"></select>
                     <span id="ctx-gauge" class="ctx-gauge" hidden title="Contexte occupé par la conversation">
-                        <span class="ctx-bar"><span></span></span>
+                        <span class="ctx-bar"><span></span><i class="ctx-limit" hidden></i></span>
                         <span class="ctx-text"></span>
                     </span>
+                    <button type="button" id="btn-compact" class="ghost" title="Compacter : résumer les anciens échanges pour libérer du contexte (ou tape /compact)" hidden>🗜</button>
                     <button type="button" id="btn-skills" class="ghost" title="Compétences">📚 Compétences</button>
                     <button type="button" id="btn-regen" class="ghost">🔄 Régénérer</button>
                     <button type="button" id="btn-stop" class="ghost" hidden>⏹ Stop</button>

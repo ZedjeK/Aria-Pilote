@@ -403,6 +403,26 @@ async def run(conv, preset, model_name):
         await asyncio.to_thread(background.stop_task, conv["id"], task_id)
 
 
+def context_inputs(conv, preset):
+    """Prompt système, outils et preset tels que les verra la prochaine étape (sans lancer les hooks) :
+    pour mesurer le contexte et compacter à la demande."""
+    root = attached_root(conv)
+    try:
+        root = str(workspace.validate_root(root)) if root else None
+    except workspace.WorkspaceError:
+        root = None
+    plan_required = (conv.get("plan") or {}).get("status") == "required" and plan_locked(conv)
+    system_prompt = _system_prompt(preset, root, load_memory(root) if root else None, plan_required)
+    if root:
+        preset = {**preset, "max_tokens": max(preset.get("max_tokens") or 0, AGENT_MIN_TOKENS),
+                  "thinking_budget": preset.get("thinking_budget") or AGENT_THINKING_BUDGET}
+    allowed = allowed_tools(folder=bool(root))
+    schemas = [s for s in tools.SCHEMAS if allowed is None or s["function"]["name"] in allowed]
+    if subagents.usable(root):
+        schemas.append(subagents.DELEGATE_SCHEMA)
+    return system_prompt, schemas + [ASK_USER_SCHEMA, PROPOSE_PLAN_SCHEMA], preset
+
+
 async def _run(conv, preset, model_name, task_id):
     cid = conv["id"]
     root = attached_root(conv)
@@ -474,7 +494,7 @@ async def _run(conv, preset, model_name, task_id):
                 message["task_id"] = task_id
                 conversations.append_message(cid, message)
         retried = False
-        usage = context.record_usage(cid, message["stats"]) if message else None
+        usage = context.record_usage(cid, message["stats"], preset) if message else None
         if usage:
             yield chat.event(usage)
         yield chat.event({"type": "step_end"})
