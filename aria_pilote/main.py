@@ -13,8 +13,8 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from . import (VERSION, agent, background, backups, chat, config, conversations, downloads, engines, hardware, hooks,
-               hub, models, optimizer, permissions, presets, searxng, skills, subagents, tools, trial, updates,
-               workspace)
+               hub, models, optimizer, permissions, pick_folder, presets, searxng, skills, subagents, tools, trial,
+               updates, workspace)
 from .server import EngineMissing, manager
 
 STATIC_DIR = Path(__file__).parent / "static"
@@ -686,6 +686,24 @@ def delete_rule(req: RuleDelete):
     except permissions.RuleError as exc:
         raise HTTPException(404, str(exc))
     return permissions.rules(root)
+
+
+class FolderPick(BaseModel):
+    initial: str = ""
+    title: str = "Choisir un dossier"
+
+
+@app.post("/api/pick-folder")
+async def pick_folder_endpoint(req: FolderPick):
+    """Ouvre la fenêtre « Choisir un dossier » de Windows ; renvoie le chemin choisi, ou null si tu as annulé."""
+    try:
+        return {"path": await pick_folder.pick(req.initial, req.title[:100])}
+    except pick_folder.PickerBusy as exc:
+        raise HTTPException(409, str(exc))
+    except pick_folder.PickerUnavailable as exc:
+        raise HTTPException(501, str(exc))
+    except pick_folder.PickerError as exc:
+        raise HTTPException(500, str(exc))
 
 
 @app.get("/api/update")

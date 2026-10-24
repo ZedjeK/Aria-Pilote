@@ -40,10 +40,12 @@
                 </div>
             </div>
             <div class="agent-bar">
-                <input id="agent-root" class="mono" placeholder="Dossier à attacher, ex. C:\Users\zeman\Desktop\mon-projet"
-                    title="Attacher un dossier donne à l'agent l'accès à ses fichiers (avec ton accord pour chaque modification ou commande)">
-                <button id="btn-agent-root" class="ghost">📂 Attacher</button>
-                <button id="btn-agent-detach" class="ghost" title="Détacher le dossier : retour à une simple discussion" hidden>✕ Détacher</button>
+                <button id="btn-folder" class="folder-chip"
+                    title="Attacher un dossier donne à l'agent l'accès à ses fichiers (avec ton accord pour chaque modification ou commande)">📂 Attacher un dossier…</button>
+                <button id="btn-agent-detach" class="ghost" title="Détacher le dossier : retour à une simple discussion" hidden>✕</button>
+                <!-- Plan B, si la fenêtre de Windows ne peut pas s'ouvrir : saisie du chemin -->
+                <input id="agent-root" class="mono" placeholder="Chemin du dossier, ex. C:\Users\zeman\Desktop\mon-projet" hidden>
+                <button id="btn-agent-root" class="ghost" hidden>Attacher</button>
                 <button id="btn-rules" class="ghost" title="Commandes toujours autorisées dans ce projet" hidden>Règles</button>
                 <span id="agent-info" class="muted small"></span>
             </div>
@@ -350,6 +352,9 @@ py -3.11 tools/build_portable.py</pre>
                     <div class="set-card-title">Dossiers de modèles</div>
                     <p class="muted small">Un par ligne. Le premier reçoit les téléchargements ; celui de LM Studio est lu s'il existe.</p>
                     <textarea id="set-model-dirs" rows="4" class="mono" spellcheck="false"></textarea>
+                    <div class="row">
+                        <button type="button" id="btn-model-dir-add" class="ghost">+ Ajouter un dossier</button>
+                    </div>
                 </div>
             </section>
 
@@ -360,6 +365,7 @@ py -3.11 tools/build_portable.py</pre>
                     <label class="set-row">
                         <div><div class="set-label">Dossier proposé</div><div class="muted small">Pré-rempli dans la barre de la conversation, mais jamais attaché tout seul : c'est ton geste qui donne accès aux fichiers</div></div>
                         <input id="set-nc-workspace" class="mono set-wide" data-config="new_conversation.workspace" placeholder="C:\Users\zeman\Desktop\mon-projet">
+                        <button type="button" id="btn-nc-browse" class="ghost">📂 Parcourir</button>
                     </label>
                     <label class="set-row">
                         <div><div class="set-label">Accès web autorisé d'office</div><div class="muted small">Sinon, chaque recherche et chaque page lue te sont demandées</div></div>
