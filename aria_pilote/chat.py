@@ -7,7 +7,7 @@ import uuid
 
 import httpx
 
-from . import config, context, conversations, skills
+from . import config, context, conversations, persona, skills
 from .server import manager
 
 SAMPLING_FIELDS = ("temperature", "top_p", "top_k", "min_p", "presence_penalty", "max_tokens")
@@ -44,8 +44,10 @@ def build_messages(conv, system_prompt):
                 if tc["id"] not in answered:
                     messages.append({"role": "tool", "tool_call_id": tc["id"], "content": "Action interrompue par l'utilisateur."})
         elif m["role"] == "user" and m.get("skill"):
+            # « /nom demande » : la compétence, puis le registre de ce mode pour le persona de la conversation
             root = (conv.get("agent") or {}).get("workspace") if (conv.get("agent") or {}).get("enabled") else None
-            messages.append({"role": "user", "content": skills.expand(m["skill"], m["content"], root)})
+            note = persona.register_note(persona.for_conversation(conv), m["skill"])
+            messages.append({"role": "user", "content": skills.expand(m["skill"], m["content"], root) + note})
         else:
             messages.append({"role": m["role"], "content": m["content"]})
     return messages

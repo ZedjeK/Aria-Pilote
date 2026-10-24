@@ -8,13 +8,13 @@ from pathlib import Path
 
 import httpx
 from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import PlainTextResponse, StreamingResponse
+from fastapi.responses import JSONResponse, PlainTextResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from . import (VERSION, agent, background, backups, chat, config, context, conversations, downloads, engines, hardware,
-               hooks, hub, models, optimizer, permissions, pick_folder, presets, searxng, skills, subagents, tools,
-               trial, updates, workspace)
+               hooks, hub, models, optimizer, permissions, persona, pick_folder, presets, searxng, skills, subagents,
+               tools, trial, updates, workspace)
 from .server import EngineMissing, manager
 
 STATIC_DIR = Path(__file__).parent / "static"
@@ -137,6 +137,7 @@ class ConfigPatch(BaseModel):
     default_model: str | None = None
     autoload: bool | None = None
     default_preset: str | None = None
+    default_persona: str | None = None
     new_conversation: NewAgentSettings | None = None
     always_plan: bool | None = None
     max_tool_calls: int | None = Field(None, ge=10, le=100)
@@ -151,7 +152,6 @@ class ConfigPatch(BaseModel):
 
 class Preset(BaseModel):
     name: str = Field(min_length=1, max_length=60)
-    system_prompt: str = ""
     temperature: float | None = Field(None, ge=0, le=2)
     top_p: float | None = Field(None, ge=0, le=1)
     top_k: int | None = Field(None, ge=0, le=1000)
@@ -164,6 +164,7 @@ class Preset(BaseModel):
 
 class ConversationCreate(BaseModel):
     preset_id: str | None = None
+    persona_id: str | None = None  # absent : le persona par défaut ; « none » : sans persona
     agent: NewAgentSettings | None = None  # absent : les réglages de départ (Réglages › Comportement)
 
 
@@ -175,6 +176,7 @@ class AgentSettings(BaseModel):
 class ConversationPatch(BaseModel):
     title: str | None = None
     preset_id: str | None = None
+    persona_id: str | None = None
     agent: AgentSettings | None = None
 
 
@@ -376,6 +378,8 @@ def put_config(patch: ConfigPatch):
     data = patch.model_dump(exclude_none=True)
     if "default_preset" in data and presets.get(data["default_preset"]) is None:
         raise HTTPException(400, "Preset introuvable.")
+    if "default_persona" in data and persona.get(data["default_persona"]) is None:
+        raise HTTPException(400, "Persona introuvable.")
     language = data.get("web", {}).get("language")
     if language is not None and language not in config.WEB_LANGUAGES:
         raise HTTPException(400, f"Langue inconnue : {language}")
@@ -461,10 +465,19 @@ def create_conversation(req: ConversationCreate):
         # Réglages de départ : l'accès web d'office, jamais le dossier proposé (il ne s'attache pas tout seul)
         agent_settings = _initial_agent({"auto_web": config.get()["new_conversation"].get("auto_web")})
     conv = conversations.create(req.preset_id or presets.resolve(config.get().get("default_preset"))["id"])
+    if req.persona_id:
+        _check_persona(req.persona_id)
+        conv["persona_id"] = req.persona_id
     if agent_settings:
         conv["agent"] = agent_settings
+    if req.persona_id or agent_settings:
         conv = conversations.save(conv)
     return conv
+
+
+def _check_persona(pid):
+    if pid != "none" and persona.get(pid) is None:
+        raise HTTPException(400, "Persona introuvable.")
 
 
 @app.get("/api/conversations/{cid}")
@@ -479,6 +492,9 @@ def patch_conversation(cid: str, patch: ConversationPatch):
         conv["title"] = patch.title.strip()
     if patch.preset_id is not None:
         conv["preset_id"] = patch.preset_id
+    if patch.persona_id is not None:
+        _check_persona(patch.persona_id)
+        conv["persona_id"] = patch.persona_id
     if patch.agent is not None:
         settings = conv.setdefault("agent", {})
         if patch.agent.workspace is not None:
@@ -574,6 +590,27 @@ async def compact_conversation(cid: str, req: CompactRequest):
         raise HTTPException(409, str(exc))
     except (httpx.HTTPError, KeyError, ValueError) as exc:
         raise HTTPException(502, f"Le résumé a échoué : {exc}")
+
+
+class ConversationRef(BaseModel):
+    conversation_id: str
+
+
+@app.post("/api/agent/memory/rename")
+def rename_memory(req: ConversationRef):
+    """« Renommer en MEMOIRE.md » : l'ancien ARIA.md du dossier attaché prend le nouveau nom (avec ton accord, jamais seul)."""
+    conv = _conversation_or_404(req.conversation_id)
+    root = agent.attached_root(conv)
+    if not root:
+        raise HTTPException(400, "Aucun dossier attaché à cette conversation.")
+    base = workspace.validate_root(root)
+    old, new = base / agent.LEGACY_MEMORY_FILE, base / agent.MEMORY_FILE
+    if not old.is_file():
+        raise HTTPException(404, "Pas de fichier ARIA.md dans ce dossier.")
+    if new.exists():
+        raise HTTPException(409, "MEMOIRE.md existe déjà dans ce dossier : fusionne les deux à la main.")
+    old.rename(new)
+    return {"file": agent.MEMORY_FILE}
 
 
 class PlanDecision(BaseModel):
@@ -731,6 +768,93 @@ async def pick_folder_endpoint(req: FolderPick):
         raise HTTPException(501, str(exc))
     except pick_folder.PickerError as exc:
         raise HTTPException(500, str(exc))
+
+
+# --- Personas et fiche « Toi » ------------------------------------------------------------------
+
+@app.get("/api/persona-catalogue")
+def persona_catalogue():
+    return persona.CATALOGUE
+
+
+@app.get("/api/personas")
+def list_personas():
+    return {"personas": persona.list_all(), "default": persona.default_id()}
+
+
+@app.post("/api/personas")
+def create_persona(data: dict):
+    try:
+        return persona.create(data)
+    except persona.PersonaError as exc:
+        raise HTTPException(400, str(exc))
+
+
+@app.put("/api/personas/{pid}")
+def update_persona(pid: str, data: dict):
+    try:
+        updated = persona.update(pid, data)
+    except persona.PersonaError as exc:
+        raise HTTPException(400, str(exc))
+    if updated is None:
+        raise HTTPException(404, "Persona introuvable.")
+    return updated
+
+
+@app.delete("/api/personas/{pid}")
+def delete_persona(pid: str):
+    try:
+        persona.delete(pid)
+    except persona.PersonaError as exc:
+        raise HTTPException(400, str(exc))
+    return {"ok": True, "default": persona.default_id()}
+
+
+@app.get("/api/personas/{pid}/export")
+def export_persona(pid: str):
+    try:
+        data = persona.export(pid)
+    except persona.PersonaError as exc:
+        raise HTTPException(404, str(exc))
+    filename = re.sub(r"[^\w.-]+", "-", data["name"]).strip("-") or "persona"
+    return JSONResponse(data, headers={"Content-Disposition": f'attachment; filename="{filename}.persona.json"'})
+
+
+@app.post("/api/personas/import")
+def import_persona(data: dict):
+    try:
+        created, warnings = persona.import_(data)
+    except (persona.PersonaError, TypeError, ValueError) as exc:
+        raise HTTPException(400, str(exc))
+    return {"persona": created, "warnings": warnings}
+
+
+@app.get("/api/personas/{pid}/preview")
+def preview_persona(pid: str, register: str = "naturel"):
+    """« Voir ce que lit le modèle » : le bloc persona pour un registre, et la fiche « Toi »."""
+    current = persona.get(pid)
+    if current is None:
+        raise HTTPException(404, "Persona introuvable.")
+    if register not in persona.REGISTERS:
+        raise HTTPException(400, "Registre inconnu.")
+    text = persona.render(current, register)
+    profile = persona.render_profile(persona.get_profile())
+    return {"persona": text, "profile": profile, "chars": len(text) + len(profile)}
+
+
+@app.get("/api/profile")
+def get_profile():
+    profile = persona.get_profile()
+    return {**profile, "preview": persona.render_profile(profile)}
+
+
+@app.put("/api/profile")
+def put_profile(data: dict):
+    try:
+        profile = persona.save_profile(data)
+    except persona.PersonaError as exc:
+        raise HTTPException(400, str(exc))
+    return {**profile, "preview": persona.render_profile(profile)}
 
 
 @app.get("/api/update")
@@ -917,7 +1041,15 @@ def agent_context(conversation_id: str):
     memory = None
     if root:
         text = agent.load_memory(root)
-        memory = {"file": agent.MEMORY_FILE, "chars": len(text)} if text else None
+        name = agent.memory_file(root)
+        memory = {"file": name, "chars": len(text), "legacy": name == agent.LEGACY_MEMORY_FILE} if text else None
+    # Poids de chaque couche du prompt (caractères ; l'interface les convertit en tokens approximatifs)
+    current = persona.for_conversation(conv)
+    persona_text, profile_text = persona.prompt_blocks(conv, folder=bool(root))
+    preset_for_conv = presets.resolve(conv.get("preset_id") or config.get().get("default_preset"))
+    full_prompt = agent.context_inputs(conv, preset_for_conv)[0]
+    layers = {"persona": len(persona_text), "profil": len(profile_text), "memoire": memory["chars"] if memory else 0}
+    layers["aria"] = max(0, len(full_prompt) - sum(layers.values()))
     try:
         global_hooks = hooks._read(hooks.GLOBAL_PATH)[1] if hooks.GLOBAL_PATH.is_file() else {}
     except hooks.HookError:
@@ -936,6 +1068,9 @@ def agent_context(conversation_id: str):
                   "auto_write": bool(settings.get("auto_write")), "auto_web": bool(settings.get("auto_web")),
                   "tools": tool_count},
         "memory": memory,
+        "persona": {"id": current["id"], "name": current["name"], "avatar": current.get("avatar", ""),
+                    "register": persona.register_for(current)} if current else None,
+        "layers": layers,
         "skills": [{"name": s.name, "source": s.source} for s in skills.discover(root).values()],
         "subagents": [{"name": a.name, "source": a.source, "tools": a.tools} for a in subagents.discover(root).values()],
         "hooks": {"global": {event: len(rules) for event, rules in global_hooks.items() if rules},

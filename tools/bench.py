@@ -197,7 +197,8 @@ def run_task(client, task, args):
     snapshot = Path(tempfile.mkdtemp(prefix="aria-bench-ref-"))
     shutil.copytree(ws, snapshot, dirs_exist_ok=True)  # état de départ, pour les vérifications
 
-    conv = client.post("/api/conversations", json={}).json()
+    # « Sans persona » : les mesures restent comparables, quel que soit le persona du moment
+    conv = client.post("/api/conversations", json={"persona_id": "none"}).json()
     cid = conv["id"]
     patch = {"title": f"[banc] {task['name']}"}
     if task.get("folder", True):  # le dossier attaché donne les outils de fichiers ; sans lui, une discussion

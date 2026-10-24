@@ -6,14 +6,17 @@ from pathlib import Path
 
 import httpx
 
-from . import background, backups, chat, config, context, conversations, hooks, skills, subagents, toolrun, tools, workspace
+from . import (background, backups, chat, config, context, conversations, hooks, persona, skills, subagents, toolrun,
+               tools, workspace)
 
 MAX_TOOL_CALLS = 25  # par défaut ; réglable dans Réglages › Comportement (max_tool_calls)
 # Une étape d'agent qui réfléchit puis écrit un fichier entier a besoin de place
 AGENT_MIN_TOKENS = 8192
 # Sans plafond, certains modèles réfléchissent des milliers de tokens sans jamais agir
 AGENT_THINKING_BUDGET = 2048
-MEMORY_FILE = "ARIA.md"
+# Mémoire du projet : MEMOIRE.md ; ARIA.md (ancien nom) est encore lu pendant la transition
+MEMORY_FILE = "MEMOIRE.md"
+LEGACY_MEMORY_FILE = "ARIA.md"
 MAX_MEMORY_CHARS = 20000
 
 AGENT_PROMPT = """Tu es un agent qui travaille dans les fichiers de l'utilisateur, sous Windows.
@@ -110,6 +113,10 @@ NO_FOLDER_TOOLS = {"load_skill", "web_search", "web_fetch"}
 LOCKED_KINDS = {"write", "command"}
 # Au 3e appel identique (même outil, mêmes arguments), l'agent tourne en rond
 LOOP_LIMIT = 3
+
+# Qui l'emporte en cas de conflit (les protections d'Aria Pilote sont de toute façon appliquées par le code)
+PRIORITY_RULE = """Ordre de priorité en cas de conflit : 1) les règles de sécurité d'Aria Pilote ci-dessus, 2) tes règles
+d'or, 3) la demande du moment de l'utilisateur, 4) la mémoire du projet, 5) ta personnalité."""
 
 MEMORY_PROMPT = """Mémoire du projet (fichier {name} écrit par l'utilisateur : conventions et consignes à respecter) :
 ---
@@ -243,11 +250,19 @@ def _ask_args(args):
     return {"question": question.strip(), "options": options[:MAX_OPTIONS]}
 
 
+def memory_file(root):
+    """Nom du fichier de mémoire présent à la racine du dossier : MEMOIRE.md, sinon l'ancien ARIA.md, sinon None."""
+    base = workspace.validate_root(root)
+    return next((name for name in (MEMORY_FILE, LEGACY_MEMORY_FILE) if (base / name).is_file()), None)
+
+
 def load_memory(root):
-    """Contenu de ARIA.md à la racine du dossier de travail, s'il existe."""
-    path = workspace.validate_root(root) / MEMORY_FILE
+    """Contenu de la mémoire du projet (MEMOIRE.md, ou ARIA.md en transition), s'il existe."""
+    name = memory_file(root)
+    if not name:
+        return None
     try:
-        text = path.read_text(encoding="utf-8-sig", errors="replace") if path.is_file() else ""
+        text = (workspace.validate_root(root) / name).read_text(encoding="utf-8-sig", errors="replace")
     except OSError:
         return None
     return text[:MAX_MEMORY_CHARS].strip() or None
@@ -275,7 +290,10 @@ def allowed_tools(folder=True):
     return allowed
 
 
-def _system_prompt(preset, root, memory, plan_required=False):
+def _system_prompt(conv, root, memory, plan_required=False):
+    """Prompt système, dans l'ordre validé : persona, fiche de l'utilisateur, règles d'Aria Pilote (et priorités),
+    planification, compétences, sous-agents, mémoire du projet. Le résumé des anciens échanges est ajouté ensuite."""
+    persona_text, profile_text = persona.prompt_blocks(conv, folder=bool(root))
     web_rule = WEB_RULE if config.web_enabled() else WEB_RULE_OFF
     if root:
         main = AGENT_PROMPT.format(root=root, todo_rule=TODO_RULE, web_rule=web_rule)
@@ -284,10 +302,10 @@ def _system_prompt(preset, root, memory, plan_required=False):
         if subagents.usable(None):
             extra += ", delegate (sous-agents)"
         main = DISCUSSION_PROMPT.format(extra=extra, web_rule=web_rule)
-    parts = [(preset.get("system_prompt") or "").strip(), main, PLAN_REQUIRED if plan_required else PLAN_RULE,
+    parts = [persona_text, profile_text, main, PRIORITY_RULE, PLAN_REQUIRED if plan_required else PLAN_RULE,
              skills.prompt_section(root), subagents.prompt_section(root)]
     if memory:
-        parts.append(MEMORY_PROMPT.format(name=MEMORY_FILE, memory=memory))
+        parts.append(MEMORY_PROMPT.format(name=memory_file(root) or MEMORY_FILE, memory=memory))
     return "\n\n".join(p for p in parts if p)
 
 
@@ -356,6 +374,10 @@ async def _execute(cid, root, call, run_ctx):
         async for ev in runner:
             yield ev
     result = holder["result"]
+    if name == "load_skill" and result.get("status") == "ok" and not args.get("file"):
+        note = persona.register_note(persona.for_conversation(conversations.get(cid)), (args.get("name") or "").strip())
+        if note:
+            result = {**result, "output": result["output"] + note}
 
     message = {
         "role": "tool",
@@ -412,7 +434,7 @@ def context_inputs(conv, preset):
     except workspace.WorkspaceError:
         root = None
     plan_required = (conv.get("plan") or {}).get("status") == "required" and plan_locked(conv)
-    system_prompt = _system_prompt(preset, root, load_memory(root) if root else None, plan_required)
+    system_prompt = _system_prompt(conv, root, load_memory(root) if root else None, plan_required)
     if root:
         preset = {**preset, "max_tokens": max(preset.get("max_tokens") or 0, AGENT_MIN_TOKENS),
                   "thinking_budget": preset.get("thinking_budget") or AGENT_THINKING_BUDGET}
@@ -434,9 +456,9 @@ async def _run(conv, preset, model_name, task_id):
             return
     memory = load_memory(root) if root else None
     if memory:
-        yield chat.event({"type": "memory", "file": MEMORY_FILE, "chars": len(memory)})
+        yield chat.event({"type": "memory", "file": memory_file(root), "chars": len(memory)})
     plan_required = (conv.get("plan") or {}).get("status") == "required" and plan_locked(conv)
-    system_prompt = _system_prompt(preset, root, memory, plan_required)
+    system_prompt = _system_prompt(conv, root, memory, plan_required)
 
     if root:
         # Hooks du projet pas encore approuvés : ils ne tournent pas, on te les montre
