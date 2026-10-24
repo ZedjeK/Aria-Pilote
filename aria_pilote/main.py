@@ -12,9 +12,9 @@ from fastapi.responses import PlainTextResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from . import (VERSION, agent, background, backups, chat, config, conversations, downloads, engines, hardware, hooks,
-               hub, models, optimizer, permissions, pick_folder, presets, searxng, skills, subagents, tools, trial,
-               updates, workspace)
+from . import (VERSION, agent, background, backups, chat, config, context, conversations, downloads, engines, hardware,
+               hooks, hub, models, optimizer, permissions, pick_folder, presets, searxng, skills, subagents, tools,
+               trial, updates, workspace)
 from .server import EngineMissing, manager
 
 STATIC_DIR = Path(__file__).parent / "static"
@@ -552,6 +552,28 @@ async def chat_endpoint(req: ChatRequest):
 def _agent_root(conv):
     """Dossier attaché à la conversation (pour trouver les compétences du projet)."""
     return agent.attached_root(conv)
+
+
+class CompactRequest(BaseModel):
+    instructions: str = ""
+
+
+@app.post("/api/conversations/{cid}/compact")
+async def compact_conversation(cid: str, req: CompactRequest):
+    """Bouton 🗜 Compacter et « /compact » : résume les anciens échanges maintenant, avec une consigne facultative."""
+    conv = _conversation_or_404(cid)
+    if manager.state != "ready":
+        raise HTTPException(409, "Aucun modèle prêt : c'est le modèle chargé qui rédige le résumé.")
+    if backups.is_running(cid):
+        raise HTTPException(409, "Une réponse est en cours : attends sa fin pour compacter.")
+    preset = presets.resolve(conv.get("preset_id") or config.get().get("default_preset"))
+    system_prompt, schemas, preset = agent.context_inputs(conv, preset)
+    try:
+        return await context.compact(cid, preset, system_prompt, schemas, req.instructions[:500])
+    except context.NothingToCompact as exc:
+        raise HTTPException(409, str(exc))
+    except (httpx.HTTPError, KeyError, ValueError) as exc:
+        raise HTTPException(502, f"Le résumé a échoué : {exc}")
 
 
 class PlanDecision(BaseModel):

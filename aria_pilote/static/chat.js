@@ -7,6 +7,7 @@ const chat = {
     presets: [],
     controller: null,
     pendingAgent: { enabled: false, workspace: "" },  // réglages d'une conversation pas encore créée (voir resetPendingAgent)
+    ctxAlertDismissed: new Set(),  // conversations où tu as fermé l'alerte de contexte
 };
 
 // --- Presets ---------------------------------------------------------------
@@ -536,17 +537,86 @@ async function refreshHooksBanner() {
 
 // --- Contexte ----------------------------------------------------------------------
 
+// Alerte à 90 % du seuil du compactage automatique (et non du contexte : selon le preset, Aria résume dès ~75 %)
+const CTX_ALERT_RATIO = 0.9;
+
 function renderGauge(ctx) {
     const gauge = $("#ctx-gauge");
     gauge.hidden = !ctx?.max;
-    if (!ctx?.max) return;
+    $("#btn-compact").hidden = !ctx?.max || !chat.current;
+    if (!ctx?.max) {
+        $("#ctx-alert").hidden = true;
+        return;
+    }
     const pct = Math.min(100, (100 * ctx.used) / ctx.max);
-    gauge.classList.toggle("high", pct >= 60 && pct < 85);
-    gauge.classList.toggle("full", pct >= 85);
+    const marker = gauge.querySelector(".ctx-limit");
+    const fmt = (n) => n.toLocaleString("fr-FR");
+    let ratio = pct / 85;  // anciennes mesures, sans seuil connu
+    if (ctx.limit) {
+        ratio = ctx.used / ctx.limit;
+        marker.style.left = `${Math.min(100, (100 * ctx.limit) / ctx.max)}%`;
+        gauge.title = `Contexte occupé : ${fmt(ctx.used)} tokens sur ${fmt(ctx.max)}. Au-delà de ${fmt(ctx.limit)} (le repère), `
+            + "Aria résume les anciens échanges avant le prochain message.";
+    }
+    marker.hidden = !ctx.limit;
+    gauge.classList.toggle("high", ratio >= CTX_ALERT_RATIO && ratio < 1);
+    gauge.classList.toggle("full", ratio >= 1);
     gauge.querySelector(".ctx-bar span").style.width = `${pct}%`;
-    gauge.querySelector(".ctx-text").textContent =
-        `${ctx.used.toLocaleString("fr-FR")} / ${ctx.max.toLocaleString("fr-FR")} tokens`;
+    gauge.querySelector(".ctx-text").textContent = `${fmt(ctx.used)} / ${fmt(ctx.max)} tokens`;
+    const dismissed = chat.current && chat.ctxAlertDismissed.has(chat.current.id);
+    $("#ctx-alert").hidden = !(chat.current && ctx.limit && ratio >= CTX_ALERT_RATIO && !dismissed);
 }
+
+// --- Compacter à la demande (bouton 🗜, alerte, « /compact … ») ------------------------------
+
+function openCompact() {
+    if (!chat.current || chat.controller) return;
+    $("#compact-pop").hidden = false;
+    $("#compact-instructions").focus();
+}
+
+async function compactNow(instructions = "") {
+    if (!chat.current || chat.controller) return;
+    $("#chat-error").hidden = true;
+    const go = $("#btn-compact-go");
+    go.disabled = true;
+    $("#btn-compact").disabled = true;
+    go.textContent = "Résumé en cours…";
+    try {
+        const result = await api(`/api/conversations/${chat.current.id}/compact`, {
+            method: "POST", body: JSON.stringify({ instructions }),
+        });
+        $("#compact-pop").hidden = true;
+        $("#compact-instructions").value = "";
+        chat.ctxAlertDismissed.delete(chat.current.id);
+        await openConversation(chat.current.id);  // le séparateur 🗜 et son résumé apparaissent dans le fil
+        renderGauge(result);
+    } catch (err) {
+        showChatError(err.message);
+    } finally {
+        go.disabled = false;
+        $("#btn-compact").disabled = false;
+        go.textContent = "Compacter";
+    }
+}
+
+$("#btn-compact").addEventListener("click", () => ($("#compact-pop").hidden ? openCompact() : ($("#compact-pop").hidden = true)));
+$("#btn-compact-cancel").addEventListener("click", () => { $("#compact-pop").hidden = true; });
+$("#btn-compact-go").addEventListener("click", () => compactNow($("#compact-instructions").value.trim()));
+$("#compact-instructions").addEventListener("keydown", (event) => {
+    if (event.key === "Enter") {
+        event.preventDefault();
+        compactNow($("#compact-instructions").value.trim());
+    } else if (event.key === "Escape") {
+        $("#compact-pop").hidden = true;
+    }
+});
+$("#btn-ctx-compact").addEventListener("click", openCompact);
+$("#btn-ctx-new").addEventListener("click", () => $("#btn-new-conv").click());
+$("#btn-ctx-close").addEventListener("click", () => {
+    if (chat.current) chat.ctxAlertDismissed.add(chat.current.id);
+    $("#ctx-alert").hidden = true;
+});
 
 function summaryNode(summary, count) {
     const node = el("details", { className: "summary-divider" },
@@ -989,6 +1059,8 @@ function showChatError(message, continuable = false) {
 function setBusy(busy) {
     $("#btn-send").disabled = busy;
     $("#btn-regen").disabled = busy;
+    $("#btn-compact").disabled = busy;
+    if (busy) $("#compact-pop").hidden = true;
     $("#btn-stop").hidden = !busy;
 }
 
@@ -1230,6 +1302,17 @@ $("#chat-form").addEventListener("submit", async (event) => {
     const input = $("#chat-input");
     const content = input.value;
     if (!content.trim() || chat.controller) return;
+    // « /compact » ou « /compact garde les décisions… » : compactage à la demande, rien n'est envoyé au modèle
+    const compact = content.trim().match(/^\/compact(?:\s+([\s\S]*))?$/);
+    if (compact) {
+        if (!chat.current) {
+            showChatError("Rien à compacter : la conversation n'a pas encore commencé.");
+            return;
+        }
+        input.value = "";
+        await compactNow((compact[1] || "").trim());
+        return;
+    }
     input.value = "";
     // Une question de l'agent attend : ton message est ta réponse
     const asked = chat.current && pendingQuestionIndex(chat.current.messages) >= 0;
