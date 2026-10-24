@@ -52,6 +52,15 @@ class Presets(unittest.TestCase):
         self.api.delete(f"/api/presets/{rapide['id']}", headers=ORIGIN)
         self.assertEqual(config.get()["default_preset"], presets.list_all()[0]["id"])
 
+    def test_anciens_presets_renommes_sans_nom_de_modele(self):
+        legacy = [{"id": "bonsai-think", "name": "Bonsai réflexion"}, {"id": "bonsai-fast", "name": "Mon rapide à moi"}]
+        with presets._lock:
+            presets._write(legacy)
+        names = {p["id"]: p["name"] for p in presets.list_all()}
+        self.assertEqual(names["bonsai-think"], "Réflexion")  # même identifiant : les conversations le retrouvent
+        self.assertEqual(names["bonsai-fast"], "Mon rapide à moi")  # renommé par toi : on n'y touche pas
+        self.assertNotIn("bonsai", json.dumps(presets.DEFAULT_PRESETS).lower())
+
     def test_bornes_des_valeurs(self):
         for bad in ({"temperature": 3}, {"top_p": 1.5}, {"min_p": -0.1}, {"max_tokens": 0}, {"presence_penalty": 5}):
             resp = self.api.post("/api/presets", json={"name": "x", **bad}, headers=ORIGIN)

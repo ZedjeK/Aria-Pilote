@@ -483,7 +483,107 @@ $("#btn-backups-clean").addEventListener("click", async () => {
 
 // --- Presets --------------------------------------------------------------------------------
 
-const presetUi = { selected: null };
+const presetUi = { selected: null, focused: null };
+
+// Encadré « Comprendre ce réglage » : il suit le champ survolé ou en cours de modification
+const PRESET_HELP = {
+    overview: {
+        title: "Comprendre les réglages",
+        text: ["Un preset décide de la façon dont le modèle répond, quel que soit le modèle chargé.",
+            "Le prompt système et la réflexion changent ce que le modèle lit. Les autres réglages ne sont pas lus par "
+            + "le modèle : ils décident comment on pioche chaque mot parmi ceux qu'il propose, avec leurs probabilités.",
+            "Survole ou modifie un réglage pour en voir le détail ici."],
+    },
+    name: {
+        title: "Nom",
+        text: ["Le nom affiché dans la puce 🎛 du chat et dans cette liste. Choisis-le d'après l'usage "
+            + "(« Code précis », « Brainstorming ») plutôt que d'après un modèle : un preset vaut pour tous."],
+    },
+    system_prompt: {
+        title: "Prompt système",
+        text: ["Le texte que le modèle lit avant toute la conversation : son rôle, son ton, sa langue, ses contraintes.",
+            "Il est renvoyé à chaque message et occupe donc du contexte en permanence : mieux vaut court et précis que long.",
+            "Il rejoindra le Persona au prochain chantier."],
+        values: [["Vide", "le comportement par défaut du modèle"], ["Une à trois phrases", "le plus courant"]],
+    },
+    thinking: {
+        title: "Réflexion",
+        text: ["Les modèles qui savent raisonner peuvent écrire une réflexion avant leur réponse (repliable dans le chat).",
+            "Forcée : meilleure sur la logique, les maths, le code et les plans, mais plus lente et plus gourmande en tokens.",
+            "Coupée : réponse directe, idéale pour discuter, reformuler ou répondre à une question simple.",
+            "Le modèle décide : il réfléchit quand il le juge utile. Sur un modèle qui ne sait pas raisonner, ce réglage est sans effet."],
+    },
+    thinking_budget: {
+        title: "Budget de réflexion",
+        text: ["Le nombre maximal de tokens de réflexion. Au-delà, le moteur referme la réflexion et le modèle doit répondre.",
+            "Trop bas, le raisonnement est coupé avant d'aboutir. Vide : sans limite, mais en tâche d'agent, Aria plafonne "
+            + "quand même la réflexion à 2 048 tokens pour qu'il agisse au lieu de réfléchir sans fin."],
+        values: [["Vide", "sans limite"], ["1 024 à 4 096", "le plus courant"], ["8 192 et plus", "problèmes difficiles"]],
+    },
+    temperature: {
+        title: "Température",
+        text: ["Elle aplatit ou accentue l'écart entre les mots probables et les autres. Basse, le modèle prend presque "
+            + "toujours le mot le plus probable : précis mais répétitif. Haute, il ose : varié, puis incohérent.",
+            "Elle agit avec Top K, Top P et Min P, qui écartent d'abord les mots trop improbables."],
+        values: [["0 à 0,3", "code, faits, extraction"], ["0,6 à 0,8", "discussion"], ["0,9 à 1,2", "création, brainstorming"],
+            ["Au-delà de 1,3", "souvent incohérent"]],
+    },
+    presence_penalty: {
+        title: "Presence penalty",
+        text: ["Pénalise tout mot déjà apparu dans les derniers mots générés (une seule apparition suffit) et pousse vers des mots et des idées neufs.",
+            "Efficace contre les répétitions et les boucles, fréquentes sur les modèles fortement quantifiés. Trop haute, "
+            + "elle gêne les textes qui doivent répéter un terme : un nom de variable dans du code, un mot technique."],
+        values: [["0", "neutre"], ["0,5 à 1,5", "contre les répétitions"], ["Négative", "encourage la répétition (rarement utile)"]],
+    },
+    top_k: {
+        title: "Top K",
+        text: ["Ne garde que les K mots les plus probables avant le tirage. Plus K est petit, plus le modèle reste prudent."],
+        values: [["0", "désactivé"], ["20 à 40", "le plus courant"], ["1", "toujours le mot favori"]],
+    },
+    top_p: {
+        title: "Top P",
+        text: ["Garde le plus petit groupe de mots dont les probabilités additionnées atteignent P, puis tire dedans. "
+            + "Le groupe s'élargit quand le modèle hésite et se resserre quand il est sûr de lui."],
+        values: [["1", "désactivé"], ["0,8 à 0,95", "le plus courant"]],
+    },
+    min_p: {
+        title: "Min P",
+        text: ["Écarte les mots dont la probabilité est inférieure à cette fraction de celle du mot favori. "
+            + "À 0,05 et avec un favori à 60 %, tout mot sous 3 % est écarté.",
+            "Il s'adapte à la confiance du modèle, ce qui le rend souvent plus fiable que Top P à température élevée."],
+        values: [["0", "désactivé"], ["0,05", "bon compromis"], ["0,1 et plus", "plus prudent"]],
+    },
+    max_tokens: {
+        title: "Max tokens",
+        text: ["La longueur maximale d'une réponse, réflexion comprise. Atteinte, la réponse est coupée : le chat te "
+            + "propose alors de laisser le modèle continuer.",
+            "En tâche d'agent, Aria la remonte à 8 192 au minimum. Elle ne réserve rien : c'est un plafond, pas une place dans le contexte."],
+        values: [["2 048 à 4 096", "discussion"], ["8 192 à 16 384", "réflexion, longs textes, code"]],
+    },
+};
+
+function renderPresetHelp(key) {
+    const help = PRESET_HELP[key] || PRESET_HELP.overview;
+    $("#preset-help-title").textContent = help.title;
+    const body = help.text.map((t) => el("p", {}, t));
+    if (help.values) {
+        body.push(el("div", { className: "help-values" }, ...help.values.flatMap(([value, use]) =>
+            [el("span", { className: "mono" }, value), el("span", {}, use)])));
+    }
+    $("#preset-help-body").replaceChildren(...body);
+}
+
+function presetFieldKey(target) {
+    const field = target.closest("label")?.querySelector("input, select, textarea");
+    return field?.name || null;
+}
+
+$("#preset-form").addEventListener("mouseover", (event) => renderPresetHelp(presetFieldKey(event.target) || presetUi.focused));
+$("#preset-form").addEventListener("mouseleave", () => renderPresetHelp(presetUi.focused));
+$("#preset-form").addEventListener("focusin", (event) => {
+    presetUi.focused = presetFieldKey(event.target);
+    renderPresetHelp(presetUi.focused);
+});
 const PRESET_NUMBERS = ["temperature", "top_p", "top_k", "min_p", "presence_penalty", "max_tokens", "thinking_budget"];
 
 function presetBadges(p) {
@@ -508,6 +608,7 @@ async function loadPresetsSection(selectId) {
         return item;
     }));
     fillPresetForm();
+    renderPresetHelp(presetUi.focused);
 }
 
 function fillPresetForm() {

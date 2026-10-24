@@ -22,11 +22,12 @@ DEFAULT_PRESETS = [
         "max_tokens": 4096,
         "thinking": None,
     },
-    # Réglages conseillés par la fiche Hugging Face de Bonsai 2
+    # Presets universels, valables pour tout modèle qui sait raisonner (valeurs d'origine : fiche de Bonsai 2,
+    # proches de celles conseillées pour la famille Qwen)
     {
-        "id": "bonsai-think",
-        "name": "Bonsai réflexion",
-        "system_prompt": "You are a helpful assistant",
+        "id": "reflexion",
+        "name": "Réflexion",
+        "system_prompt": "Tu es une assistante utile. Réponds en français.",
         "temperature": 1.0,
         "top_p": 0.95,
         "top_k": 20,
@@ -36,9 +37,9 @@ DEFAULT_PRESETS = [
         "thinking": True,
     },
     {
-        "id": "bonsai-fast",
-        "name": "Bonsai rapide",
-        "system_prompt": "You are a helpful assistant",
+        "id": "rapide",
+        "name": "Rapide",
+        "system_prompt": "Tu es une assistante utile. Réponds en français.",
         "temperature": 0.7,
         "top_p": 0.8,
         "top_k": 20,
@@ -48,6 +49,10 @@ DEFAULT_PRESETS = [
         "thinking": False,
     },
 ]
+
+# Anciens presets livrés au nom d'un modèle : renommés s'ils n'ont pas été touchés (leur identifiant ne change pas,
+# pour que les conversations qui les utilisent les retrouvent)
+LEGACY_NAMES = {"bonsai-think": ("Bonsai réflexion", "Réflexion"), "bonsai-fast": ("Bonsai rapide", "Rapide")}
 
 _lock = threading.Lock()
 
@@ -63,7 +68,16 @@ def list_all():
     with _lock:
         if not PRESETS_PATH.exists():
             _write(DEFAULT_PRESETS)
-        return json.loads(PRESETS_PATH.read_text(encoding="utf-8"))
+        presets = json.loads(PRESETS_PATH.read_text(encoding="utf-8"))
+        renamed = False
+        for preset in presets:
+            old, new = LEGACY_NAMES.get(preset.get("id"), (None, None))
+            if old and preset.get("name") == old:
+                preset["name"] = new
+                renamed = True
+        if renamed:
+            _write(presets)
+        return presets
 
 
 def get(pid):

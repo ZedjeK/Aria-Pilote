@@ -266,6 +266,10 @@ py -3.11 tools/build_portable.py</pre>
                             <button id="btn-preset-new" class="ghost">+ Nouveau</button>
                         </div>
                         <ul id="preset-list" class="model-list"></ul>
+                        <div class="preset-help" aria-live="polite">
+                            <div class="preset-help-title">📖 <span id="preset-help-title"></span></div>
+                            <div id="preset-help-body" class="small"></div>
+                        </div>
                     </section>
                     <section class="panel">
                         <form id="preset-form" class="form preset-edit" novalidate>
@@ -294,7 +298,7 @@ py -3.11 tools/build_portable.py</pre>
                             </label>
                             <label>Presence penalty
                                 <input name="presence_penalty" type="number" min="-2" max="2" step="0.1">
-                                <small class="field-help">Freine les répétitions. Utile pour les modèles très compressés comme Bonsai.</small>
+                                <small class="field-help">Freine les répétitions et les boucles.</small>
                             </label>
                             <label>Top K
                                 <input name="top_k" type="number" min="0" max="1000" step="1">
