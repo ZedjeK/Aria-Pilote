@@ -14,6 +14,71 @@ const chat = {
 
 const MANAGE_PRESETS = "__gerer__";
 
+// --- Persona de la conversation (puce 🎭) ----------------------------------------------------------
+
+async function loadPersonas() {
+    let data;
+    try {
+        data = await api("/api/personas");
+    } catch {
+        return;
+    }
+    chat.personas = data;
+    const select = $("#persona-select");
+    const wanted = chat.current ? (chat.current.persona_id || data.default) : (select.dataset.value || data.default);
+    select.replaceChildren(
+        ...data.personas.map((p) => el("option", { value: p.id }, `🎭 ${p.avatar ? p.avatar + " " : ""}${p.name}`)),
+        el("option", { value: "none" }, "🎭 Sans persona"),
+        el("option", { value: MANAGE_PRESETS }, "⚙ Gérer les personas…"));
+    select.value = wanted === "none" || data.personas.some((p) => p.id === wanted) ? wanted : data.default;
+    select.dataset.value = select.value;
+}
+
+$("#persona-select").addEventListener("change", async () => {
+    const select = $("#persona-select");
+    if (select.value === MANAGE_PRESETS) {
+        select.value = select.dataset.value;
+        location.hash = "#/reglages/persona";
+        return;
+    }
+    select.dataset.value = select.value;
+    if (!chat.current) return;
+    try {
+        chat.current = await api(`/api/conversations/${chat.current.id}`, {
+            method: "PATCH", body: JSON.stringify({ persona_id: select.value }),
+        });
+    } catch (err) {
+        showChatError(err.message);
+    }
+});
+
+// Bannière « Présente-toi » : tant que la fiche Toi est vide, sauf si tu l'as fermée
+async function refreshProfileBanner() {
+    let dismissed = false;
+    try {
+        dismissed = localStorage.getItem("aria-profile-banner") === "ferme";
+    } catch {
+        // stockage indisponible : la bannière reste possible
+    }
+    let profile = {};
+    try {
+        profile = await api("/api/profile");
+    } catch {
+        return;
+    }
+    const empty = !(profile.name || profile.job || profile.likes || profile.about);
+    $("#profile-banner").hidden = dismissed || !empty;
+}
+
+$("#btn-profile-banner-close").addEventListener("click", () => {
+    try {
+        localStorage.setItem("aria-profile-banner", "ferme");
+    } catch {
+        // tant pis : elle reviendra au prochain chargement
+    }
+    $("#profile-banner").hidden = true;
+});
+
 // Puce 🎛 près de la zone de saisie : le preset de la conversation, et l'accès à leur gestion dans les Réglages
 async function loadPresets() {
     chat.presets = await api("/api/presets");
@@ -305,6 +370,11 @@ async function openConversation(id) {
     if (!id) resetPendingAgent();
     $("#conv-title").textContent = chat.current?.title || "Nouvelle conversation";
     $("#btn-rename").hidden = !chat.current;
+    if (chat.personas) {
+        const pid = chat.current ? (chat.current.persona_id || chat.personas.default) : chat.personas.default;
+        $("#persona-select").value = pid === "none" || chat.personas.personas.some((p) => p.id === pid) ? pid : chat.personas.default;
+        $("#persona-select").dataset.value = $("#persona-select").value;
+    }
     if (chat.current?.preset_id && chat.presets.some((p) => p.id === chat.current.preset_id)) {
         $("#preset-select").value = chat.current.preset_id;
         $("#preset-select").dataset.value = chat.current.preset_id;
@@ -511,9 +581,34 @@ async function refreshContext() {
     const chips = (items, label) => items.length
         ? el("div", { className: "ctx-chips" }, ...items.map((i) => el("span", { title: i.source || "" }, label(i))))
         : el("span", { className: "muted small" }, "aucun");
-    parts.push(section(titled("Mémoire du projet"), c.memory
-        ? row(c.memory.file, `${c.memory.chars.toLocaleString("fr-FR")} caractères, lus à chaque tâche`)
-        : el("span", { className: "muted small" }, "Pas de fichier ARIA.md dans le dossier de travail.")));
+    const registerLabels = { naturel: "naturel", sobre: "sobre", professionnel: "professionnel" };
+    parts.push(section(titled("Persona", () => { location.hash = "#/reglages/persona"; }), c.persona
+        ? row(`${c.persona.avatar} ${c.persona.name}`.trim(), `registre ${registerLabels[c.persona.register]} en discussion`)
+        : el("span", { className: "muted small" }, "Sans persona : un assistant neutre.")));
+    const approx = (chars) => `≈ ${Math.round(chars / 4).toLocaleString("fr-FR")} tokens`;
+    parts.push(section(titled("Ce que lit le modèle, par couche"),
+        row("Persona", approx(c.layers.persona)), row("Fiche Toi", approx(c.layers.profil)),
+        row("Aria Pilote (règles, outils, compétences)", approx(c.layers.aria)), row("Mémoire du projet", approx(c.layers.memoire))));
+    const memoryParts = [];
+    if (c.memory) {
+        memoryParts.push(row(c.memory.file, `${c.memory.chars.toLocaleString("fr-FR")} caractères, lus à chaque tâche`));
+        if (c.memory.legacy) {
+            const rename = el("button", { className: "ghost" }, "Renommer en MEMOIRE.md");
+            rename.addEventListener("click", async () => {
+                try {
+                    await api("/api/agent/memory/rename", { method: "POST", body: JSON.stringify({ conversation_id: chat.current.id }) });
+                    refreshContext();
+                } catch (err) {
+                    showChatError(err.message);
+                }
+            });
+            memoryParts.push(el("div", { className: "ctx-row" },
+                el("span", { className: "muted small" }, "Ancien nom : la mémoire du projet s'appelle désormais MEMOIRE.md."), rename));
+        }
+    } else {
+        memoryParts.push(el("span", { className: "muted small" }, "Pas de fichier MEMOIRE.md dans le dossier de travail."));
+    }
+    parts.push(section(titled("Mémoire du projet"), ...memoryParts));
     parts.push(section(titled("Compétences", openSkills), chips(c.skills, (s) => `/${s.name}`)));
     parts.push(section(titled("Sous-agents"), chips(c.subagents, (s) => `${s.name} (${s.tools.length} outils)`)));
     const globalHooks = Object.entries(c.hooks.global).map(([event, n]) => `${event} : ${n}`).join(" · ");
@@ -1099,6 +1194,7 @@ async function send(content, answer, continueTask = false) {
                 method: "POST",
                 body: JSON.stringify({
                     preset_id: $("#preset-select").value,
+                    persona_id: $("#persona-select").value || undefined,
                     agent: { enabled: Boolean(pending.enabled), workspace: pending.enabled ? pending.workspace : null,
                         auto_web: Boolean(pending.auto_web) },
                 }),
@@ -1344,6 +1440,8 @@ setInterval(() => {
 
 (async () => {
     await loadPresets();
+    await loadPersonas();
+    refreshProfileBanner();
     await loadConversations();
     if (chat.conversations.length) {
         await openConversation(chat.conversations[0].id);
