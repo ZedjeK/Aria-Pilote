@@ -1,7 +1,7 @@
 // Page Réglages : navigation à gauche, une adresse par section (#/reglages/<section>), enregistrement automatique.
 // S'appuie sur $, api, el, state, loadModels, loadEngines, renderHardware (app.js) et SKILL_SOURCES (chat.js).
 
-const SECTIONS = ["general", "modele-defaut", "mes-modeles", "decouvrir", "moteurs", "materiel",
+const SECTIONS = ["general", "modele-defaut", "mes-modeles", "presets", "decouvrir", "moteurs", "materiel",
     "comportement", "autorisations", "competences", "hooks", "web", "donnees"];
 
 // --- Navigation ------------------------------------------------------------------
@@ -481,10 +481,116 @@ $("#btn-backups-clean").addEventListener("click", async () => {
     }
 });
 
+// --- Presets --------------------------------------------------------------------------------
+
+const presetUi = { selected: null };
+const PRESET_NUMBERS = ["temperature", "top_p", "top_k", "min_p", "presence_penalty", "max_tokens", "thinking_budget"];
+
+function presetBadges(p) {
+    const badges = el("div", { className: "badges" });
+    if (p.id === state.config.default_preset) badges.append(el("span", { className: "badge loaded" }, "⭐ par défaut"));
+    if (p.thinking === true) badges.append(el("span", { className: "badge" }, "réflexion forcée"));
+    if (p.thinking === false) badges.append(el("span", { className: "badge" }, "réflexion coupée"));
+    if (p.temperature !== null && p.temperature !== undefined) badges.append(el("span", { className: "badge" }, `t° ${p.temperature}`));
+    return badges;
+}
+
+async function loadPresetsSection(selectId) {
+    await loadPresets();  // la puce du chat suit
+    if (selectId) presetUi.selected = selectId;
+    if (!chat.presets.some((p) => p.id === presetUi.selected)) {
+        presetUi.selected = state.config.default_preset || chat.presets[0]?.id;
+    }
+    $("#preset-list").replaceChildren(...chat.presets.map((p) => {
+        const item = el("li", { className: p.id === presetUi.selected ? "selected" : "" },
+            el("div", { className: "title" }, p.name), presetBadges(p));
+        item.addEventListener("click", () => loadPresetsSection(p.id));
+        return item;
+    }));
+    fillPresetForm();
+}
+
+function fillPresetForm() {
+    const p = chat.presets.find((x) => x.id === presetUi.selected);
+    const form = $("#preset-form");
+    if (!p) return;
+    form.name.value = p.name;
+    form.system_prompt.value = p.system_prompt || "";
+    for (const key of PRESET_NUMBERS) form[key].value = p[key] ?? "";
+    form.thinking.value = p.thinking === null || p.thinking === undefined ? "" : String(p.thinking);
+    for (const field of form.elements) field.classList.remove("invalid");
+    $("#preset-error").hidden = true;
+    $("#btn-preset-default").disabled = p.id === state.config.default_preset;
+    $("#btn-preset-delete").disabled = chat.presets.length <= 1;
+}
+
+function readPreset() {
+    const form = $("#preset-form");
+    const data = { name: form.name.value.trim(), system_prompt: form.system_prompt.value,
+        thinking: form.thinking.value === "" ? null : form.thinking.value === "true" };
+    for (const key of PRESET_NUMBERS) data[key] = form[key].value === "" ? null : Number(form[key].value);
+    return data;
+}
+
+// Enregistrement automatique : un champ hors limites passe en rouge et rien n'est envoyé
+$("#preset-form").addEventListener("change", async (event) => {
+    const field = event.target;
+    const valid = field.checkValidity() && (field.name !== "name" || field.value.trim());
+    field.classList.toggle("invalid", !valid);
+    if (!valid) return;
+    $("#preset-error").hidden = true;
+    try {
+        await api(`/api/presets/${presetUi.selected}`, { method: "PUT", body: JSON.stringify(readPreset()) });
+        flashSaved();
+        await loadPresetsSection();
+    } catch (err) {
+        $("#preset-error").textContent = err.message;
+        $("#preset-error").hidden = false;
+    }
+});
+
+async function createPreset(data) {
+    const created = await api("/api/presets", { method: "POST", body: JSON.stringify(data) });
+    flashSaved();
+    await loadPresetsSection(created.id);
+    $("#preset-form").name.select();
+}
+
+$("#btn-preset-new").addEventListener("click", () => {
+    // Un nouveau preset part des réglages du preset par défaut
+    const base = chat.presets.find((p) => p.id === state.config.default_preset) || chat.presets[0] || {};
+    const { id, ...rest } = base;
+    createPreset({ ...rest, name: "Nouveau preset" });
+});
+
+$("#btn-preset-duplicate").addEventListener("click", () => {
+    const { id, ...rest } = chat.presets.find((p) => p.id === presetUi.selected);
+    createPreset({ ...rest, name: `${rest.name} (copie)`.slice(0, 60) });
+});
+
+$("#btn-preset-default").addEventListener("click", async () => {
+    await saveConfig({ default_preset: presetUi.selected });
+    await loadPresetsSection();
+});
+
+$("#btn-preset-delete").addEventListener("click", async () => {
+    const p = chat.presets.find((x) => x.id === presetUi.selected);
+    if (!confirm(`Supprimer le preset « ${p.name} » ? Les conversations qui l'utilisent passeront sur le preset par défaut.`)) return;
+    try {
+        await api(`/api/presets/${p.id}`, { method: "DELETE" });
+        state.config = await api("/api/config");  // le preset par défaut a pu changer
+        flashSaved();
+        await loadPresetsSection(state.config.default_preset);
+    } catch (err) {
+        alert(err.message);
+    }
+});
+
 const LOADERS = {
     general: loadGeneral,
     "modele-defaut": loadDefaultModel,
     "mes-modeles": () => loadModels(),
+    presets: () => loadPresetsSection(),
     moteurs: loadEnginesSection,
     materiel: loadHardwareSection,
     autorisations: loadRules,

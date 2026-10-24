@@ -242,8 +242,10 @@ dialog {
 }
 dialog::backdrop { background: rgba(0, 0, 0, .6); }
 dialog .form { grid-template-columns: 1fr; }
-dialog .preset-form { grid-template-columns: repeat(2, 1fr); }
-.preset-form .wide { grid-column: 1 / -1; }
+.preset-edit { grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: start; }
+.preset-edit .wide { grid-column: 1 / -1; }
+.field-help { color: var(--muted); font-size: 11px; line-height: 1.35; }
+.preset-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 12px; }
 button.danger { color: var(--err); margin-right: auto; }
 button.danger-text { color: var(--err); }
 
@@ -317,8 +319,8 @@ button.danger-text { color: var(--err); }
 .chat-panel { display: flex; flex-direction: column; gap: 12px; overflow: hidden; }
 .chat-head { display: flex; align-items: center; gap: 8px; }
 .chat-head h2 { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.preset-pick { margin-left: auto; display: flex; gap: 6px; }
-.preset-pick select { width: auto; }
+.preset-chip { width: auto; max-width: 220px; padding: 3px 8px; font-size: 12px; border-radius: 12px;
+    background: var(--panel-2); cursor: pointer; }
 
 .messages { flex: 1; overflow: auto; display: flex; flex-direction: column; gap: 14px; padding-right: 4px; }
 .messages .hint { margin: auto; text-align: center; }

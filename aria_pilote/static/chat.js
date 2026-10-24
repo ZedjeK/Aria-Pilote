@@ -11,74 +11,34 @@ const chat = {
 
 // --- Presets ---------------------------------------------------------------
 
+const MANAGE_PRESETS = "__gerer__";
+
+// Puce 🎛 près de la zone de saisie : le preset de la conversation, et l'accès à leur gestion dans les Réglages
 async function loadPresets() {
     chat.presets = await api("/api/presets");
     const select = $("#preset-select");
-    const wanted = chat.current?.preset_id || select.value || "default";
-    select.replaceChildren(...chat.presets.map((p) => el("option", { value: p.id }, p.name)));
-    select.value = chat.presets.some((p) => p.id === wanted) ? wanted : chat.presets[0]?.id;
-}
-
-function currentPreset() {
-    return chat.presets.find((p) => p.id === $("#preset-select").value);
+    const fallback = state.config?.default_preset || "default";
+    const wanted = chat.current?.preset_id || select.dataset.value || fallback;
+    select.replaceChildren(...chat.presets.map((p) => el("option", { value: p.id }, `🎛 ${p.name}`)),
+        el("option", { value: MANAGE_PRESETS }, "⚙ Gérer les presets…"));
+    select.value = chat.presets.some((p) => p.id === wanted) ? wanted
+        : chat.presets.some((p) => p.id === fallback) ? fallback : chat.presets[0]?.id;
+    select.dataset.value = select.value;
 }
 
 $("#preset-select").addEventListener("change", async () => {
+    const select = $("#preset-select");
+    if (select.value === MANAGE_PRESETS) {
+        select.value = select.dataset.value;  // le choix ne change pas : on va seulement aux Réglages
+        location.hash = "#/reglages/presets";
+        return;
+    }
+    select.dataset.value = select.value;
     if (!chat.current) return;
     chat.current = await api(`/api/conversations/${chat.current.id}`, {
         method: "PATCH",
-        body: JSON.stringify({ preset_id: $("#preset-select").value }),
+        body: JSON.stringify({ preset_id: select.value }),
     });
-});
-
-$("#btn-edit-preset").addEventListener("click", () => {
-    const preset = currentPreset();
-    if (!preset) return;
-    const form = $("#preset-form");
-    for (const field of ["name", "system_prompt", "temperature", "top_p", "top_k", "min_p", "presence_penalty", "max_tokens", "thinking_budget"]) {
-        form[field].value = preset[field] ?? "";
-    }
-    form.thinking.value = preset.thinking === null || preset.thinking === undefined ? "" : String(preset.thinking);
-    $("#preset-dialog").showModal();
-});
-
-function readPresetForm() {
-    const form = $("#preset-form");
-    const num = (name) => (form[name].value === "" ? null : Number(form[name].value));
-    return {
-        name: form.name.value.trim(),
-        system_prompt: form.system_prompt.value,
-        temperature: num("temperature"),
-        top_p: num("top_p"),
-        top_k: num("top_k"),
-        min_p: num("min_p"),
-        presence_penalty: num("presence_penalty"),
-        max_tokens: num("max_tokens"),
-        thinking_budget: num("thinking_budget") || null,
-        thinking: form.thinking.value === "" ? null : form.thinking.value === "true",
-    };
-}
-
-$("#preset-dialog").addEventListener("close", async () => {
-    const action = $("#preset-dialog").returnValue;
-    const preset = currentPreset();
-    try {
-        if (action === "save") {
-            await api(`/api/presets/${preset.id}`, { method: "PUT", body: JSON.stringify(readPresetForm()) });
-        } else if (action === "new") {
-            const created = await api("/api/presets", { method: "POST", body: JSON.stringify(readPresetForm()) });
-            $("#preset-select").value = created.id;
-        } else if (action === "delete") {
-            if (!confirm(`Supprimer le preset « ${preset.name} » ?`)) return;
-            await api(`/api/presets/${preset.id}`, { method: "DELETE" });
-        } else {
-            return;
-        }
-        await loadPresets();
-        $("#preset-select").dispatchEvent(new Event("change"));
-    } catch (err) {
-        showChatError(err.message);
-    }
 });
 
 // --- Mode Agent ---------------------------------------------------------------
@@ -346,6 +306,7 @@ async function openConversation(id) {
     $("#btn-rename").hidden = !chat.current;
     if (chat.current?.preset_id && chat.presets.some((p) => p.id === chat.current.preset_id)) {
         $("#preset-select").value = chat.current.preset_id;
+        $("#preset-select").dataset.value = chat.current.preset_id;
     }
     $("#chat-error").hidden = true;
     syncAgentBar();
