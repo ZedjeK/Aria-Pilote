@@ -37,9 +37,11 @@ DEFAULTS = {
     "backup_retention_days": 30,
     # Règles « toujours autoriser » des commandes de l'agent, par dossier de projet (voir permissions.py)
     "command_rules": {},
-    # Réglages de départ d'une nouvelle conversation (modifiables ensuite dans la barre Agent).
-    # Jamais d'« écriture autorisée d'office » : ce droit saute exprès à chaque changement de dossier.
-    "new_conversation": {"workspace": "", "enabled": False, "plan_mode": False, "auto_web": False},
+    # Réglages de départ d'une nouvelle conversation. Le dossier proposé ne s'attache jamais tout seul : c'est ton
+    # geste qui ouvre les outils de fichiers. Jamais d'« écriture autorisée d'office » non plus.
+    "new_conversation": {"workspace": "", "auto_web": False},
+    # Plan exigé avant toute modification, à chaque nouvelle tâche dans un dossier (verrou côté serveur)
+    "always_plan": False,
     # Appels d'outils au plus par tâche de l'agent
     "max_tool_calls": 25,
     # Recherche web : coupée, l'agent ne voit plus web_search ni web_fetch (ni les sous-agents qui n'ont que ça)

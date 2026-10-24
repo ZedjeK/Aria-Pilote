@@ -57,11 +57,7 @@ class AskUserApi(unittest.TestCase):
             self.seen["messages"] = chat.build_messages(conversations.get(conv["id"]), "")
             yield chat.event({"type": "done", "message": None})
 
-        async def fake_stream(conv, preset, model_name):
-            self.seen["runner"] = "chat"
-            yield chat.event({"type": "done", "message": None})
-
-        for patcher in (mock.patch.object(agent, "run", fake_run), mock.patch.object(chat, "stream", fake_stream),
+        for patcher in (mock.patch.object(agent, "run", fake_run),
                         mock.patch.object(manager, "state", "ready"),
                         mock.patch.object(manager, "model", SimpleNamespace(id="t", name="Simu"))):
             patcher.start()
@@ -107,12 +103,12 @@ class AskUserApi(unittest.TestCase):
         self.assertEqual(self.question(cid)["answer"], "8080 stp")
         self.assertEqual(sum(m["role"] == "user" for m in conversations.get(cid)["messages"]), 1)
 
-    def test_agent_desactive_question_close(self):
+    def test_dossier_detache_le_message_repond_quand_meme(self):
+        # Une seule boucle : même sans dossier attaché, ton message répond à la question en attente
         cid = self.asked(enabled=False)
         self.api.post("/api/chat", json={"conversation_id": cid, "content": "Parlons d'autre chose."})
-        self.assertEqual(self.question(cid)["status"], "unanswered")
-        self.assertEqual(self.seen["runner"], "chat")
-        self.assertEqual(conversations.get(cid)["messages"][-1]["role"], "user")
+        self.assertEqual(self.question(cid)["answer"], "Parlons d'autre chose.")
+        self.assertEqual(self.seen["runner"], "agent")
 
     def test_message_vide_et_reponse_sans_question_refuses(self):
         cid = new_conversation(self.root)

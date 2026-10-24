@@ -27,7 +27,7 @@ MAX_REPORT_CHARS = 8000
 
 SUB_PROMPT = """{prompt}
 
-Dossier de travail : {root} (chemins relatifs à ce dossier).
+Dossier de travail : {root}.
 Tu es un sous-agent : l'agent principal t'a confié la tâche ci-dessous et ne verra que ton rapport final.
 Outils autorisés : {tools}.
 Termine toujours par un rapport autonome et concis : ce que tu as trouvé ou fait, avec les chemins et
@@ -93,17 +93,22 @@ def discover(root=None):
     return dict(sorted(found.items()))
 
 
-def usable_tools(names):
+# Sans dossier attaché, seuls ces outils restent (même liste que l'agent principal)
+NO_FOLDER_TOOLS = {"load_skill", "web_search", "web_fetch"}
+
+
+def usable_tools(names, folder=True):
     web = config.web_enabled()
-    return [t for t in names if web or tools.TOOLS[t].kind != "web"]
+    return [t for t in names if (web or tools.TOOLS[t].kind != "web") and (folder or t in NO_FOLDER_TOOLS)]
 
 
 def usable(root=None):
-    """Sous-agents que l'agent peut lancer : outils web retirés si le web est coupé, et ceux qui n'ont plus rien écartés."""
+    """Sous-agents que l'agent peut lancer : outils web retirés si le web est coupé, outils de fichiers retirés
+    sans dossier attaché, et ceux qui n'ont plus rien écartés."""
     found = {}
     for name, agent in discover(root).items():
-        names = usable_tools(agent.tools)
-        if names:
+        names = usable_tools(agent.tools, folder=bool(root))
+        if set(names) - {"load_skill"}:  # avec seulement load_skill, il n'aurait rien à faire
             found[name] = replace(agent, tools=names)
     return found
 
@@ -143,9 +148,12 @@ async def run(cid, root, agent, task, preset, model_name, parent_id, out, read_o
 
     `read_only` (mode Plan de l'agent principal) retire au sous-agent tout outil qui modifie quelque chose.
     """
-    allowed = [t for t in usable_tools(agent.tools) if not read_only or tools.TOOLS[t].kind in READ_ONLY_KINDS]
+    allowed = [t for t in usable_tools(agent.tools, folder=bool(root))
+               if not read_only or tools.TOOLS[t].kind in READ_ONLY_KINDS]
     schemas = [s for s in tools.SCHEMAS if s["function"]["name"] in allowed]
-    system_prompt = SUB_PROMPT.format(prompt=agent.prompt(), root=root, tools=", ".join(allowed))
+    system_prompt = SUB_PROMPT.format(prompt=agent.prompt(), tools=", ".join(allowed),
+                                      root=f"{root} (chemins relatifs à ce dossier)" if root
+                                      else "aucun : pas d'accès aux fichiers de l'utilisateur")
     if "load_skill" in allowed:
         system_prompt += "\n\n" + skills.prompt_section(root)
     conv = {"messages": [{"role": "user", "content": task}], "squeeze": 0}  # contexte propre, gardé en mémoire

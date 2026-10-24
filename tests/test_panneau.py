@@ -11,7 +11,7 @@ from unittest import mock
 
 from base import client, new_conversation, workspace
 
-from aria_pilote import background, backups, permissions, tools
+from aria_pilote import background, backups, conversations, permissions, tools
 from aria_pilote.server import manager
 
 HAS_POWERSHELL = shutil.which("pwsh") or shutil.which("powershell")
@@ -112,7 +112,8 @@ class ContextTab(unittest.TestCase):
         (self.root / ".aria" / "hooks.json").write_text(json.dumps({"debut_tache": [{"commande": "git status"}]}),
                                                          encoding="utf-8")
         permissions.add(self.root, "git status*", "git status")
-        cid = new_conversation(self.root, plan_mode=True, auto_write=True)
+        cid = new_conversation(self.root, auto_write=True)
+        conversations.update(cid, lambda c: c.update(task_id="t1", plan={"status": "pending", "task_id": "t1"}))
         model = SimpleNamespace(id="m", name="Qwen", key="q.gguf")
         settings = {"ctx_size": 32768, "cache_type": "q8_0", "gpu_layers": 99}
         with mock.patch.object(manager, "model", model), mock.patch.object(manager, "state", "ready"), \
@@ -120,7 +121,7 @@ class ContextTab(unittest.TestCase):
             c = self.context(cid)
         self.assertEqual((c["model"]["name"], c["model"]["ctx_size"], c["model"]["cache_type"]), ("Qwen", 32768, "q8_0"))
         self.assertEqual(c["memory"]["file"], "ARIA.md")
-        self.assertTrue(c["agent"]["plan_mode"])
+        self.assertEqual(c["agent"]["plan"], "pending")
         self.assertTrue(c["agent"]["auto_write"])
         self.assertEqual(c["hooks"]["project"], {"trusted": False, "error": None})  # pas encore approuvés
         self.assertEqual(c["rules"], ["git status*"])

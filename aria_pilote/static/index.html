@@ -40,11 +40,10 @@
                 </div>
             </div>
             <div class="agent-bar">
-                <label class="check-line"><input id="agent-toggle" type="checkbox"> Agent</label>
-                <label class="check-line" title="L'agent explore en lecture seule puis te soumet un plan avant d'agir">
-                    <input id="plan-toggle" type="checkbox"> Mode Plan</label>
-                <input id="agent-root" class="mono" placeholder="Dossier de travail, ex. C:\Users\zeman\Desktop\mon-projet">
-                <button id="btn-agent-root" class="ghost">Valider</button>
+                <input id="agent-root" class="mono" placeholder="Dossier à attacher, ex. C:\Users\zeman\Desktop\mon-projet"
+                    title="Attacher un dossier donne à l'agent l'accès à ses fichiers (avec ton accord pour chaque modification ou commande)">
+                <button id="btn-agent-root" class="ghost">📂 Attacher</button>
+                <button id="btn-agent-detach" class="ghost" title="Détacher le dossier : retour à une simple discussion" hidden>✕ Détacher</button>
                 <button id="btn-rules" class="ghost" title="Commandes toujours autorisées dans ce projet" hidden>Règles</button>
                 <span id="agent-info" class="muted small"></span>
             </div>
@@ -359,16 +358,8 @@ py -3.11 tools/build_portable.py</pre>
                     <div class="set-card-title">Nouvelles conversations</div>
                     <p class="muted small">Les réglages de départ d'une conversation. Tu peux toujours les changer ensuite dans la barre Agent.</p>
                     <label class="set-row">
-                        <div><div class="set-label">Dossier de travail par défaut</div><div class="muted small">Vide : tu le choisis à chaque conversation</div></div>
+                        <div><div class="set-label">Dossier proposé</div><div class="muted small">Pré-rempli dans la barre de la conversation, mais jamais attaché tout seul : c'est ton geste qui donne accès aux fichiers</div></div>
                         <input id="set-nc-workspace" class="mono set-wide" data-config="new_conversation.workspace" placeholder="C:\Users\zeman\Desktop\mon-projet">
-                    </label>
-                    <label class="set-row">
-                        <div><div class="set-label">Agent activé d'office</div><div class="muted small">Seulement avec un dossier de travail par défaut</div></div>
-                        <input type="checkbox" class="switch" data-config="new_conversation.enabled">
-                    </label>
-                    <label class="set-row">
-                        <div><div class="set-label">Mode Plan d'office</div><div class="muted small">L'agent explore en lecture seule, puis te soumet un plan avant d'agir</div></div>
-                        <input type="checkbox" class="switch" data-config="new_conversation.plan_mode">
                     </label>
                     <label class="set-row">
                         <div><div class="set-label">Accès web autorisé d'office</div><div class="muted small">Sinon, chaque recherche et chaque page lue te sont demandées</div></div>
@@ -381,6 +372,10 @@ py -3.11 tools/build_portable.py</pre>
                     <label class="set-row">
                         <div><div class="set-label">Appels d'outils au plus par tâche</div><div class="muted small">Au-delà, l'agent s'arrête et te propose de continuer (10 à 100)</div></div>
                         <input type="number" class="set-num" min="10" max="100" step="5" data-config="max_tool_calls">
+                    </label>
+                    <label class="set-row">
+                        <div><div class="set-label">Toujours proposer un plan avant de modifier</div><div class="muted small">À chaque nouvelle tâche dans un dossier : l'agent explore en lecture seule et te soumet un plan. Écritures et commandes sont bloquées par Aria jusqu'à ton accord.</div></div>
+                        <input type="checkbox" class="switch" data-config="always_plan">
                     </label>
                     <label class="set-row">
                         <div><div class="set-label">Vérifier la syntaxe après chaque écriture</div><div class="muted small">Python, JSON, YAML, TOML, XML, PowerShell : vérifiés sans être exécutés</div></div>

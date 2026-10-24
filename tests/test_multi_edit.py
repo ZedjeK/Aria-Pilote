@@ -90,9 +90,8 @@ class MultiEdit(unittest.TestCase):
         self.run_tool("edit_file", {"old_string": "calc_tva", "new_string": "calculer_tva", "replace_all": True})
         self.assertNotIn("calc_tva", self.text())
 
-    def test_mode_plan_sans_multi_edit(self):
-        allowed = [n for n, t in tools.TOOLS.items() if t.kind in agent.READ_ONLY_KINDS and n not in agent.PLAN_EXCLUDED]
-        self.assertNotIn("multi_edit", allowed)
+    def test_multi_edit_bloque_par_le_verrou_du_plan(self):
+        self.assertIn(tools.TOOLS["multi_edit"].kind, agent.LOCKED_KINDS)
 
 
 if __name__ == "__main__":

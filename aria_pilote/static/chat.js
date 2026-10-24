@@ -83,11 +83,11 @@ $("#preset-dialog").addEventListener("close", async () => {
 
 // --- Mode Agent ---------------------------------------------------------------
 
-// Une conversation pas encore créée part des réglages de départ (Réglages › Comportement)
+// Une conversation pas encore créée part des réglages de départ (Réglages › Comportement) :
+// le dossier proposé est pré-rempli, jamais attaché tout seul
 function resetPendingAgent() {
     const d = state.config?.new_conversation || {};
-    chat.pendingAgent = { enabled: Boolean(d.enabled && d.workspace), workspace: d.workspace || "",
-        plan_mode: Boolean(d.plan_mode), auto_web: Boolean(d.auto_web) };
+    chat.pendingAgent = { enabled: false, workspace: "", auto_web: Boolean(d.auto_web) };
     if (!chat.current) syncAgentBar();
 }
 
@@ -97,15 +97,22 @@ function agentSettings() {
 
 function syncAgentBar() {
     const a = agentSettings();
-    $("#agent-toggle").checked = Boolean(a.enabled);
-    $("#plan-toggle").checked = Boolean(a.plan_mode);
-    $("#plan-toggle").disabled = !a.enabled;
-    $("#agent-root").value = a.workspace || "";
-    $(".agent-bar").classList.toggle("on", Boolean(a.enabled));
-    $("#btn-rules").hidden = !(a.enabled && a.workspace && chat.current);
+    // Le dossier attaché donne les outils de fichiers ; sans lui, c'est une discussion
+    const attached = Boolean(a.enabled && a.workspace);
+    $("#agent-root").value = attached ? a.workspace : (a.workspace || state.config?.new_conversation?.workspace || "");
+    $("#agent-root").readOnly = attached;
+    $("#btn-agent-root").hidden = attached;
+    $("#btn-agent-detach").hidden = !attached;
+    $(".agent-bar").classList.toggle("on", attached);
+    $("#btn-rules").hidden = !(attached && chat.current);
     const info = [];
-    if (a.enabled) {
-        if (a.plan_mode) info.push("mode Plan : lecture seule, plan à valider");
+    const plan = chat.current?.plan;
+    if (!attached) {
+        info.push("discussion : aucun accès à tes fichiers", a.auto_web ? "web autorisé" : "web demandé");
+    } else {
+        if (plan && ["required", "pending"].includes(plan.status) && plan.task_id === chat.current?.task_id) {
+            info.push("🔒 plan à valider avant toute modification");
+        }
         info.push(a.auto_write ? "modifs autorisées" : "modifs demandées");
         info.push(a.auto_web ? "web autorisé" : "web demandé");
         info.push("commandes demandées");
@@ -253,7 +260,7 @@ async function saveAgent(patch) {
         if (chat.current) {
             chat.current = await api(`/api/conversations/${chat.current.id}`, {
                 method: "PATCH",
-                body: JSON.stringify({ agent: { enabled: next.enabled, workspace: next.workspace || null, plan_mode: Boolean(next.plan_mode) } }),
+                body: JSON.stringify({ agent: { enabled: next.enabled, workspace: next.workspace || null } }),
             });
         } else {
             if (next.enabled && !next.workspace) throw new Error("Choisis d'abord un dossier de travail.");
@@ -266,17 +273,16 @@ async function saveAgent(patch) {
     refreshHooksBanner();
 }
 
-$("#agent-toggle").addEventListener("change", () => {
-    saveAgent({ enabled: $("#agent-toggle").checked, workspace: $("#agent-root").value.trim() });
-});
-
-$("#plan-toggle").addEventListener("change", () => {
-    saveAgent({ plan_mode: $("#plan-toggle").checked });
-});
-
 $("#btn-agent-root").addEventListener("click", () => {
-    saveAgent({ workspace: $("#agent-root").value.trim() });
+    const root = $("#agent-root").value.trim();
+    if (!root) {
+        showChatError("Indique d'abord le dossier à attacher.");
+        return;
+    }
+    saveAgent({ enabled: true, workspace: root });
 });
+
+$("#btn-agent-detach").addEventListener("click", () => saveAgent({ enabled: false }));
 
 // --- Conversations -----------------------------------------------------------
 
@@ -507,8 +513,11 @@ async function refreshContext() {
     // Agent
     const a = c.agent;
     const perms = [a.auto_write ? "modifs autorisées" : "modifs demandées", a.auto_web ? "web autorisé" : "web demandé", "commandes demandées"];
-    parts.push(section(titled("Agent"), ...(a.enabled ? [row("Dossier", a.workspace || "—"), row("Mode", a.plan_mode ? "Plan (lecture seule)" : "normal"),
-        row("Accords", perms.join(" · ")), row("Outils", String(a.tools))] : [el("span", { className: "muted small" }, "Mode Agent désactivé.")])));
+    const planLabels = { required: "🔒 plan exigé avant toute modification", pending: "🔒 plan en attente de ta décision" };
+    parts.push(section(titled("Agent"), ...(a.enabled
+        ? [row("Dossier", a.workspace || "—"), ...(a.plan ? [row("Plan", planLabels[a.plan])] : []),
+            row("Accords", perms.join(" · ")), row("Outils", String(a.tools))]
+        : [el("span", { className: "muted small" }, `Discussion : aucun dossier attaché (${a.tools} outils, sans accès aux fichiers).`)])));
     // Ce que l'agent lit
     const chips = (items, label) => items.length
         ? el("div", { className: "ctx-chips" }, ...items.map((i) => el("span", { title: i.source || "" }, label(i))))
@@ -652,8 +661,14 @@ function planActions() {
     const approve = el("button", { className: "primary" }, "✅ Approuver et exécuter");
     approve.addEventListener("click", async () => {
         approve.disabled = true;
-        await saveAgent({ plan_mode: false });
-        send("Le plan est approuvé : exécute-le étape par étape, en tenant ton plan à jour.");
+        try {
+            chat.current = await api("/api/agent/plan/approve", { method: "POST", body: JSON.stringify({ conversation_id: chat.current.id }) });
+        } catch (err) {
+            showChatError(err.message);
+            approve.disabled = false;
+            return;
+        }
+        send("Le plan est approuvé : exécute-le étape par étape, en tenant ton plan à jour.", undefined, true);
     });
     const change = el("button", { className: "ghost" }, "✏️ Demander des changements");
     change.addEventListener("click", () => {
@@ -661,7 +676,18 @@ function planActions() {
         input.value = "Modifie le plan : ";
         input.focus();
     });
-    return el("div", { className: "row" }, approve, change);
+    const cancel = el("button", { className: "ghost danger-text" }, "Abandonner le plan");
+    cancel.addEventListener("click", async () => {
+        try {
+            chat.current = await api("/api/agent/plan/cancel", { method: "POST", body: JSON.stringify({ conversation_id: chat.current.id }) });
+        } catch (err) {
+            showChatError(err.message);
+            return;
+        }
+        syncAgentBar();
+        renderMessages();
+    });
+    return el("div", { className: "row" }, approve, change, cancel);
 }
 
 function planNode(m, pending) {
@@ -903,14 +929,15 @@ function renderMessages() {
     }
     const nodes = [];
     const summary = chat.current?.summary;
-    // Le dernier plan proposé attend ta décision tant que le mode Plan est actif et que tu n'as rien répondu
+    // Le dernier plan proposé attend ta décision tant que le serveur le garde en attente et que tu n'as rien répondu
     const lastUser = messages.map((m) => m.role).lastIndexOf("user");
     const lastPlan = messages.map((m) => m.name).lastIndexOf("propose_plan");
-    const planMode = Boolean(chat.current?.agent?.plan_mode);
-    const planPending = planMode && lastPlan > lastUser;
-    // Un modèle qui écrit son plan en texte au lieu d'appeler propose_plan : sa réponse finale tient lieu de plan
+    const plan = chat.current?.plan;
+    const locked = plan && ["required", "pending"].includes(plan.status) && plan.task_id === chat.current?.task_id;
+    const planPending = locked && plan.status === "pending" && lastPlan > lastUser;
+    // Plan exigé, mais écrit en texte au lieu d'appeler propose_plan : sa réponse finale tient lieu de plan
     const last = messages.at(-1);
-    const textPlan = planMode && !planPending && messages.length - 1 > lastUser && last?.role === "assistant" && last.content;
+    const textPlan = locked && !planPending && messages.length - 1 > lastUser && last?.role === "assistant" && last.content;
     const question = pendingQuestionIndex(messages);
     // Tâches qui ont modifié des fichiers (directement ou par un sous-agent) : leur dernier message
     const taskEnd = {};
@@ -1012,8 +1039,8 @@ async function send(content, answer, continueTask = false) {
                 method: "POST",
                 body: JSON.stringify({
                     preset_id: $("#preset-select").value,
-                    agent: { enabled: Boolean(pending.enabled), workspace: pending.workspace || null,
-                        plan_mode: Boolean(pending.plan_mode), auto_web: Boolean(pending.auto_web) },
+                    agent: { enabled: Boolean(pending.enabled), workspace: pending.enabled ? pending.workspace : null,
+                        auto_web: Boolean(pending.auto_web) },
                 }),
             });
         } catch (err) {
@@ -1217,7 +1244,7 @@ $("#chat-form").addEventListener("submit", async (event) => {
     if (!content.trim() || chat.controller) return;
     input.value = "";
     // Une question de l'agent attend : ton message est ta réponse
-    const asked = chat.current && agentSettings().enabled && pendingQuestionIndex(chat.current.messages) >= 0;
+    const asked = chat.current && pendingQuestionIndex(chat.current.messages) >= 0;
     const ok = asked ? await send(null, content) : await send(content);
     if (ok === false && !input.value) input.value = content;
 });
