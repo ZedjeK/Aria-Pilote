@@ -136,6 +136,7 @@ class ConfigPatch(BaseModel):
     load_defaults: dict | None = None
     default_model: str | None = None
     autoload: bool | None = None
+    default_preset: str | None = None
     new_conversation: NewAgentSettings | None = None
     always_plan: bool | None = None
     max_tool_calls: int | None = Field(None, ge=10, le=100)
@@ -149,16 +150,16 @@ class ConfigPatch(BaseModel):
 
 
 class Preset(BaseModel):
-    name: str
+    name: str = Field(min_length=1, max_length=60)
     system_prompt: str = ""
-    temperature: float | None = None
-    top_p: float | None = None
-    top_k: int | None = None
-    min_p: float | None = None
-    presence_penalty: float | None = None
-    max_tokens: int | None = None
+    temperature: float | None = Field(None, ge=0, le=2)
+    top_p: float | None = Field(None, ge=0, le=1)
+    top_k: int | None = Field(None, ge=0, le=1000)
+    min_p: float | None = Field(None, ge=0, le=1)
+    presence_penalty: float | None = Field(None, ge=-2, le=2)
+    max_tokens: int | None = Field(None, ge=1, le=131072)
     thinking: bool | None = None
-    thinking_budget: int | None = None  # tokens de réflexion au plus (None : sans limite)
+    thinking_budget: int | None = Field(None, ge=0, le=131072)  # tokens de réflexion au plus (None : sans limite)
 
 
 class ConversationCreate(BaseModel):
@@ -373,6 +374,8 @@ def get_config():
 @app.put("/api/config")
 def put_config(patch: ConfigPatch):
     data = patch.model_dump(exclude_none=True)
+    if "default_preset" in data and presets.get(data["default_preset"]) is None:
+        raise HTTPException(400, "Preset introuvable.")
     language = data.get("web", {}).get("language")
     if language is not None and language not in config.WEB_LANGUAGES:
         raise HTTPException(400, f"Langue inconnue : {language}")
@@ -416,6 +419,8 @@ def delete_preset(pid: str):
         presets.delete(pid)
     except ValueError as exc:
         raise HTTPException(400, str(exc))
+    if config.get().get("default_preset") == pid:
+        config.update({"default_preset": presets.list_all()[0]["id"]})  # le défaut supprimé : le premier restant
     return {"ok": True}
 
 
@@ -455,7 +460,7 @@ def create_conversation(req: ConversationCreate):
     else:
         # Réglages de départ : l'accès web d'office, jamais le dossier proposé (il ne s'attache pas tout seul)
         agent_settings = _initial_agent({"auto_web": config.get()["new_conversation"].get("auto_web")})
-    conv = conversations.create(req.preset_id)
+    conv = conversations.create(req.preset_id or presets.resolve(config.get().get("default_preset"))["id"])
     if agent_settings:
         conv["agent"] = agent_settings
         conv = conversations.save(conv)
@@ -508,7 +513,7 @@ async def chat_endpoint(req: ChatRequest):
     if manager.state != "ready":
         raise HTTPException(409, "Aucun modèle prêt : charge un modèle dans l'onglet Modèles.")
     conv = _conversation_or_404(req.conversation_id)
-    preset = presets.resolve(req.preset_id or conv.get("preset_id") or "default")
+    preset = presets.resolve(req.preset_id or conv.get("preset_id") or config.get().get("default_preset"))
     if req.content is not None and not req.content.strip():
         raise HTTPException(400, "Message vide.")
     question = agent.pending_question(conv)

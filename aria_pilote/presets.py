@@ -71,8 +71,10 @@ def get(pid):
 
 
 def resolve(pid):
-    """Preset demandé, sinon le premier disponible."""
-    return get(pid) or list_all()[0]
+    """Preset demandé, sinon le preset par défaut des réglages (preset supprimé…), sinon le premier disponible."""
+    from . import config  # config lit ce module indirectement : import tardif
+
+    return get(pid) or get(config.get().get("default_preset")) or list_all()[0]
 
 
 def create(data):

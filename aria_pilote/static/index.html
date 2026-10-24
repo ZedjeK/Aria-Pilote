@@ -34,10 +34,6 @@
                 <h2 id="conv-title">Nouvelle conversation</h2>
                 <button id="btn-rename" class="ghost" title="Renommer" hidden>✎</button>
                 <button id="btn-side" class="ghost side-toggle" title="Panneau latéral : plan et modifications de l'agent">▤</button>
-                <div class="preset-pick">
-                    <select id="preset-select" title="Preset"></select>
-                    <button id="btn-edit-preset" class="ghost">Modifier</button>
-                </div>
             </div>
             <div class="agent-bar">
                 <button id="btn-folder" class="folder-chip"
@@ -56,6 +52,7 @@
                 <textarea id="chat-input" rows="3" placeholder="Écris ton message… (Entrée pour envoyer, Maj+Entrée pour aller à la ligne)"></textarea>
                 <div class="composer-actions">
                     <span id="chat-model" class="muted small"></span>
+                    <select id="preset-select" class="preset-chip" title="Preset : comment le modèle répond (réflexion, longueur, tirage des mots)"></select>
                     <span id="ctx-gauge" class="ctx-gauge" hidden title="Contexte occupé par la conversation">
                         <span class="ctx-bar"><span></span></span>
                         <span class="ctx-text"></span>
@@ -101,6 +98,7 @@
             <div class="nav-group">Modèles</div>
             <a href="#/reglages/modele-defaut" data-section="modele-defaut">⭐ Modèle par défaut</a>
             <a href="#/reglages/mes-modeles" data-section="mes-modeles">📦 Mes modèles</a>
+            <a href="#/reglages/presets" data-section="presets">🎛 Presets</a>
             <a href="#/reglages/decouvrir" data-section="decouvrir">🔎 Découvrir</a>
             <a href="#/reglages/moteurs" data-section="moteurs">🔧 Moteurs</a>
             <a href="#/reglages/materiel" data-section="materiel">⚡ Matériel et optimisation</a>
@@ -255,6 +253,73 @@ py -3.11 tools/build_portable.py</pre>
                     </div>
 
                 </section>
+                </div>
+            </section>
+
+            <section class="settings-section" data-section="presets" data-title="Presets" hidden>
+                <p class="muted">Comment le modèle répond : réflexion, longueur, tirage des mots. Chaque conversation garde le
+                    sien, que tu changes avec la puce 🎛 à côté de la zone de saisie.</p>
+                <div class="layout settings-split">
+                    <section class="panel">
+                        <div class="panel-head">
+                            <h3>Tes presets</h3>
+                            <button id="btn-preset-new" class="ghost">+ Nouveau</button>
+                        </div>
+                        <ul id="preset-list" class="model-list"></ul>
+                    </section>
+                    <section class="panel">
+                        <form id="preset-form" class="form preset-edit" novalidate>
+                            <label class="wide">Nom
+                                <input name="name" maxlength="60" required>
+                            </label>
+                            <label class="wide">Prompt système
+                                <textarea name="system_prompt" rows="4"></textarea>
+                                <small class="field-help">Ce que le modèle lit en premier, avant la conversation. Il passera dans le Persona au prochain chantier.</small>
+                            </label>
+                            <label>Réflexion
+                                <select name="thinking">
+                                    <option value="">Le modèle décide</option>
+                                    <option value="true">Forcée</option>
+                                    <option value="false">Coupée</option>
+                                </select>
+                                <small class="field-help">Forcée : il pense avant de répondre. Coupée : réponse directe, plus rapide.</small>
+                            </label>
+                            <label>Budget de réflexion (tokens)
+                                <input name="thinking_budget" type="number" min="0" max="131072" step="256" placeholder="sans limite">
+                                <small class="field-help">Tokens de réflexion au plus. Vide : sans limite.</small>
+                            </label>
+                            <label>Température
+                                <input name="temperature" type="number" min="0" max="2" step="0.05">
+                                <small class="field-help">Plus elle est haute, plus il ose des mots moins probables : 0,7 sage, 1,0 plus créatif.</small>
+                            </label>
+                            <label>Presence penalty
+                                <input name="presence_penalty" type="number" min="-2" max="2" step="0.1">
+                                <small class="field-help">Freine les répétitions. Utile pour les modèles très compressés comme Bonsai.</small>
+                            </label>
+                            <label>Top K
+                                <input name="top_k" type="number" min="0" max="1000" step="1">
+                                <small class="field-help">Ne garde que les K mots les plus probables avant le tirage.</small>
+                            </label>
+                            <label>Top P
+                                <input name="top_p" type="number" min="0" max="1" step="0.05">
+                                <small class="field-help">Garde les meilleurs mots jusqu'à cette probabilité cumulée.</small>
+                            </label>
+                            <label>Min P
+                                <input name="min_p" type="number" min="0" max="1" step="0.01">
+                                <small class="field-help">Écarte ce qui pèse moins que cette part du mot favori.</small>
+                            </label>
+                            <label>Max tokens
+                                <input name="max_tokens" type="number" min="1" max="131072" step="256">
+                                <small class="field-help">Longueur maximale d'une réponse, réflexion comprise.</small>
+                            </label>
+                        </form>
+                        <p id="preset-error" class="error" hidden></p>
+                        <div class="row preset-actions">
+                            <button id="btn-preset-default" class="ghost">⭐ Par défaut</button>
+                            <button id="btn-preset-duplicate" class="ghost">Dupliquer</button>
+                            <button id="btn-preset-delete" class="ghost danger-text">Supprimer</button>
+                        </div>
+                    </section>
                 </div>
             </section>
 
@@ -572,40 +637,6 @@ py -3.11 tools/build_portable.py</pre>
         <p class="muted small">Clique sur une compétence pour l'ajouter à ton message (« /nom » au début). En mode Agent,
             il les charge aussi tout seul quand une tâche y correspond.</p>
         <ul id="skills-list" class="skills-list"></ul>
-    </dialog>
-
-    <dialog id="preset-dialog">
-        <form method="dialog" id="preset-form" class="form preset-form">
-            <h2>Preset</h2>
-            <label class="wide">Nom
-                <input name="name" required>
-            </label>
-            <label class="wide">Prompt système
-                <textarea name="system_prompt" rows="5"></textarea>
-            </label>
-            <label>Température <input name="temperature" type="number" step="0.05" min="0"></label>
-            <label>Top P <input name="top_p" type="number" step="0.05" min="0" max="1"></label>
-            <label>Top K <input name="top_k" type="number" step="1" min="0"></label>
-            <label>Min P <input name="min_p" type="number" step="0.01" min="0" max="1"></label>
-            <label>Presence penalty <input name="presence_penalty" type="number" step="0.1"></label>
-            <label>Max tokens <input name="max_tokens" type="number" step="256" min="1"></label>
-            <label>Budget de réflexion (tokens)
-                <input name="thinking_budget" type="number" step="256" min="0" placeholder="sans limite">
-            </label>
-            <label>Réflexion
-                <select name="thinking">
-                    <option value="">Le modèle décide</option>
-                    <option value="true">Activée</option>
-                    <option value="false">Désactivée</option>
-                </select>
-            </label>
-            <div class="row">
-                <button value="delete" class="ghost danger" formnovalidate>Supprimer</button>
-                <button value="cancel" class="ghost" formnovalidate>Annuler</button>
-                <button value="new" class="ghost">Enregistrer comme nouveau</button>
-                <button value="save" class="primary">Enregistrer</button>
-            </div>
-        </form>
     </dialog>
 
     <script src="markdown.js"></script>
