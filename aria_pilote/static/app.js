@@ -16,7 +16,9 @@ async function api(path, options = {}) {
     });
     const data = await resp.json().catch(() => ({}));
     if (!resp.ok) {
-        throw new Error(data.detail || `Erreur HTTP ${resp.status}`);
+        const error = new Error(data.detail || `Erreur HTTP ${resp.status}`);
+        error.status = resp.status;  // ex. 501 : la fenêtre de choix n'existe pas ici
+        throw error;
     }
     return data;
 }
@@ -30,6 +32,19 @@ function el(tag, attrs = {}, ...children) {
     Object.assign(node, attrs);
     node.append(...children);
     return node;
+}
+
+// --- Fenêtre « Choisir un dossier » de Windows (ouverte par le serveur) --------------------------
+
+// Chemin choisi, ou null si tu as annulé. Erreur 501 : la fenêtre n'existe pas ici (plan B : saisie du chemin).
+async function pickFolder(initial = "", title = "Choisir un dossier") {
+    return (await api("/api/pick-folder", { method: "POST", body: JSON.stringify({ initial, title }) })).path;
+}
+
+function shortPath(path) {
+    // Les deux derniers niveaux suffisent dans une puce : le chemin complet est dans l'infobulle
+    const parts = path.split(/[\\/]+/).filter(Boolean);
+    return parts.length > 2 ? `…\\${parts.slice(-2).join("\\")}` : path;
 }
 
 // --- Modèles -------------------------------------------------------------

@@ -99,10 +99,17 @@ function syncAgentBar() {
     const a = agentSettings();
     // Le dossier attaché donne les outils de fichiers ; sans lui, c'est une discussion
     const attached = Boolean(a.enabled && a.workspace);
-    $("#agent-root").value = attached ? a.workspace : (a.workspace || state.config?.new_conversation?.workspace || "");
-    $("#agent-root").readOnly = attached;
-    $("#btn-agent-root").hidden = attached;
+    const chip = $("#btn-folder");
+    if (!chip.disabled) {  // pas pendant que la fenêtre de choix est ouverte
+        chip.textContent = attached ? `📂 ${shortPath(a.workspace)}` : "📂 Attacher un dossier…";
+        chip.title = attached ? `${a.workspace}\nClique pour choisir un autre dossier.`
+            : "Attacher un dossier donne à l'agent l'accès à ses fichiers (avec ton accord pour chaque modification ou commande)";
+    }
+    chip.classList.toggle("attached", attached);
     $("#btn-agent-detach").hidden = !attached;
+    // Plan B : saisie du chemin, seulement si la fenêtre de Windows n'existe pas ici
+    $("#agent-root").hidden = !chat.manualFolder || attached;
+    $("#btn-agent-root").hidden = !chat.manualFolder || attached;
     $(".agent-bar").classList.toggle("on", attached);
     $("#btn-rules").hidden = !(attached && chat.current);
     const info = [];
@@ -272,6 +279,26 @@ async function saveAgent(patch) {
     syncAgentBar();
     refreshHooksBanner();
 }
+
+$("#btn-folder").addEventListener("click", async () => {
+    const chip = $("#btn-folder");
+    const a = agentSettings();
+    $("#chat-error").hidden = true;
+    chip.disabled = true;
+    chip.textContent = "📂 Fenêtre de choix ouverte…";
+    let path = null;
+    try {
+        path = await pickFolder(a.workspace || state.config?.new_conversation?.workspace || "",
+            "Dossier de travail de la conversation");
+    } catch (err) {
+        if (err.status === 501) chat.manualFolder = true;  // plan B : la saisie du chemin apparaît
+        showChatError(err.message);
+    } finally {
+        chip.disabled = false;
+    }
+    if (path) await saveAgent({ enabled: true, workspace: path });
+    else syncAgentBar();
+});
 
 $("#btn-agent-root").addEventListener("click", () => {
     const root = $("#agent-root").value.trim();

@@ -220,6 +220,23 @@ function loadHardwareSection() {
     $("#set-model-dirs").value = state.config.model_dirs.join("\n");
 }
 
+// Boutons « Parcourir » : la fenêtre de Windows remplit le champ, qui s'enregistre comme une saisie
+async function browseInto(field, title, append = false) {
+    let path;
+    try {
+        path = await pickFolder(append ? "" : field.value.trim(), title);
+    } catch (err) {
+        alert(err.message);
+        return;
+    }
+    if (!path) return;
+    field.value = append ? [field.value.trim(), path].filter(Boolean).join("\n") : path;
+    field.dispatchEvent(new Event("change"));
+}
+
+$("#btn-nc-browse").addEventListener("click", () => browseInto($("#set-nc-workspace"), "Dossier proposé aux nouvelles conversations"));
+$("#btn-model-dir-add").addEventListener("click", () => browseInto($("#set-model-dirs"), "Dossier de modèles à ajouter", true));
+
 $("#set-model-dirs").addEventListener("change", async () => {
     const dirs = $("#set-model-dirs").value.split("\n").map((d) => d.trim()).filter(Boolean);
     try {
