@@ -1,7 +1,7 @@
 // Page Réglages : navigation à gauche, une adresse par section (#/reglages/<section>), enregistrement automatique.
 // S'appuie sur $, api, el, state, loadModels, loadEngines, renderHardware (app.js) et SKILL_SOURCES (chat.js).
 
-const SECTIONS = ["general", "modele-defaut", "mes-modeles", "presets", "decouvrir", "moteurs", "materiel",
+const SECTIONS = ["general", "persona", "modele-defaut", "mes-modeles", "presets", "decouvrir", "moteurs", "materiel",
     "comportement", "autorisations", "competences", "hooks", "web", "donnees"];
 
 // --- Navigation ------------------------------------------------------------------
@@ -106,6 +106,7 @@ for (const field of document.querySelectorAll("#view-settings [data-config]")) {
 
 function loadGeneral() {
     $("#set-version").textContent = state.status?.version ? `v${state.status.version}` : "?";
+    loadProfileCard();
     fillConfigFields($('.settings-section[data-section="general"]'));
     renderNotifications();
     loadUpdate(false);
@@ -499,13 +500,6 @@ const PRESET_HELP = {
         text: ["Le nom affiché dans la puce 🎛 du chat et dans cette liste. Choisis-le d'après l'usage "
             + "(« Code précis », « Brainstorming ») plutôt que d'après un modèle : un preset vaut pour tous."],
     },
-    system_prompt: {
-        title: "Prompt système",
-        text: ["Le texte que le modèle lit avant toute la conversation : son rôle, son ton, sa langue, ses contraintes.",
-            "Il est renvoyé à chaque message et occupe donc du contexte en permanence : mieux vaut court et précis que long.",
-            "Il rejoindra le Persona au prochain chantier."],
-        values: [["Vide", "le comportement par défaut du modèle"], ["Une à trois phrases", "le plus courant"]],
-    },
     thinking: {
         title: "Réflexion",
         text: ["Les modèles qui savent raisonner peuvent écrire une réflexion avant leur réponse (repliable dans le chat).",
@@ -616,7 +610,6 @@ function fillPresetForm() {
     const form = $("#preset-form");
     if (!p) return;
     form.name.value = p.name;
-    form.system_prompt.value = p.system_prompt || "";
     for (const key of PRESET_NUMBERS) form[key].value = p[key] ?? "";
     form.thinking.value = p.thinking === null || p.thinking === undefined ? "" : String(p.thinking);
     for (const field of form.elements) field.classList.remove("invalid");
@@ -627,7 +620,7 @@ function fillPresetForm() {
 
 function readPreset() {
     const form = $("#preset-form");
-    const data = { name: form.name.value.trim(), system_prompt: form.system_prompt.value,
+    const data = { name: form.name.value.trim(),
         thinking: form.thinking.value === "" ? null : form.thinking.value === "true" };
     for (const key of PRESET_NUMBERS) data[key] = form[key].value === "" ? null : Number(form[key].value);
     return data;
@@ -691,6 +684,7 @@ const LOADERS = {
     general: loadGeneral,
     "modele-defaut": loadDefaultModel,
     "mes-modeles": () => loadModels(),
+    persona: () => loadPersonaSection(),
     presets: () => loadPresetsSection(),
     moteurs: loadEnginesSection,
     materiel: loadHardwareSection,
@@ -707,6 +701,8 @@ const LOADERS = {
 
 // app.js lit la config au démarrage : on attend qu'elle soit là avant d'afficher une section
 (async function startRouting() {
+    // Tous les scripts de la page chargés (persona.js vient après celui-ci), et la config lue par app.js
+    if (document.readyState === "loading") await new Promise((resolve) => document.addEventListener("DOMContentLoaded", resolve));
     while (!state.config) await new Promise((resolve) => setTimeout(resolve, 50));
     route();
     // La pastille « nouvelle version » de la barre du haut (GitHub n'est interrogé que si c'est activé)

@@ -48,6 +48,11 @@
             <div id="hooks-banner" hidden></div>
             <div id="messages" class="messages"></div>
             <p id="chat-error" class="error" hidden></p>
+            <div id="profile-banner" class="ctx-alert profile-banner" hidden>
+                <span>👋 Présente-toi à ton IA : ton prénom, ton métier, ce que tu aimes. Elle s'en servira dans toutes les conversations.</span>
+                <a class="button ghost" href="#/reglages/general">Me présenter</a>
+                <button type="button" id="btn-profile-banner-close" class="ghost" title="Ne plus afficher">✕</button>
+            </div>
             <div id="ctx-alert" class="ctx-alert" hidden>
                 <span>⚠️ Le contexte arrive à sa limite : au prochain message, Aria résumera les anciens échanges.</span>
                 <button type="button" id="btn-ctx-compact" class="ghost">🗜 Compacter maintenant</button>
@@ -64,6 +69,7 @@
                 </div>
                 <div class="composer-actions">
                     <span id="chat-model" class="muted small"></span>
+                    <select id="persona-select" class="preset-chip" title="Persona : qui te répond dans cette conversation"></select>
                     <select id="preset-select" class="preset-chip" title="Preset : comment le modèle répond (réflexion, longueur, tirage des mots)"></select>
                     <span id="ctx-gauge" class="ctx-gauge" hidden title="Contexte occupé par la conversation">
                         <span class="ctx-bar"><span></span><i class="ctx-limit" hidden></i></span>
@@ -108,6 +114,8 @@
             <a href="#/chat" class="settings-back">← Retour au chat</a>
             <div class="nav-group">Application</div>
             <a href="#/reglages/general" data-section="general">🎛 Général</a>
+            <div class="nav-group">Assistant</div>
+            <a href="#/reglages/persona" data-section="persona">🎭 Persona</a>
             <div class="nav-group">Modèles</div>
             <a href="#/reglages/modele-defaut" data-section="modele-defaut">⭐ Modèle par défaut</a>
             <a href="#/reglages/mes-modeles" data-section="mes-modeles">📦 Mes modèles</a>
@@ -131,6 +139,57 @@
             </div>
 
             <section class="settings-section" data-section="general" data-title="Général" hidden>
+                <div class="set-card" id="profile-card">
+                    <div class="set-card-head">
+                        <div><div class="set-card-title">Toi</div><div class="muted small">Ce que ton IA sait de toi, quel que soit le persona. Reste sur ton PC.</div></div>
+                        <span id="profile-tokens" class="muted small"></span>
+                    </div>
+                    <div class="form profile-form">
+                        <label>Prénom ou pseudo
+                            <input data-profile="name" maxlength="40" placeholder="Ex. Alex">
+                        </label>
+                        <label>Accord
+                            <select data-profile="gender">
+                                <option value="">Ne pas préciser</option>
+                                <option value="masculin">Masculin (il)</option>
+                                <option value="feminin">Féminin (elle)</option>
+                                <option value="neutre">Neutre (iel)</option>
+                            </select>
+                        </label>
+                        <label>Adresse
+                            <select data-profile="address">
+                                <option value="tu">Tutoiement</option>
+                                <option value="vous">Vouvoiement</option>
+                            </select>
+                        </label>
+                        <label>Langue des réponses
+                            <select data-profile="language">
+                                <option value="fr">Français</option>
+                                <option value="en">Anglais</option>
+                                <option value="de">Allemand</option>
+                                <option value="es">Espagnol</option>
+                                <option value="it">Italien</option>
+                            </select>
+                        </label>
+                        <label class="wide">Métier et niveau technique
+                            <input data-profile="job" maxlength="200" placeholder="Ex. Développeuse web débutante, infirmier, étudiant en droit…">
+                        </label>
+                        <label class="wide">Ce que tu apprécies dans une réponse
+                            <input data-profile="likes" maxlength="300" placeholder="Ex. Des réponses courtes, des exemples concrets, un peu d'humour">
+                        </label>
+                        <label class="wide">À propos de toi
+                            <textarea data-profile="about" rows="4" maxlength="3000" placeholder="Ce que tu veux qu'elle sache : tes passions, ce qui compte pour toi, ton contexte…"></textarea>
+                        </label>
+                    </div>
+                    <label class="set-row">
+                        <div><div class="set-label">Aussi quand un dossier est attaché</div><div class="muted small">Utile pour adapter les explications et les commandes à ton niveau</div></div>
+                        <input type="checkbox" class="switch" data-profile="in_folder">
+                    </label>
+                    <details class="preview-box">
+                        <summary>👁 Voir ce que lit le modèle</summary>
+                        <pre id="profile-preview" class="preview-text"></pre>
+                    </details>
+                </div>
                 <div class="set-card">
                     <div class="set-row">
                         <div><div class="set-label">Version</div><div class="muted small">Tes modèles en local, avec un agent</div></div>
@@ -188,6 +247,86 @@ py -3.11 tools/build_portable.py</pre>
                     <div class="row">
                         <button id="btn-notif-test" class="ghost">🔔 Tester</button>
                     </div>
+                </div>
+            </section>
+
+            <section class="settings-section" data-section="persona" data-title="Persona" hidden>
+                <div class="set-card persona-bar">
+                    <select id="persona-pick" title="Persona affiché"></select>
+                    <span id="persona-default-flag" class="badge loaded" hidden>⭐ par défaut</span>
+                    <span class="spacer"></span>
+                    <button id="btn-persona-new" class="ghost">+ Nouveau</button>
+                    <button id="btn-persona-duplicate" class="ghost">Dupliquer</button>
+                    <button id="btn-persona-import" class="ghost">Importer</button>
+                    <a id="btn-persona-export" class="button ghost" download>Exporter</a>
+                    <button id="btn-persona-default" class="ghost">⭐ Par défaut</button>
+                    <button id="btn-persona-delete" class="ghost danger-text">Supprimer</button>
+                    <input id="persona-import-file" type="file" accept=".json,application/json" hidden>
+                </div>
+                <p id="persona-error" class="error" hidden></p>
+
+                <div class="set-card">
+                    <div><div class="set-card-title">Identité</div><div class="muted small">Qui parle quand tu discutes avec ton IA</div></div>
+                    <div class="form persona-identity">
+                        <label>Comment s'appelle-t-elle ?
+                            <input data-persona="name" maxlength="40" placeholder="Ex. Nova, Max, Jarvis">
+                        </label>
+                        <label>Son avatar
+                            <input data-persona="avatar" maxlength="8" placeholder="Un emoji, ex. 🤖">
+                        </label>
+                        <label>Elle parle d'elle au…
+                            <select data-persona="gender">
+                                <option value="feminin">Féminin</option>
+                                <option value="masculin">Masculin</option>
+                                <option value="neutre">Neutre</option>
+                            </select>
+                        </label>
+                        <label class="wide">Présentation
+                            <textarea data-persona="presentation" rows="3" maxlength="2000"
+                                placeholder="Qui elle est, et ce qu'elle est pour toi. Ex. « Une assistante discrète et précise, qui va droit au but. » ou « Un vieux sage bourru, mentor exigeant mais bienveillant. »"></textarea>
+                        </label>
+                    </div>
+                </div>
+
+                <div class="set-card">
+                    <div><div class="set-card-title">Personnalité</div><div class="muted small">Ses traits, et leur intensité dans chaque registre : ○ absent · ● léger · ●● marqué · ●●● très marqué</div></div>
+                    <div id="trait-grid" class="trait-grid"></div>
+                    <div id="themes-box" class="themes-box" hidden>
+                        <div class="set-label">🎨 Ses goûts</div>
+                        <div id="themes-list" class="themes-list"></div>
+                    </div>
+                    <div class="trait-add">
+                        <button id="btn-trait-add" class="ghost">+ Ajouter un trait</button>
+                        <div id="trait-menu" class="trait-menu" hidden></div>
+                    </div>
+                </div>
+
+                <div class="set-card">
+                    <div><div class="set-card-title">Règles d'or</div><div class="muted small">Ce qui passe avant tout le reste, même avant sa personnalité. La première l'emporte sur la suivante.</div></div>
+                    <ol id="rules-list" class="rules-list"></ol>
+                    <div class="row"><button id="btn-rule-add" class="ghost">+ Ajouter une règle</button></div>
+                    <label class="set-row">
+                        <div><div class="set-label">Contenu intime autorisé</div><div class="muted small">Activé, elle peut aborder des sujets intimes et explicites sans s'excuser ni avertir.</div></div>
+                        <input type="checkbox" class="switch" data-persona="intimate">
+                    </label>
+                </div>
+
+                <div class="set-card">
+                    <div><div class="set-card-title">Registre selon le contexte</div><div class="muted small">Combien de sa personnalité elle exprime. C'est la compétence chargée qui décide ; sans compétence, c'est la discussion. Une nouvelle compétence apparaît ici toute seule.</div></div>
+                    <div id="register-table" class="register-table"></div>
+                </div>
+
+                <div class="set-card">
+                    <div class="set-card-head">
+                        <div class="set-card-title">👁 Ce que lit le modèle</div>
+                        <select id="persona-preview-register">
+                            <option value="naturel">Registre naturel</option>
+                            <option value="sobre">Registre sobre</option>
+                            <option value="professionnel">Registre professionnel</option>
+                        </select>
+                    </div>
+                    <pre id="persona-preview" class="preview-text"></pre>
+                    <div id="persona-tokens" class="muted small"></div>
                 </div>
             </section>
 
@@ -288,10 +427,6 @@ py -3.11 tools/build_portable.py</pre>
                         <form id="preset-form" class="form preset-edit" novalidate>
                             <label class="wide">Nom
                                 <input name="name" maxlength="60" required>
-                            </label>
-                            <label class="wide">Prompt système
-                                <textarea name="system_prompt" rows="4"></textarea>
-                                <small class="field-help">Ce que le modèle lit en premier, avant la conversation. Il passera dans le Persona au prochain chantier.</small>
                             </label>
                             <label>Réflexion
                                 <select name="thinking">
@@ -662,5 +797,6 @@ py -3.11 tools/build_portable.py</pre>
     <script src="chat.js"></script>
     <script src="discover.js"></script>
     <script src="settings.js"></script>
+    <script src="persona.js"></script>
 </body>
 </html>
