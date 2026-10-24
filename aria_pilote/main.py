@@ -112,7 +112,6 @@ class LoadRequest(BaseModel):
 class NewAgentSettings(BaseModel):
     workspace: str | None = None
     enabled: bool | None = None
-    plan_mode: bool | None = None
     auto_web: bool | None = None
 
 
@@ -138,6 +137,7 @@ class ConfigPatch(BaseModel):
     default_model: str | None = None
     autoload: bool | None = None
     new_conversation: NewAgentSettings | None = None
+    always_plan: bool | None = None
     max_tool_calls: int | None = Field(None, ge=10, le=100)
     auto_check: bool | None = None
     web: WebSettings | None = None
@@ -167,9 +167,8 @@ class ConversationCreate(BaseModel):
 
 
 class AgentSettings(BaseModel):
-    enabled: bool
+    enabled: bool  # dossier attaché ou non
     workspace: str | None = None
-    plan_mode: bool | None = None
 
 
 class ConversationPatch(BaseModel):
@@ -384,9 +383,7 @@ def put_config(patch: ConfigPatch):
                 new["workspace"] = str(workspace.validate_root(new["workspace"]))
             except workspace.WorkspaceError as exc:
                 raise HTTPException(400, str(exc))
-        merged = {**config.get()["new_conversation"], **new}
-        if merged.get("enabled") and not merged.get("workspace"):
-            raise HTTPException(400, "Pour activer l'agent d'office, choisis d'abord un dossier de travail par défaut.")
+        new.pop("enabled", None)  # le dossier proposé ne s'attache jamais tout seul
     cfg = config.update(data)
     if patch.model_dirs is not None:
         models.scan(force=True)
@@ -436,30 +433,28 @@ def list_conversations():
     return conversations.list_all()
 
 
-def _initial_agent(wanted, strict):
-    """Réglages Agent d'une nouvelle conversation. `strict` : un dossier introuvable est une erreur ;
-    sinon (réglages de départ) il est simplement ignoré, et l'agent reste coupé."""
+def _initial_agent(wanted):
+    """Réglages d'une nouvelle conversation : dossier attaché (« enabled ») seulement si on le demande explicitement."""
     root = None
-    if wanted.get("workspace"):
+    if wanted.get("enabled") or wanted.get("workspace"):
+        if not wanted.get("workspace"):
+            raise HTTPException(400, "Choisis d'abord un dossier de travail.")
         try:
             root = str(workspace.validate_root(wanted["workspace"]))
         except workspace.WorkspaceError as exc:
-            if strict:
-                raise HTTPException(400, str(exc))
-    enabled = bool(wanted.get("enabled")) and root is not None
-    if strict and wanted.get("enabled") and root is None:
-        raise HTTPException(400, "Choisis d'abord un dossier de travail.")
-    agent = {"enabled": enabled, "workspace": root, "plan_mode": bool(wanted.get("plan_mode")),
+            raise HTTPException(400, str(exc))
+    agent = {"enabled": bool(wanted.get("enabled")) and root is not None, "workspace": root,
              "auto_web": bool(wanted.get("auto_web")), "auto_write": False}
-    return agent if root or agent["plan_mode"] or agent["auto_web"] else None
+    return agent if root or agent["auto_web"] else None
 
 
 @app.post("/api/conversations")
 def create_conversation(req: ConversationCreate):
     if req.agent is not None:
-        agent_settings = _initial_agent(req.agent.model_dump(exclude_none=True), strict=True)
+        agent_settings = _initial_agent(req.agent.model_dump(exclude_none=True))
     else:
-        agent_settings = _initial_agent(config.get()["new_conversation"], strict=False)
+        # Réglages de départ : l'accès web d'office, jamais le dossier proposé (il ne s'attache pas tout seul)
+        agent_settings = _initial_agent({"auto_web": config.get()["new_conversation"].get("auto_web")})
     conv = conversations.create(req.preset_id)
     if agent_settings:
         conv["agent"] = agent_settings
@@ -493,8 +488,6 @@ def patch_conversation(cid: str, patch: ConversationPatch):
         if patch.agent.enabled and not settings.get("workspace"):
             raise HTTPException(400, "Choisis d'abord un dossier de travail.")
         settings["enabled"] = patch.agent.enabled
-        if patch.agent.plan_mode is not None:
-            settings["plan_mode"] = patch.agent.plan_mode
     return conversations.save(conv)
 
 
@@ -518,43 +511,67 @@ async def chat_endpoint(req: ChatRequest):
     preset = presets.resolve(req.preset_id or conv.get("preset_id") or "default")
     if req.content is not None and not req.content.strip():
         raise HTTPException(400, "Message vide.")
-    use_agent = (conv.get("agent") or {}).get("enabled")
     question = agent.pending_question(conv)
     if req.answer is not None and question is None:
         raise HTTPException(409, "Aucune question de l'agent n'attend de réponse.")
-    if question is not None and (req.answer is not None or (use_agent and req.content is not None)):
+    if question is not None and (req.answer is not None or req.content is not None):
         # Ta réponse (bouton ou message tapé) devient le résultat d'ask_user, puis l'agent reprend
         agent.answer_question(question, req.answer if req.answer is not None else req.content)
-        use_agent = True
     elif req.content is not None:
-        if question is not None:
-            agent.close_question(question)  # agent désactivé : la conversation reprend en simple chat
         # « /nom demande » : la compétence est jointe au message si elle existe
         content, skill = req.content, None
         match = re.match(r"^/([a-z0-9][a-z0-9-]*)(?:\s+(.*))?$", req.content.strip(), re.DOTALL)
         if match and match.group(1) in skills.discover(_agent_root(conv)):
             skill, content = match.group(1), (match.group(2) or "").strip()
         conversations.add_user_message(conv, content, skill)
-        if not req.continue_task:
+        # Un plan attend ta décision : ton message (« modifie le plan… ») le prolonge, le verrou reste en place
+        if not req.continue_task and not agent.plan_locked(conv):
             conv["task_id"] = backups.new_task_id()  # nouvelle demande, nouvelle tâche (réponses et reprises la prolongent)
+            if config.get().get("always_plan") and agent.attached_root(conv):
+                # « Toujours proposer un plan » : verrou dès le début de la tâche, levé par ton accord
+                conv["plan"] = {"status": "required", "task_id": conv["task_id"]}
     else:
         conversations.drop_trailing_assistant(conv)
         if not conv["messages"]:
             raise HTTPException(400, "Rien à régénérer.")
     conv["preset_id"] = preset["id"]
     conversations.save(conv)
-    runner = agent.run if use_agent else chat.stream
+    # Une seule boucle : sans dossier, une discussion avec des outils qui ne touchent jamais aux fichiers
     return StreamingResponse(
-        runner(conv, preset, manager.model.name),
+        agent.run(conv, preset, manager.model.name),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache"},
     )
 
 
 def _agent_root(conv):
-    """Dossier de travail si le mode Agent est actif (pour trouver les compétences du projet)."""
-    settings = (conv or {}).get("agent") or {}
-    return settings.get("workspace") if settings.get("enabled") else None
+    """Dossier attaché à la conversation (pour trouver les compétences du projet)."""
+    return agent.attached_root(conv)
+
+
+class PlanDecision(BaseModel):
+    conversation_id: str
+
+
+@app.post("/api/agent/plan/approve")
+def approve_plan(req: PlanDecision):
+    """« Approuver et exécuter » : le verrou se lève pour la tâche en cours."""
+    conv = _conversation_or_404(req.conversation_id)
+    plan = conv.get("plan") or {}
+    if plan.get("status") not in ("pending", "required"):
+        raise HTTPException(409, "Aucun plan n'attend ta décision.")
+    conv["plan"] = {"status": "approved", "task_id": conv.get("task_id")}
+    return conversations.save(conv)
+
+
+@app.post("/api/agent/plan/cancel")
+def cancel_plan(req: PlanDecision):
+    """« Abandonner le plan » : rien n'est exécuté, le verrou se lève, ton prochain message ouvre une nouvelle tâche."""
+    conv = _conversation_or_404(req.conversation_id)
+    if not agent.plan_locked(conv):
+        raise HTTPException(409, "Aucun plan n'attend ta décision.")
+    conv["plan"] = {"status": "cancelled", "task_id": conv.get("task_id")}
+    return conversations.save(conv)
 
 
 # --- Compétences ---------------------------------------------------------------------
@@ -861,13 +878,16 @@ def agent_context(conversation_id: str):
     except hooks.HookError:
         global_hooks = {}
     project = hooks.project_status(root) if root else None
-    tool_count = len(tools.TOOLS) + 1 + bool(subagents.discover(root))  # + ask_user, + delegate s'il y a des sous-agents
+    allowed = agent.allowed_tools(folder=bool(root))
+    # + ask_user et propose_plan, + delegate s'il y a des sous-agents utilisables
+    tool_count = len(allowed if allowed is not None else tools.TOOLS) + 2 + bool(subagents.usable(root))
     return {
         "usage": {**(conv.get("context") or {}), "summarized": summary.get("upto", 0) if summary.get("text") else 0,
                   "squeeze": conv.get("squeeze", 0)},
         "model": {"name": loaded.name, "state": manager.state, "engine": manager.engine, "ctx_size": load.get("ctx_size"),
                   "cache_type": load.get("cache_type") or "f16", "gpu_layers": load.get("gpu_layers")} if loaded else None,
-        "agent": {"enabled": bool(settings.get("enabled")), "workspace": root, "plan_mode": bool(settings.get("plan_mode")),
+        "agent": {"enabled": bool(root), "workspace": root, "plan": (conv.get("plan") or {}).get("status")
+                  if agent.plan_locked(conv) else None,
                   "auto_write": bool(settings.get("auto_write")), "auto_web": bool(settings.get("auto_web")),
                   "tools": tool_count},
         "memory": memory,

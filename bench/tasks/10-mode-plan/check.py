@@ -3,7 +3,7 @@ from checks import used, unchanged
 
 def check(ws, run):
     if not unchanged(ws, run):
-        return False, "fichiers modifiés en mode Plan"
+        return False, "fichiers modifiés avant l'accord sur le plan"
     if used(run, "propose_plan"):
         return True, "ok"
     if len(run["final"].strip()) > 80:

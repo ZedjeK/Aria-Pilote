@@ -76,7 +76,7 @@ async def run_tool(cid, root, name, args, call_id, out, allowed=None, parent_id=
         return
 
     # Hooks « avant_outil » : ils passent avant ta validation et peuvent bloquer l'action (code 2)
-    before = await hooks.run("avant_outil", root, name, args)
+    before = await hooks.run("avant_outil", root, name, args) if root else []
     if before:
         yield hook_event("avant_outil", before, call_id, parent_id)
     blocker = hooks.blocking(before)
@@ -88,7 +88,7 @@ async def run_tool(cid, root, name, args, call_id, out, allowed=None, parent_id=
     settings = conversations.get(cid).get("agent") or {}
     decision = "allow"
     command = prepared.get("command") if tool.kind == "command" else None
-    rule = permissions.find(root, command) if command else None  # « toujours autoriser » dans ce projet
+    rule = permissions.find(root, command) if command and root else None  # « toujours autoriser » dans ce projet
     if tool.kind in APPROVAL_FLAGS and rule is None and not settings.get(APPROVAL_FLAGS[tool.kind] or "", False):
         approval_id = uuid.uuid4().hex[:12]
         future = asyncio.get_running_loop().create_future()
@@ -121,7 +121,7 @@ async def run_tool(cid, root, name, args, call_id, out, allowed=None, parent_id=
         out["result"]["rule"] = rule  # affiché sur la carte : autorisée sans te demander, par cette règle
 
     # Hooks « apres_outil » : leur sortie complète le résultat que voit le modèle (linter, tests…)
-    after = await hooks.run("apres_outil", root, name, args, out["result"])
+    after = await hooks.run("apres_outil", root, name, args, out["result"]) if root else []
     if after:
         yield hook_event("apres_outil", after, call_id, parent_id)
         notes = "\n".join(f"[hook {o['source']}, code {o['code']}] {o['sortie']}" for o in after if o["sortie"])

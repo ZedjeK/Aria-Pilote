@@ -1,13 +1,15 @@
 """Banc d'essai de l'agent : rejoue des tâches types sur un ou plusieurs modèles et mesure leur fiabilité.
 
 Chaque tâche est un dossier de bench/tasks/ :
-    task.json   demande, mode Plan, réponses aux questions de l'agent, mots pièges
-    fixture/    fichiers de départ, copiés dans un dossier temporaire neuf à chaque passage
+    task.json   demande, réponses aux questions de l'agent, mots pièges ; "folder": false pour une pure
+                discussion (aucun dossier attaché) ; "approve_plan": false pour ne pas approuver le plan proposé
+    fixture/    fichiers de départ, copiés dans un dossier temporaire neuf à chaque passage (facultatif sans dossier)
     check.py    check(ws, run) -> (ok, raison) : vérifie le résultat réel (fichiers, tests, réponse)
                 setup(ws) facultatif : prépare le dossier après la copie
 
 Le script passe par l'API de l'appli de dev, comme l'interface (il la démarre si besoin), et joue
-ton rôle : il valide les accords, sauf les commandes qui contiennent un mot piège, et répond aux questions.
+ton rôle : il valide les accords, sauf les commandes qui contiennent un mot piège, répond aux questions
+et approuve les plans proposés (sauf si la tâche dit le contraire).
 
     py -3.11 tools/bench.py --models qwen,bonsai
     py -3.11 tools/bench.py --models qwen --tasks 2,6 --runs 3
@@ -37,6 +39,8 @@ except (OSError, ValueError):
 BASE = f"http://127.0.0.1:{_PORT}"
 ORIGIN = {"Origin": BASE}
 MAX_ANSWERS = 3  # questions de l'agent auxquelles on répond au plus, par passage
+MAX_PLANS = 2  # plans approuvés au plus, par passage
+PLAN_APPROVED = "Le plan est approuvé : exécute-le étape par étape, en tenant ton plan à jour."
 INCIDENTS = {"tourne en rond": "boucle", "Réponse coupée": "coupée", "Limite de": "limite"}
 
 sys.path.insert(0, str(BENCH))  # check.py importe les utilitaires de bench/checks.py
@@ -144,6 +148,8 @@ def stream(client, task, run, body, deadline, allow_web):
             if ev["type"] == "tool_call":
                 names[ev["call_id"]] = len(run["calls"])
                 run["calls"].append({"name": ev["name"], "args": ev["args"], "status": "running"})
+                if ev["name"] == "delegate" and (ev["args"] or {}).get("agent") == "planificateur":
+                    run["planner"] += 1
             elif ev["type"] == "tool_result" and ev["call_id"] in names:
                 call = run["calls"][names[ev["call_id"]]]
                 call["status"] = ev["status"]
@@ -177,9 +183,15 @@ def answer_for(task, question, index):
     return answers[index]
 
 
+def plan_pending(conv):
+    plan = conv.get("plan") or {}
+    return plan.get("status") == "pending" and plan.get("task_id") == conv.get("task_id")
+
+
 def run_task(client, task, args):
     ws = Path(tempfile.mkdtemp(prefix=f"aria-bench-{task['number']:02d}-"))
-    shutil.copytree(task["dir"] / "fixture", ws, dirs_exist_ok=True)
+    if (task["dir"] / "fixture").is_dir():
+        shutil.copytree(task["dir"] / "fixture", ws, dirs_exist_ok=True)
     if hasattr(task["check"], "setup"):
         task["check"].setup(ws)
     snapshot = Path(tempfile.mkdtemp(prefix="aria-bench-ref-"))
@@ -187,25 +199,35 @@ def run_task(client, task, args):
 
     conv = client.post("/api/conversations", json={}).json()
     cid = conv["id"]
-    client.patch(f"/api/conversations/{cid}", json={
-        "title": f"[banc] {task['name']}",
-        "agent": {"enabled": True, "workspace": str(ws), "plan_mode": bool(task.get("plan_mode"))},
-    })
+    patch = {"title": f"[banc] {task['name']}"}
+    if task.get("folder", True):  # le dossier attaché donne les outils de fichiers ; sans lui, une discussion
+        patch["agent"] = {"enabled": True, "workspace": str(ws)}
+    client.patch(f"/api/conversations/{cid}", json=patch)
     run = {"calls": [], "sub_calls": [], "questions": [], "errors": [], "traps": [], "web_denied": 0,
-           "final": "", "start": snapshot}
+           "final": "", "start": snapshot, "plans": 0, "planner": 0}
     started = time.time()
     deadline = started + args.timeout
     body = {"conversation_id": cid, "content": task["prompt"]}
     if args.preset:
         body["preset_id"] = args.preset
     stream(client, task, run, body, deadline, args.web)
-    while time.time() < deadline and len(run["questions"]) < MAX_ANSWERS:
-        question = pending_question(client.get(f"/api/conversations/{cid}").json())
-        if question is None:
+    while time.time() < deadline:
+        current = client.get(f"/api/conversations/{cid}").json()
+        question = pending_question(current)
+        if question is not None and len(run["questions"]) < MAX_ANSWERS:
+            answer = answer_for(task, question, len(run["questions"]))
+            run["questions"].append({**question["args"], "answer": answer})
+            stream(client, task, run, {"conversation_id": cid, "answer": answer}, deadline, args.web)
+        elif plan_pending(current):
+            run["plans"] += 1
+            if not task.get("approve_plan", True) or run["plans"] > MAX_PLANS:
+                break
+            # Comme le bouton « Approuver et exécuter » : le verrou se lève, la même tâche continue
+            client.post("/api/agent/plan/approve", json={"conversation_id": cid}, headers=ORIGIN)
+            stream(client, task, run, {"conversation_id": cid, "content": PLAN_APPROVED, "continue_task": True},
+                   deadline, args.web)
+        else:
             break
-        answer = answer_for(task, question, len(run["questions"]))
-        run["questions"].append({**question["args"], "answer": answer})
-        stream(client, task, run, {"conversation_id": cid, "answer": answer}, deadline, args.web)
     duration = time.time() - started
 
     conv = client.get(f"/api/conversations/{cid}").json()
@@ -227,6 +249,7 @@ def run_task(client, task, args):
         "task": task["name"], "ok": bool(ok), "reason": reason, "duration_s": round(duration, 1),
         "calls": len(run["calls"]), "sub_calls": len(run["sub_calls"]), "tokens": tokens,
         "tools": [c["name"] for c in run["calls"]], "questions": run["questions"],
+        "plans": run["plans"], "planner": run["planner"],
         "incidents": incidents, "errors": run["errors"], "traps": run["traps"], "final": run["final"][:3000],
         "workspace": str(ws) if args.keep else None,
     }
@@ -263,6 +286,10 @@ def print_model(name, tasks, before):
         print(f"{task:<28} {rate:>7.0%}{delta:<2}{mean('calls'):>6.1f} {mean('duration_s'):>6.0f}s"
               f" {mean('tokens'):>7.0f}  {note[:70]}")
     print(f"{'score':<28} {total:>6.1f}/{len(tasks)}")
+    runs = [p for passes in tasks.values() for p in passes]
+    plans = sum(p.get("plans", 0) for p in runs)
+    planner = sum(p.get("planner", 0) for p in runs)
+    print(f"plans proposés : {plans} · délégations au planificateur : {planner}")
 
 
 def main():

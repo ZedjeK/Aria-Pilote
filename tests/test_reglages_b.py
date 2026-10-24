@@ -36,27 +36,24 @@ class Behaviour(unittest.TestCase):
         self.assertEqual(self.put({"web": {"results": 50}}).status_code, 422)
         self.assertEqual(self.put({"web": {"language": "klingon"}}).status_code, 400)
         self.assertEqual(self.put({"new_conversation": {"workspace": str(HOME / "nulle-part")}}).status_code, 400)
-        # Agent d'office sans dossier : refusé
-        self.assertEqual(self.put({"new_conversation": {"enabled": True}}).status_code, 400)
         cfg = self.put({"max_tool_calls": 40, "web": {"language": "fr"}}).json()
         self.assertEqual((cfg["max_tool_calls"], cfg["web"]["language"], cfg["web"]["results"]), (40, "fr", 8))
 
-    def test_nouvelle_conversation_prend_les_reglages_de_depart(self):
-        cfg = self.put({"new_conversation": {"workspace": str(self.root), "enabled": True, "plan_mode": True,
-                                             "auto_web": True}}).json()
+    def test_le_dossier_propose_ne_s_attache_jamais_tout_seul(self):
+        cfg = self.put({"new_conversation": {"workspace": str(self.root), "enabled": True, "auto_web": True}}).json()
         self.assertEqual(cfg["new_conversation"]["workspace"], str(self.root.resolve()))
+        self.assertNotIn("enabled", cfg["new_conversation"])  # « attaché d'office » n'existe plus
         conv = self.api.post("/api/conversations", json={}, headers=ORIGIN).json()
-        self.assertEqual(conv["agent"], {"enabled": True, "workspace": str(self.root.resolve()), "plan_mode": True,
-                                         "auto_web": True, "auto_write": False})  # jamais d'écriture d'office
+        self.assertEqual(conv["agent"], {"enabled": False, "workspace": None, "auto_web": True, "auto_write": False})
 
-    def test_dossier_par_defaut_disparu(self):
-        config.update({"new_conversation": {"workspace": str(HOME / "efface"), "enabled": True}})
+    def test_dossier_propose_disparu(self):
+        config.update({"new_conversation": {"workspace": str(HOME / "efface")}})
         conv = self.api.post("/api/conversations", json={}, headers=ORIGIN).json()
-        self.assertNotIn("agent", conv)  # ignoré sans erreur : la conversation se crée quand même
+        self.assertNotIn("agent", conv)  # la conversation se crée quand même
 
     def test_reglages_explicites_du_chat(self):
         conv = self.api.post("/api/conversations", headers=ORIGIN,
-                             json={"agent": {"enabled": True, "workspace": str(self.root), "plan_mode": False}}).json()
+                             json={"agent": {"enabled": True, "workspace": str(self.root)}}).json()
         self.assertTrue(conv["agent"]["enabled"])
         bad = self.api.post("/api/conversations", headers=ORIGIN,
                             json={"agent": {"enabled": True, "workspace": str(HOME / "nulle-part")}})
@@ -71,17 +68,17 @@ class WebSwitch(unittest.TestCase):
 
     def test_web_coupe_retire_les_outils(self):
         config.update({"web": {"enabled": False}})
-        allowed = agent.allowed_tools(plan_mode=False)
+        allowed = agent.allowed_tools(folder=True)
         self.assertNotIn("web_search", allowed)
         self.assertNotIn("web_fetch", allowed)
         self.assertIn("read_file", allowed)
-        self.assertNotIn("web_search", agent.allowed_tools(plan_mode=True))
+        self.assertEqual(agent.allowed_tools(folder=False), ["load_skill"])
         self.assertNotIn("chercheur-web", subagents.usable())  # il n'a que des outils web
-        self.assertIn("explorateur", subagents.usable())
+        self.assertIn("explorateur", subagents.usable(str(HOME)))  # avec un dossier attaché
         self.assertIn(agent.WEB_RULE_OFF, agent._system_prompt({}, str(HOME), None))
 
     def test_web_actif_par_defaut(self):
-        self.assertIsNone(agent.allowed_tools(plan_mode=False))
+        self.assertIsNone(agent.allowed_tools(folder=True))
         self.assertIn("chercheur-web", subagents.usable())
         self.assertIn("web_search et web_fetch", agent._system_prompt({}, str(HOME), None))
         self.assertEqual(tools.TOOLS["web_search"].kind, "web")
