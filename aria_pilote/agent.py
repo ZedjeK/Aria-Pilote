@@ -50,7 +50,8 @@ TODO_RULE = """- Pour une tâche en plusieurs étapes, commence par update_todo 
 # Sans dossier attaché : une discussion, avec quelques outils qui ne touchent jamais aux fichiers
 DISCUSSION_PROMPT = """Outils disponibles dans cette conversation : load_skill (charger une compétence), ask_user (poser une question),
 propose_plan (soumettre un plan){extra}.
-- Pour une simple conversation ou une question, réponds directement : n'appelle un outil que s'il est vraiment utile.
+- Pour une simple conversation ou une question rapide, réponds directement. Pour une vraie demande (du code, un
+  plan, un texte à écrire, une explication, un choix…), charge d'abord la compétence qui y correspond (liste plus bas).
 - Tu n'as accès à aucun fichier de l'utilisateur. S'il veut que tu travailles dans ses fichiers, dis-lui d'attacher
   un dossier à la conversation (bouton « Attacher un dossier »).
 {web_rule}

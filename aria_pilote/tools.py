@@ -694,8 +694,8 @@ TOOLS = {t.name: t for t in [
     ),
     Tool(
         "load_skill", "read",
-        "Charge les instructions d'une compétence (voir la liste des compétences disponibles), "
-        "ou un de ses fichiers d'appoint avec le paramètre file.",
+        "Charge la méthode d'une compétence (voir la liste des compétences) : à appeler avant de répondre à une "
+        "demande qui y correspond. Avec le paramètre file, un de ses fichiers d'appoint.",
         _schema({
             "name": {"type": "string", "description": "Nom de la compétence."},
             "file": {"type": "string", "description": "Fichier d'appoint de la compétence (facultatif)."},

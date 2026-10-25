@@ -11,6 +11,7 @@ Trois emplacements, du plus prioritaire au moins prioritaire :
 """
 
 import re
+import unicodedata
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -89,8 +90,15 @@ def discover(root=None):
     return dict(sorted(found.items()))
 
 
+def normalize(name):
+    """« Créatif », « creatif », « Revue code » -> nom de dossier (les petits modèles remettent parfois l'accent)."""
+    plain = unicodedata.normalize("NFKD", name or "").encode("ascii", "ignore").decode()
+    return "-".join(plain.lower().split())
+
+
 def get(name, root=None):
-    skill = discover(root).get(name)
+    found = discover(root)
+    skill = found.get(name) or found.get(normalize(name))
     if skill is None:
         raise SkillError(f"Compétence inconnue : {name}.")
     return skill
