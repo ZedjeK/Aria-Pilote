@@ -87,6 +87,10 @@ class SelectionTest(unittest.TestCase):
         self.assertIn("- dev : ", section)
         self.assertIn("Objectif : Du code qui fonctionne", section)
 
+    def test_nom_avec_accent_ou_majuscule(self):
+        self.assertEqual(skills.get("créatif").name, "creatif")
+        self.assertEqual(skills.get("Revue code").name, "revue-code")
+
     def test_registre_suggere_si_le_persona_ne_dit_rien(self):
         p = {"registers": {"discussion": "naturel", "dev": "naturel"}}
         self.assertEqual(persona.register_for(p, "dev"), "naturel")  # réglé dans le persona

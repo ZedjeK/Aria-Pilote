@@ -2,8 +2,10 @@ from checks import missing
 
 
 def check(ws, run):
-    if run["calls"]:
-        return False, "outils inutiles : " + ", ".join(c["name"] for c in run["calls"])
+    # Charger une compétence (prof, securite…) est le comportement voulu depuis le chantier 3 ; tout autre outil est de trop
+    useless = [c["name"] for c in run["calls"] if c["name"] != "load_skill"]
+    if useless:
+        return False, "outils inutiles : " + ", ".join(useless)
     if len(run["final"].strip()) < 80:
         return False, "réponse vide ou trop courte"
     absent = missing(run, "VLAN")
