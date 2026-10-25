@@ -8,7 +8,7 @@ from . import chat, conversations, hooks, permissions, tools
 
 # Types d'outils soumis à accord, et le drapeau qui les autorise pour toute la conversation
 # (None : jamais d'autorisation globale)
-APPROVAL_FLAGS = {"write": "auto_write", "web": "auto_web", "command": None}
+APPROVAL_FLAGS = {"write": "auto_write", "web": "auto_web", "command": None, "screen_action": None}
 
 # Accords en attente : approval_id -> (future, conversation_id, type d'outil, dossier de travail, commande)
 _approvals = {}
@@ -36,7 +36,7 @@ def resolve_approval(approval_id, decision, rule=None):
     if decision == "allow_session":
         flag = APPROVAL_FLAGS[kind]
         if flag is None:
-            raise ApprovalError("Les commandes se valident une par une.")
+            raise ApprovalError("Cette action se valide une à une.")
         conversations.update(cid, lambda c: c.setdefault("agent", {}).update({flag: True}))
     if not future.done():
         future.set_result("deny" if decision == "deny" else "allow")
@@ -68,6 +68,8 @@ async def run_tool(cid, root, name, args, call_id, out, allowed=None, parent_id=
         return
     try:
         prepared = await asyncio.to_thread(tool.prepare, root, args)
+        if tool.bind:
+            prepared = await asyncio.to_thread(tool.bind, prepared, cid)
     except tools.ToolError as exc:
         out["result"] = {"status": "error", "output": str(exc)}
         return

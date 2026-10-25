@@ -943,7 +943,7 @@ function toolNode(m, pendingPlan = false, activeQuestion = false) {
 
 function diffNode(text, kind) {
     const pre = el("pre", { className: "diff" });
-    if (kind === "command") {
+    if (kind === "command" || kind === "screen_action") {
         pre.textContent = text;
         return pre;
     }
@@ -963,6 +963,7 @@ function approvalNode(ev) {
         command: "L'agent veut exécuter cette commande PowerShell :",
         web: "L'agent veut accéder au web :",
         write: `L'agent veut modifier ${ev.path} :`,
+        screen_action: "🖱 L'agent veut agir sur ton écran (une action à l'écran ne s'annule pas) :",
     }[ev.kind];
     const buttons = el("div", { className: "row" });
     const decide = async (decision, label, rule = null) => {

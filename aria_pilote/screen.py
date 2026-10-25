@@ -344,3 +344,177 @@ def draw_marks(image, elements, origin, scale):
         draw.rectangle((lx, ly, lx + tw + 6, ly + th + 4), fill=color)
         draw.text((lx + 3, ly + 1), label, fill=(255, 255, 255), font=font)
     return image
+
+
+# --- Actions (étape 4C) -------------------------------------------------------------------
+# Chaque action part de ce que le modèle a observé (numéro d'élément ou point de la capture) et passe par
+# SendInput, comme une vraie souris et un vrai clavier. Nos entrées portent une marque (dwExtraInfo) : l'étape 4D
+# s'en servira pour reconnaître les tiennes et mettre l'agent en pause dès que tu reprends la main.
+
+ARIA_INPUT = 0xA51A
+SETTLE_S = 0.6  # le temps que la fenêtre réagisse avant la nouvelle observation
+MAX_TEXT = 2000
+MAX_WAIT_S = 10
+OWN_WINDOW = "aria pilote"  # l'agent n'agit jamais sur la fenêtre qui affiche ses propres accords
+KEYS = {
+    "ctrl": 0x11, "control": 0x11, "maj": 0x10, "shift": 0x10, "alt": 0x12, "altgr": 0xA5, "win": 0x5B,
+    "entree": 0x0D, "enter": 0x0D, "echap": 0x1B, "esc": 0x1B, "escape": 0x1B, "tab": 0x09, "espace": 0x20,
+    "space": 0x20, "retour": 0x08, "backspace": 0x08, "suppr": 0x2E, "delete": 0x2E, "del": 0x2E, "inser": 0x2D,
+    "insert": 0x2D, "haut": 0x26, "up": 0x26, "bas": 0x28, "down": 0x28, "gauche": 0x25, "left": 0x25,
+    "droite": 0x27, "right": 0x27, "debut": 0x24, "home": 0x24, "fin": 0x23, "end": 0x23, "pagehaut": 0x21,
+    "pageup": 0x21, "pagebas": 0x22, "pagedown": 0x22, "menu": 0x5D, "apps": 0x5D,
+}
+EXTENDED = {0x21, 0x22, 0x23, 0x24, 0x25, 0x26, 0x27, 0x28, 0x2D, 0x2E, 0x5B, 0x5D, 0xA5}
+MODIFIERS = {0x10, 0x11, 0x12, 0x5B, 0xA5}
+
+if sys.platform == "win32":
+    class MOUSEINPUT(ctypes.Structure):
+        _fields_ = [("dx", wt.LONG), ("dy", wt.LONG), ("mouseData", wt.DWORD), ("dwFlags", wt.DWORD),
+                    ("time", wt.DWORD), ("dwExtraInfo", ctypes.c_size_t)]
+
+    class KEYBDINPUT(ctypes.Structure):
+        _fields_ = [("wVk", wt.WORD), ("wScan", wt.WORD), ("dwFlags", wt.DWORD), ("time", wt.DWORD),
+                    ("dwExtraInfo", ctypes.c_size_t)]
+
+    class _INPUTUNION(ctypes.Union):
+        _fields_ = [("mi", MOUSEINPUT), ("ki", KEYBDINPUT)]
+
+    class INPUT(ctypes.Structure):
+        _fields_ = [("type", wt.DWORD), ("u", _INPUTUNION)]
+
+    user32.SendInput.argtypes = [wt.UINT, ctypes.POINTER(INPUT), ctypes.c_int]
+    user32.WindowFromPoint.argtypes = [wt.POINT]
+    user32.WindowFromPoint.restype = wt.HWND
+    user32.GetAncestor.argtypes = [wt.HWND, wt.UINT]
+    user32.GetAncestor.restype = wt.HWND
+    user32.GetForegroundWindow.restype = wt.HWND
+
+
+def _send(*inputs):
+    array = (INPUT * len(inputs))(*inputs)
+    if user32.SendInput(len(inputs), array, ctypes.sizeof(INPUT)) != len(inputs):
+        raise ScreenError("Windows a bloqué l'action (fenêtre d'un programme lancé en administrateur ?).")
+
+
+def _mouse(flags, data=0):
+    return INPUT(type=0, u=_INPUTUNION(mi=MOUSEINPUT(0, 0, data & 0xFFFFFFFF, flags, 0, ARIA_INPUT)))
+
+
+def _key(vk, up=False):
+    flags = (0x2 if up else 0) | (0x1 if vk in EXTENDED else 0)
+    return INPUT(type=1, u=_INPUTUNION(ki=KEYBDINPUT(vk, 0, flags, 0, ARIA_INPUT)))
+
+
+def _char(ch, up=False):
+    return INPUT(type=1, u=_INPUTUNION(ki=KEYBDINPUT(0, ord(ch), 0x4 | (0x2 if up else 0), 0, ARIA_INPUT)))
+
+
+def parse_keys(spec):
+    """« ctrl+s », « Maj+Tab », « entrée », « F5 » -> codes de touches (modificateurs d'abord)."""
+    import unicodedata
+    plain = unicodedata.normalize("NFKD", spec or "").encode("ascii", "ignore").decode().lower()
+    parts = [p.strip() for p in plain.replace(" ", "").split("+") if p.strip()]
+    if not parts:
+        raise ScreenError("Quelles touches ? Par exemple « ctrl+s », « entree » ou « alt+tab ».")
+    codes = []
+    for part in parts:
+        if part in KEYS:
+            codes.append(KEYS[part])
+        elif len(part) == 1 and part.isalnum():
+            codes.append(ord(part.upper()))
+        elif part.startswith("f") and part[1:].isdigit() and 1 <= int(part[1:]) <= 24:
+            codes.append(0x6F + int(part[1:]))
+        else:
+            raise ScreenError(f"Touche inconnue : « {part} ».")
+    return codes
+
+
+def press(spec):
+    codes = parse_keys(spec)
+    _send(*[_key(c) for c in codes], *[_key(c, up=True) for c in reversed(codes)])
+
+
+def type_text(text):
+    """Texte tapé caractère par caractère (Unicode : accents et symboles compris), Entrée pour les retours à la ligne."""
+    if len(text) > MAX_TEXT:
+        raise ScreenError(f"Texte trop long pour être tapé : {MAX_TEXT} caractères au plus.")
+    for ch in text.replace("\r\n", "\n"):
+        if ch == "\n":
+            _send(_key(0x0D), _key(0x0D, up=True))
+        else:
+            _send(_char(ch), _char(ch, up=True))
+        time.sleep(0.004)  # certaines applis perdent des lettres tapées trop vite
+
+
+def _move(x, y):
+    if not user32.SetCursorPos(int(x), int(y)):
+        raise ScreenError("Impossible de placer la souris à cet endroit.")
+
+
+def click(x, y, button="gauche", double=False):
+    down, up = {"gauche": (0x2, 0x4), "droit": (0x8, 0x10)}[button]
+    _move(x, y)
+    time.sleep(0.05)
+    for _ in range(2 if double else 1):
+        _send(_mouse(down), _mouse(up))
+        time.sleep(0.05)
+
+
+def scroll(x, y, direction, amount):
+    _move(x, y)
+    sign = 1 if direction in ("haut", "droite") else -1
+    flag = 0x01000 if direction in ("gauche", "droite") else 0x0800  # MOUSEEVENTF_HWHEEL / WHEEL
+    for _ in range(amount):
+        _send(_mouse(flag, sign * 120))
+        time.sleep(0.03)
+
+
+def drag(x0, y0, x1, y1):
+    _move(x0, y0)
+    _send(_mouse(0x2))
+    try:
+        for step in range(1, 11):
+            _move(x0 + (x1 - x0) * step / 10, y0 + (y1 - y0) * step / 10)
+            time.sleep(0.02)
+    finally:
+        _send(_mouse(0x4))
+
+
+def is_own_window(window):
+    return OWN_WINDOW in window["titre"].lower() or window["processus"].lower().startswith("aria-pilote")
+
+
+def owner_at(x, y):
+    """Fenêtre principale sous ce point de l'écran."""
+    hwnd = user32.WindowFromPoint(wt.POINT(int(x), int(y)))
+    return int(user32.GetAncestor(hwnd, 2) or 0) if hwnd else 0  # GA_ROOT
+
+
+def bring_to_front(hwnd):
+    """Met la fenêtre au premier plan avant d'y cliquer ou d'y taper (Windows le refuse souvent à un programme en
+    arrière-plan : on emprunte la file d'entrée de la fenêtre active le temps de la demande)."""
+    if int(user32.GetForegroundWindow() or 0) == hwnd:
+        return True
+    current = kernel32.GetCurrentThreadId()
+    target = user32.GetWindowThreadProcessId(wt.HWND(user32.GetForegroundWindow()), None)
+    attached = target and target != current and user32.AttachThreadInput(current, target, True)
+    try:
+        user32.BringWindowToTop(wt.HWND(hwnd))
+        user32.SetForegroundWindow(wt.HWND(hwnd))
+    finally:
+        if attached:
+            user32.AttachThreadInput(current, target, False)
+    for _ in range(20):
+        if int(user32.GetForegroundWindow() or 0) == hwnd:
+            return True
+        time.sleep(0.025)
+    return False
+
+
+def focused_is_password():
+    import uiautomation as auto
+    with auto.UIAutomationInitializerInThread():
+        try:
+            return bool(auto.GetFocusedControl().IsPassword)
+        except Exception:
+            return False

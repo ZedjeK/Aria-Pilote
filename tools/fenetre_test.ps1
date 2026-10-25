@@ -50,5 +50,7 @@ $cancel.Text = "Annuler"; $cancel.Location = New-Object System.Drawing.Point(390
 $off = New-Object System.Windows.Forms.Button
 $off.Text = "Exporter"; $off.Enabled = $false; $off.Location = New-Object System.Drawing.Point(20, 230); $off.Width = 100
 
+$cancel.Add_Click({ $form.Close() })
+$retry.Add_Click({ $label.Text = "Nouvel essai en cours..." })
 $form.Controls.AddRange(@($label, $nameLabel, $name, $pwdLabel, $pwd, $check, $retry, $cancel, $off))
 [System.Windows.Forms.Application]::Run($form)
