@@ -356,6 +356,15 @@ SETTLE_S = 0.6  # le temps que la fenêtre réagisse avant la nouvelle observati
 MAX_TEXT = 2000
 MAX_WAIT_S = 10
 OWN_WINDOW = "aria pilote"  # l'agent n'agit jamais sur la fenêtre qui affiche ses propres accords
+# Applis jamais observables ni actionnables, quoi que l'utilisateur autorise : réglages et sécurité du système,
+# et les terminaux (l'agent a déjà run_command et ses propres accords pour ça)
+DENIED_PROCESSES = frozenset({
+    "systemsettings.exe", "regedit.exe", "taskmgr.exe", "mmc.exe", "useraccountcontrolsettings.exe",
+    "lsass.exe", "consent.exe", "sechealthui.exe", "cmd.exe", "powershell.exe", "pwsh.exe",
+    "windowsterminal.exe", "conhost.exe", "openconsole.exe",
+})
+DENIED_TITLES = ("paramètres", "panneau de configuration", "sécurité windows", "windows security",
+                 "contrôle de compte d'utilisateur", "user account control", "gestionnaire des tâches")
 KEYS = {
     "ctrl": 0x11, "control": 0x11, "maj": 0x10, "shift": 0x10, "alt": 0x12, "altgr": 0xA5, "win": 0x5B,
     "entree": 0x0D, "enter": 0x0D, "echap": 0x1B, "esc": 0x1B, "escape": 0x1B, "tab": 0x09, "espace": 0x20,
@@ -482,6 +491,34 @@ def drag(x0, y0, x1, y1):
 
 def is_own_window(window):
     return OWN_WINDOW in window["titre"].lower() or window["processus"].lower().startswith("aria-pilote")
+
+
+def is_denied(window):
+    """Appli interdite d'office (réglages, sécurité, terminal) : jamais observable ni actionnable."""
+    titre = window["titre"].lower()
+    return (window["processus"].lower() in DENIED_PROCESSES or is_own_window(window)
+            or any(t in titre for t in DENIED_TITLES))
+
+
+def allowed_windows(listed, allow):
+    """Fenêtres que l'agent a le droit de voir : jamais les interdites ; si `allow` est une liste (même vide), seuls
+    ces programmes (la liste que l'utilisateur a cochée dans « Prendre la main ») ; `allow` à None = toutes les non
+    interdites."""
+    usable = [w for w in listed if not is_denied(w)]
+    if allow is None:
+        return usable
+    allow = {p.lower() for p in allow}
+    return [w for w in usable if w["processus"].lower() in allow]
+
+
+def ensure_allowed(window, allow):
+    """Lève une erreur claire si la fenêtre visée est interdite ou hors de la liste autorisée."""
+    if is_denied(window):
+        raise ScreenError(f"La fenêtre « {window['titre']} » fait partie des applis que je ne touche jamais "
+                          "(réglages système, sécurité ou terminal).")
+    if allow is not None and window["processus"].lower() not in {p.lower() for p in allow}:
+        raise ScreenError(f"La fenêtre « {window['titre']} » n'est pas dans celles que tu m'as autorisées. "
+                          "Ajoute-la avec « Prendre la main » si tu veux que j'y agisse.")
 
 
 def owner_at(x, y):

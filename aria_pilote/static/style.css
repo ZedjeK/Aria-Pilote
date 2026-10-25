@@ -398,6 +398,11 @@ button.danger-text { color: var(--err); }
 /* --- Agent --- */
 
 .agent-bar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.screen-banner { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin: 6px 0; padding: 8px 12px;
+    border: 1px solid var(--accent-2); border-radius: 8px; background: color-mix(in srgb, var(--accent-2) 12%, transparent);
+    font-size: 13px; }
+.screen-banner span { flex: 1; min-width: 0; }
+#btn-screen.attached { border-color: var(--accent-2); color: var(--accent); }
 .agent-bar .check-line { margin: 0; }
 .agent-bar #agent-root { flex: 1; min-width: 220px; font-size: 12px; }
 .folder-chip { font-family: var(--mono); font-size: 12px; max-width: 420px; overflow: hidden; text-overflow: ellipsis;

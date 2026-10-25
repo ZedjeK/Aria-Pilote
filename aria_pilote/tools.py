@@ -545,6 +545,21 @@ def prepare_screen(root, args):
     return {"fenetre": str(args.get("fenetre") or "").strip()}
 
 
+def _screen_allow(cid):
+    """Programmes que l'utilisateur a autorisés pour cette conversation (« Prendre la main »), ou None = tous."""
+    allow = (conversations.get(cid) or {}).get("screen_allow")
+    return allow if isinstance(allow, list) else None
+
+
+MAX_SCREEN_ACTIONS = 40  # actions à l'écran au plus par tâche : au-delà, l'agent s'arrête et rend compte
+
+
+def _screen_action_count(cid):
+    conv = conversations.get(cid) or {}
+    return sum(1 for m in conv.get("messages", [])
+               if m.get("name") == "agir_ecran" and m.get("status") == "ok" and m.get("task_id") == conv.get("task_id"))
+
+
 def _remember_screen(cid, window, elements, capture=None):
     """Ce que le modèle a vu en dernier : agir_ecran ne vise que cette fenêtre, ses numéros et sa capture."""
     state = {"window": window["id"] if window else None, "title": window["titre"] if window else None,
@@ -574,10 +589,12 @@ def _observe(cid, window, capture):
 
 def _read_window(spec, cid):
     try:
-        listed = screen.windows()
+        listed = screen.allowed_windows(screen.windows(), _screen_allow(cid))
         if not spec:
             return _ok(screen.describe_windows(listed))
-        text, _ = _observe(cid, screen.find(spec, listed), capture=False)
+        window = screen.find(spec, listed)
+        screen.ensure_allowed(window, _screen_allow(cid))
+        text, _ = _observe(cid, window, capture=False)
     except screen.ScreenError as exc:
         raise ToolError(str(exc))
     return _ok(_truncate(text))
@@ -585,9 +602,14 @@ def _read_window(spec, cid):
 
 def _see_screen(spec, cid):
     try:
-        listed = screen.windows()
+        listed = screen.allowed_windows(screen.windows(), _screen_allow(cid))
         if spec:
-            text, shots = _observe(cid, screen.find(spec, listed), capture=True)
+            window = screen.find(spec, listed)
+            screen.ensure_allowed(window, _screen_allow(cid))
+            text, shots = _observe(cid, window, capture=True)
+        elif _screen_allow(cid) is not None:
+            raise ToolError("Tu m'as limité à certaines fenêtres : donne le nom d'une de ces fenêtres à voir_ecran, "
+                            "je ne capture pas tout l'écran dans ce cas.")
         else:
             image, origin = screen.capture_screen()
             small, scale = screen.fit(image, images.MAX_SIDE)
@@ -654,8 +676,8 @@ def prepare_screen_action(root, args):
     return p
 
 
-def _target_window(state):
-    """La fenêtre observée en dernier, telle qu'elle est maintenant : refus si elle a changé depuis."""
+def _target_window(state, _allow=None):
+    """La fenêtre observée en dernier, telle qu'elle est maintenant : refus si elle a changé ou n'est pas autorisée."""
     if not state or not state.get("window"):
         raise ToolError("Observe d'abord la fenêtre où agir (lire_fenetre ou voir_ecran avec son nom) : "
                         "je n'agis que sur ce que tu as vu.")
@@ -663,8 +685,10 @@ def _target_window(state):
         window = screen.find(str(state["window"]))
     except screen.ScreenError:
         raise ToolError(f"La fenêtre « {state['title']} » n'existe plus : observe à nouveau.")
-    if screen.is_own_window(window):
-        raise ToolError("Je n'agis jamais sur la fenêtre d'Aria Pilote : c'est là que l'utilisateur valide mes actions.")
+    try:
+        screen.ensure_allowed(window, _allow)  # interdite d'office, ou hors de la liste autorisée
+    except screen.ScreenError as exc:
+        raise ToolError(str(exc))
     if window["reduite"]:
         raise ToolError(f"La fenêtre « {window['titre']} » est réduite : demande à l'utilisateur de la rouvrir.")
     if list(window["rect"]) != list(state["rect"]):
@@ -697,10 +721,32 @@ def _label(found, x, y):
     return f"le point ({x:.0f}, {y:.0f}) de la capture"
 
 
+SENSITIVE_WORDS = ("envoyer", "send", "envoi", "payer", "pay", "paiement", "acheter", "buy", "commander", "order",
+                   "supprimer", "delete", "effacer", "remove", "publier", "publish", "poster", "confirmer", "confirm",
+                   "valider", "soumettre", "submit", "transf", "virement", "s'abonner", "subscribe")
+
+
+def _is_sensitive(name):
+    low = " ".join(str(name or "").split()).lower()
+    return any(word in low for word in SENSITIVE_WORDS)
+
+
+def _last_screen_preview(cid):
+    """Première ligne de l'aperçu de la dernière action à l'écran de la tâche (pour repérer une action répétée)."""
+    conv = conversations.get(cid) or {}
+    for m in reversed(conv.get("messages", [])):
+        if m.get("name") == "agir_ecran" and m.get("task_id") == conv.get("task_id") and m.get("status") == "ok":
+            return (m.get("content") or "").removeprefix("Fait : ").split(".", 1)[0]
+    return None
+
+
 def bind_screen_action(prepared, cid):
     """Cible résolue sur la dernière observation de la conversation, et l'aperçu montré dans la demande d'accord."""
+    if _screen_action_count(cid) >= MAX_SCREEN_ACTIONS:
+        raise ToolError(f"J'ai déjà fait {MAX_SCREEN_ACTIONS} actions à l'écran dans cette tâche : je m'arrête et je "
+                        "te rends compte. Relance-moi si tu veux que je continue.")
     state = (conversations.get(cid) or {}).get("screen_state")
-    window = _target_window(state)
+    window = _target_window(state, _screen_allow(cid))
     p = dict(prepared)
     action = p["action"]
     found = to_found = None
@@ -729,13 +775,21 @@ def bind_screen_action(prepared, cid):
                                                    else f"le point ({p['vers_x'] or 0:.0f}, {p['vers_y'] or 0:.0f})"),
     }
     p["window"] = window
-    p["preview"] = f"{previews[action]}\nFenêtre : « {window['titre']} » ({window['processus']})"
+    first = previews[action]
+    warnings = []
+    # Bouton sensible : une action difficile à défaire (envoi, paiement, suppression, publication…)
+    if action in ("cliquer", "double_clic") and found and _is_sensitive(found.get("nom")):
+        warnings.append("⚠ Ce bouton déclenche une action difficile à défaire (envoi, paiement, suppression…).")
+    # Action identique à la précédente : signe que l'agent insiste alors que rien ne bouge
+    if first == _last_screen_preview(cid):
+        warnings.append("⚠ Même action que la précédente : la fenêtre n'a peut-être pas réagi comme prévu.")
+    p["preview"] = "\n".join([first, *warnings, f"Fenêtre : « {window['titre']} » ({window['processus']})"])
     return p
 
 
 def _act(p, cid):
     state = (conversations.get(cid) or {}).get("screen_state")
-    window = _target_window(state)  # de nouveau : du temps a passé pendant ta décision
+    window = _target_window(state, _screen_allow(cid))  # de nouveau : du temps a passé pendant ta décision
     hwnd = window["id"]
     screen.bring_to_front(hwnd)
     for point in [pt for pt in (p.get("point"), p.get("to")) if pt]:

@@ -43,8 +43,10 @@
                 <input id="agent-root" class="mono" placeholder="Chemin du dossier, ex. C:\Users\zeman\Desktop\mon-projet" hidden>
                 <button id="btn-agent-root" class="ghost" hidden>Attacher</button>
                 <button id="btn-rules" class="ghost" title="Commandes toujours autorisées dans ce projet" hidden>Règles</button>
+                <button id="btn-screen" class="ghost" title="Laisser l'agent voir l'écran et agir dans les fenêtres que tu choisis" hidden>🖱 Prendre la main</button>
                 <span id="agent-info" class="muted small"></span>
             </div>
+            <div id="screen-banner" class="screen-banner" hidden></div>
             <div id="hooks-banner" hidden></div>
             <div id="messages" class="messages"></div>
             <p id="chat-error" class="error" hidden></p>
@@ -607,6 +609,10 @@ py -3.11 tools/build_portable.py</pre>
                         <div><div class="set-label">Vérifier la syntaxe après chaque écriture</div><div class="muted small">Python, JSON, YAML, TOML, XML, PowerShell : vérifiés sans être exécutés</div></div>
                         <input type="checkbox" class="switch" data-config="auto_check">
                     </label>
+                    <label class="set-row">
+                        <div><div class="set-label">Contrôle du PC (expérimental)</div><div class="muted small">Autorise l'agent à voir l'écran et à cliquer ou taper dans les fenêtres que tu choisis, avec ton accord à chaque action. Reste à activer conversation par conversation avec « Prendre la main ». Réglages système, sécurité et terminaux sont toujours exclus.</div></div>
+                        <input type="checkbox" class="switch" data-config="screen_control">
+                    </label>
                 </div>
             </section>
 
@@ -833,6 +839,20 @@ py -3.11 tools/build_portable.py</pre>
         <p class="muted small">Clique sur une compétence pour l'ajouter à ton message (« /nom » au début). En mode Agent,
             il les charge aussi tout seul quand une tâche y correspond.</p>
         <ul id="skills-list" class="skills-list"></ul>
+    </dialog>
+
+    <dialog id="screen-dialog" class="skills-dialog">
+        <div class="skills-head">
+            <h2>🖱 Prendre la main</h2>
+            <button id="btn-screen-close" class="ghost">Fermer</button>
+        </div>
+        <p class="muted small">Coche les fenêtres où l'agent pourra voir et agir, avec ton accord à chaque action. Les
+            autres restent hors de sa portée. Les réglages système, la sécurité et les terminaux sont toujours exclus.</p>
+        <ul id="screen-windows" class="skills-list"></ul>
+        <p id="screen-dialog-error" class="error" hidden></p>
+        <div class="row">
+            <button id="btn-screen-confirm" class="primary">Autoriser ces fenêtres</button>
+        </div>
     </dialog>
 
     <script src="markdown.js"></script>
