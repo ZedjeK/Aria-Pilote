@@ -73,8 +73,30 @@ async def _tokenize(client, text):
     return len(resp.json()["tokens"])
 
 
+def _without_images(messages):
+    """Messages texte seul pour le comptage, et l'estimation des tokens de leurs images à part."""
+    from . import images  # import tardif : images dépend des conversations
+    plain, extra = [], 0
+    for m in messages:
+        if isinstance(m.get("content"), list):
+            texts = []
+            for part in m["content"]:
+                if part.get("type") == "image_url":
+                    extra += images.tokens(images.size_from_url(part["image_url"]["url"]))
+                else:
+                    texts.append(part.get("text", ""))
+            m = {**m, "content": "\n".join(texts)}
+        plain.append(m)
+    return plain, extra
+
+
 async def count_tokens(messages, tools=None):
-    """Nombre exact de tokens du prompt (gabarit de chat compris), outils inclus."""
+    """Nombre exact de tokens du prompt (gabarit de chat compris), outils inclus ; les images sont estimées."""
+    messages, image_tokens = _without_images(messages)
+    return image_tokens + await _count_text(messages, tools)
+
+
+async def _count_text(messages, tools=None):
     async with httpx.AsyncClient(timeout=30, headers=manager.auth_headers()) as client:
         try:
             resp = await client.post(_url("/apply-template"), json={"messages": messages})
@@ -98,6 +120,8 @@ def _transcript(messages, skip=None):
             continue
         if m["role"] == "user":
             prefix = f"[compétence {m['skill']}] " if m.get("skill") else ""
+            if m.get("images"):
+                prefix += f"[{len(m['images'])} image(s) jointe(s)] "
             lines.append(f"Utilisateur : {prefix}{m['content']}")
         elif m["role"] == "assistant":
             if m.get("content"):

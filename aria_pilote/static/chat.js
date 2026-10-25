@@ -759,6 +759,8 @@ function messageNode(m) {
     if (m.role === "user") {
         if (m.skill) node.append(el("span", { className: "badge skill" }, `📚 ${m.skill}`), " ");
         node.append(m.content);
+        const pictures = messageImages(m);
+        if (pictures) node.append(pictures);
         return node;
     }
     node.append(
@@ -768,6 +770,19 @@ function messageNode(m) {
     );
     updateMessageNode(node, m);
     return node;
+}
+
+// Images d'un message : celles enregistrées (servies par l'appli), ou celles qui partent à l'instant
+function messageImages(m) {
+    const sources = m.images?.length && chat.current
+        ? m.images.map((i) => `/api/conversations/${chat.current.id}/images/${i.file}`)
+        : m.localImages || [];
+    if (!sources.length) return null;
+    return el("div", { className: "msg-images" }, ...sources.map((src) => {
+        const img = el("img", { src, alt: "Image jointe", loading: "lazy" });
+        if (!src.startsWith("data:")) img.addEventListener("click", () => window.open(src, "_blank"));
+        return img;
+    }));
 }
 
 function updateMessageNode(node, m) {
@@ -1180,9 +1195,10 @@ async function readEvents(resp, onEvent) {
     }
 }
 
-async function send(content, answer, continueTask = false) {
+async function send(content, answer, continueTask = false, pictures = []) {
     // answer : réponse à la question en attente de l'agent (content vaut alors null)
     // continueTask : bouton « Continuer », le message prolonge la tâche en cours
+    // pictures : images jointes au nouveau message (data URL)
     if (chat.controller) return;
     $("#chat-error").hidden = true;
     if (state.status?.state !== "ready") {
@@ -1215,7 +1231,7 @@ async function send(content, answer, continueTask = false) {
     } else if (content === null) {
         while (["assistant", "tool"].includes(chat.current.messages.at(-1)?.role)) chat.current.messages.pop();
     } else {
-        chat.current.messages.push({ role: "user", content });
+        chat.current.messages.push({ role: "user", content, localImages: pictures });
     }
     renderMessages();
     const box = $("#messages");
@@ -1271,7 +1287,7 @@ async function send(content, answer, continueTask = false) {
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
                 conversation_id: chat.current.id, content, answer, continue_task: continueTask,
-                preset_id: $("#preset-select").value,
+                preset_id: $("#preset-select").value, images: pictures,
             }),
             signal: chat.controller.signal,
         });
@@ -1399,7 +1415,8 @@ $("#chat-form").addEventListener("submit", async (event) => {
     event.preventDefault();
     const input = $("#chat-input");
     const content = input.value;
-    if (!content.trim() || chat.controller) return;
+    const pictures = [...chat.attachments];
+    if ((!content.trim() && !pictures.length) || chat.controller) return;
     // « /compact » ou « /compact garde les décisions… » : compactage à la demande, rien n'est envoyé au modèle
     const compact = content.trim().match(/^\/compact(?:\s+([\s\S]*))?$/);
     if (compact) {
@@ -1411,11 +1428,78 @@ $("#chat-form").addEventListener("submit", async (event) => {
         await compactNow((compact[1] || "").trim());
         return;
     }
-    input.value = "";
     // Une question de l'agent attend : ton message est ta réponse
     const asked = chat.current && pendingQuestionIndex(chat.current.messages) >= 0;
-    const ok = asked ? await send(null, content) : await send(content);
-    if (ok === false && !input.value) input.value = content;
+    if (asked && pictures.length) {
+        showChatError("Réponds d'abord à la question de l'agent, puis envoie ton image.");
+        return;
+    }
+    input.value = "";
+    setAttachments([]);
+    const ok = asked ? await send(null, content) : await send(content, undefined, false, pictures);
+    if (ok === false) {
+        if (!input.value) input.value = content;
+        if (!chat.attachments.length) setAttachments(pictures);
+    }
+});
+
+// --- Images jointes : 📎, coller (Ctrl+V) ou glisser-déposer -------------------------------
+
+const MAX_IMAGES = 5;
+chat.attachments = [];
+
+function setAttachments(list) {
+    chat.attachments = list;
+    const box = $("#attach-list");
+    box.hidden = !list.length;
+    box.replaceChildren(...list.map((src, i) => {
+        const remove = el("button", { type: "button", className: "ghost", title: "Retirer" }, "✕");
+        remove.addEventListener("click", () => setAttachments(chat.attachments.filter((_, j) => j !== i)));
+        return el("span", { className: "attach-thumb" }, el("img", { src, alt: "Image à envoyer" }), remove);
+    }));
+}
+
+function readAsDataUrl(file) {
+    return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result);
+        reader.onerror = () => reject(reader.error);
+        reader.readAsDataURL(file);
+    });
+}
+
+async function addImages(files) {
+    const pictures = [...files].filter((f) => f.type.startsWith("image/"));
+    if (!pictures.length) return;
+    if (!state.status?.vision) {
+        showChatError("Le modèle chargé ne voit pas les images : il lui faut son projecteur vision (option « Vision » dans ses réglages).");
+        return;
+    }
+    const room = MAX_IMAGES - chat.attachments.length;
+    if (pictures.length > room) showChatError(`${MAX_IMAGES} images au plus par message.`);
+    const added = await Promise.all(pictures.slice(0, Math.max(room, 0)).map(readAsDataUrl));
+    setAttachments([...chat.attachments, ...added]);
+}
+
+$("#btn-attach").addEventListener("click", () => $("#attach-input").click());
+$("#attach-input").addEventListener("change", (event) => {
+    addImages(event.target.files);
+    event.target.value = "";
+});
+$("#chat-input").addEventListener("paste", (event) => {
+    const files = [...(event.clipboardData?.files || [])];
+    if (files.some((f) => f.type.startsWith("image/"))) {
+        event.preventDefault();
+        addImages(files);
+    }
+});
+$("#chat-form").addEventListener("dragover", (event) => {
+    if ([...event.dataTransfer.items].some((i) => i.type.startsWith("image/"))) event.preventDefault();
+});
+$("#chat-form").addEventListener("drop", (event) => {
+    if (!event.dataTransfer.files.length) return;
+    event.preventDefault();
+    addImages(event.dataTransfer.files);
 });
 
 $("#chat-input").addEventListener("keydown", (event) => {
@@ -1435,6 +1519,10 @@ $("#btn-regen").addEventListener("click", () => {
 
 setInterval(() => {
     const s = state.status;
+    $("#btn-attach").disabled = s?.state !== "ready" || !s.vision;
+    $("#btn-attach").title = s?.state === "ready" && !s.vision
+        ? "Le modèle chargé ne voit pas les images (pas de projecteur vision)"
+        : "Joindre une image (ou colle-la, ou glisse-la ici)";
     $("#chat-model").textContent = s?.state === "ready"
         ? `Modèle : ${s.model.name}`
         : s?.state === "loading" ? "Chargement du modèle…" : "Aucun modèle chargé (sélecteur en haut)";
