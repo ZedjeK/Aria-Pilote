@@ -269,10 +269,15 @@ def save_profile(data):
 # --- Mise en texte pour le modèle -------------------------------------------------------------
 
 def register_for(persona, skill=None):
-    """Registre en vigueur : celui de la compétence chargée, sinon celui de la discussion."""
+    """Registre en vigueur : celui de la compétence chargée (réglé dans le persona, sinon celui que la compétence
+    suggère), sinon celui de la discussion."""
     registers = (persona or {}).get("registers") or {}
     if skill:
-        return registers.get(skill, DEFAULT_REGISTER)
+        if skill in registers:
+            return registers[skill]
+        from . import skills  # import tardif : skills ne dépend pas du persona
+        found = skills.discover().get(skill)
+        return found.registre if found and found.registre in REGISTERS else DEFAULT_REGISTER
     return registers.get(DISCUSSION, "naturel")
 
 
