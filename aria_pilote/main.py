@@ -198,9 +198,11 @@ class UndoTaskRequest(BaseModel):
 
 
 class SkillRequest(BaseModel):
-    name: str
-    description: str
-    body: str
+    # Formulaire : `fields` ; mode texte : nom, description et texte du fichier
+    name: str = ""
+    description: str = ""
+    body: str = ""
+    fields: dict | None = None
 
 
 class ChatRequest(BaseModel):
@@ -701,8 +703,18 @@ def list_subagents(conversation_id: str | None = None):
 @app.post("/api/skills")
 def save_skill(req: SkillRequest):
     try:
+        if req.fields is not None:
+            return skills.to_dict(skills.save_user_fields(req.fields))
         return skills.to_dict(skills.save_user_skill(req.name, req.description, req.body))
     except skills.SkillError as exc:
+        raise HTTPException(400, str(exc))
+
+
+@app.post("/api/skills/{name}/customize")
+def customize_skill(name: str):
+    try:
+        return skills.to_dict(skills.customize(name), with_body=True)
+    except (skills.SkillError, OSError) as exc:
         raise HTTPException(400, str(exc))
 
 

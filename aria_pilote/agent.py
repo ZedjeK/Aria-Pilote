@@ -532,6 +532,9 @@ async def _run(conv, preset, model_name, task_id):
             if chat.has_output(out):
                 message = chat.assistant_message(out, model_name, preset)
                 message["task_id"] = task_id
+                used = active_skill(conversations.get(cid))
+                if used:
+                    message["skill_used"] = used  # l'étiquette 🧩 sous la réponse
                 conversations.append_message(cid, message)
         retried = False
         usage = context.record_usage(cid, message["stats"], preset) if message else None
