@@ -278,6 +278,31 @@ async function loadRules() {
     }
 }
 
+// Compétences : liste, puis un formulaire qui suit le modèle (ou le fichier brut en mode texte)
+const skillUi = { name: null, fields: null, editable: true, previewTimer: null };
+const SKILL_LISTS = {
+    eviter: "Ex. Relire tout un code pour en lister les défauts : revue-code.",
+    pratiques: "Ex. Des noms explicites, des fonctions courtes.",
+    toujours: "Ex. Un code complet et exécutable.",
+    jamais: "Ex. Inventer une option ou une bibliothèque.",
+    verifier: "Ex. Le code se lance tel quel.",
+};
+
+function emptySkillFields() {
+    return {
+        name: "", description: "", registre: "sobre", titre: "", objectif: "", eviter: [""],
+        methode: [{ cas: "", etapes: [""] }], pratiques: [], format: "",
+        regles: { toujours: [""], jamais: [""] }, verifier: [""], exemple: { demande: "", reponse: "" },
+    };
+}
+
+// Les listes « à faire toujours » et « à ne jamais faire » vivent sous regles
+function skillList(key) {
+    const f = skillUi.fields;
+    if (key === "toujours" || key === "jamais") return f.regles[key];
+    return f[key];
+}
+
 async function loadSkills() {
     $("#skill-form").hidden = true;
     const list = $("#skills-manage");
@@ -288,18 +313,20 @@ async function loadSkills() {
         const item = el("li", { className: "static" },
             el("div", { className: "skill-text" },
                 el("div", { className: "skill-name" }, `/${s.name}`),
-                el("div", { className: "skill-desc" }, s.description)),
+                el("div", { className: "skill-desc" }, s.description),
+                el("div", { className: "skill-reg" }, `Registre suggéré : ${s.registre}`)),
             el("span", { className: "badge" }, SKILL_SOURCES[s.source] || s.source));
+        const open = el("button", { className: "ghost" }, s.editable ? "Modifier" : "Voir");
+        open.addEventListener("click", () => editSkill(s.name));
+        item.append(open);
         if (s.editable) {
-            const edit = el("button", { className: "ghost" }, "Modifier");
-            edit.addEventListener("click", () => editSkill(s.name));
             const del = el("button", { className: "ghost danger-text" }, "Supprimer");
             del.addEventListener("click", async () => {
                 if (!confirm(`Envoyer la compétence « ${s.name} » à la corbeille ?`)) return;
                 await api(`/api/skills/${s.name}`, { method: "DELETE" });
                 loadSkills();
             });
-            item.append(edit, del);
+            item.append(del);
         }
         return item;
     }));
@@ -312,35 +339,215 @@ async function loadSkills() {
     if (!agents.length) $("#subagents-list").append(el("li", { className: "muted" }, "Aucun sous-agent."));
 }
 
+// Une liste de lignes (↑ ↓ ✕ et + Ajouter), sur le modèle des règles d'or du persona
+function renderLineList(ul, items, placeholder, numbered = false) {
+    const rows = items.map((value, i) => {
+        const input = el("input", { value, placeholder: i === 0 ? placeholder : "", disabled: !skillUi.editable });
+        input.addEventListener("input", () => { items[i] = input.value; scheduleSkillPreview(); });
+        const parts = numbered ? [el("span", { className: "rule-rank" }, `${i + 1}.`), input] : [input];
+        if (skillUi.editable) {
+            const move = (delta, label) => {
+                const b = el("button", { type: "button", className: "ghost", disabled: i + delta < 0 || i + delta >= items.length }, label);
+                b.addEventListener("click", () => {
+                    [items[i], items[i + delta]] = [items[i + delta], items[i]];
+                    renderLineList(ul, items, placeholder, numbered);
+                    scheduleSkillPreview();
+                });
+                return b;
+            };
+            const remove = el("button", { type: "button", className: "ghost danger-text", title: "Retirer" }, "✕");
+            remove.addEventListener("click", () => {
+                items.splice(i, 1);
+                renderLineList(ul, items, placeholder, numbered);
+                scheduleSkillPreview();
+            });
+            parts.push(move(-1, "↑"), move(1, "↓"), remove);
+        }
+        return el("li", {}, ...parts);
+    });
+    if (skillUi.editable) {
+        const add = el("button", { type: "button", className: "ghost" }, numbered ? "+ Ajouter une étape" : "+ Ajouter");
+        add.addEventListener("click", () => {
+            items.push("");
+            renderLineList(ul, items, placeholder, numbered);
+            ul.querySelectorAll("input")[items.length - 1].focus();
+        });
+        rows.push(el("li", {}, add));
+    }
+    ul.replaceChildren(...rows);
+}
+
+function renderSkillCases() {
+    const cases = skillUi.fields.methode;
+    $("#skill-cases").replaceChildren(...cases.map((c, i) => {
+        const title = el("input", {
+            value: c.cas, disabled: !skillUi.editable,
+            placeholder: cases.length > 1 ? "Nom du cas (ex. Corriger un bug)" : "Nom du cas (facultatif s'il n'y en a qu'un)",
+        });
+        title.addEventListener("input", () => { c.cas = title.value; scheduleSkillPreview(); });
+        const head = el("div", { className: "skill-case-head" }, title);
+        if (skillUi.editable && cases.length > 1) {
+            const remove = el("button", { type: "button", className: "ghost danger-text", title: "Retirer ce cas" }, "✕");
+            remove.addEventListener("click", () => { cases.splice(i, 1); renderSkillCases(); scheduleSkillPreview(); });
+            head.append(remove);
+        }
+        const steps = el("ol", { className: "rules-list" });
+        renderLineList(steps, c.etapes, "Ex. Rassemble le contexte : message complet, version, système.", true);
+        return el("div", { className: "skill-case" }, head, steps);
+    }));
+    $("#btn-case-add").hidden = !skillUi.editable;
+}
+
+function renderSkillForm() {
+    const form = $("#skill-form");
+    const f = skillUi.fields;
+    form.name.value = f.name;
+    form.registre.value = f.registre || "sobre";
+    form.description.value = f.description;
+    form.objectif.value = f.objectif;
+    form.format.value = f.format;
+    form.exemple_demande.value = f.exemple?.demande || "";
+    form.exemple_reponse.value = f.exemple?.reponse || "";
+    for (const ul of form.querySelectorAll("[data-list]")) {
+        const key = ul.getAttribute("data-list");
+        renderLineList(ul, skillList(key), SKILL_LISTS[key]);
+    }
+    renderSkillCases();
+    for (const field of [form.registre, form.description, form.objectif, form.format, form.exemple_demande,
+        form.exemple_reponse]) {
+        field.disabled = !skillUi.editable;
+    }
+    form.markdown.readOnly = !skillUi.editable;
+}
+
+// Les cases simples du formulaire -> skillUi.fields (les listes s'y écrivent au fil de la frappe)
+function readSkillForm() {
+    const form = $("#skill-form");
+    Object.assign(skillUi.fields, {
+        name: form.name.value.trim(), registre: form.registre.value, description: form.description.value,
+        objectif: form.objectif.value, format: form.format.value,
+        exemple: { demande: form.exemple_demande.value, reponse: form.exemple_reponse.value },
+    });
+    return skillUi.fields;
+}
+
+function showSkillTokens(text) {
+    $("#skill-tokens").textContent = `≈ ${Math.round(text.length / 4)} tokens une fois chargée`;
+}
+
+function scheduleSkillPreview() {
+    clearTimeout(skillUi.previewTimer);
+    skillUi.previewTimer = setTimeout(async () => {
+        if ($("#skill-text-mode").checked) {
+            showSkillTokens($("#skill-form").markdown.value);
+            return;
+        }
+        const { markdown } = await api("/api/skills/convert", { method: "POST", body: JSON.stringify({ fields: readSkillForm() }) });
+        $("#skill-preview pre").textContent = markdown;
+        showSkillTokens(markdown);
+    }, 250);
+}
+
+function setSkillTextMode(on) {
+    $("#skill-text-mode").checked = on;
+    $("#skill-fields").hidden = on;
+    $("#skill-preview").hidden = on;
+    $("#skill-text-box").hidden = !on;
+    $("#skill-form").registre.closest("label").hidden = on;  // en mode texte, l'en-tête du fichier fait foi
+}
+
+$("#skill-text-mode").addEventListener("change", async (event) => {
+    const form = $("#skill-form");
+    $("#skill-error").hidden = true;
+    if (event.target.checked) {
+        const { markdown } = await api("/api/skills/convert", { method: "POST", body: JSON.stringify({ fields: readSkillForm() }) });
+        form.markdown.value = markdown;
+        setSkillTextMode(true);
+    } else {
+        const { fields } = await api("/api/skills/convert", { method: "POST", body: JSON.stringify({ markdown: form.markdown.value }) });
+        if (!fields) {
+            event.target.checked = true;
+            $("#skill-error").textContent = "Ce texte sort du modèle (section inconnue ou paragraphe libre) : il reste en mode texte.";
+            $("#skill-error").hidden = false;
+            return;
+        }
+        skillUi.fields = { ...fields, name: form.name.value.trim() || fields.name };
+        renderSkillForm();
+        setSkillTextMode(false);
+    }
+    scheduleSkillPreview();
+});
+
+$("#skill-form").markdown.addEventListener("input", scheduleSkillPreview);
+for (const name of ["registre", "description", "objectif", "format", "exemple_demande", "exemple_reponse"]) {
+    $("#skill-form")[name].addEventListener("input", scheduleSkillPreview);
+}
+
 async function editSkill(name) {
     const form = $("#skill-form");
-    form.reset();
     $("#skill-error").hidden = true;
+    $("#skill-preview").open = false;
     form.name.readOnly = Boolean(name);
+    let source = "perso";
     if (name) {
         const s = await api(`/api/skills/${name}`);
-        form.name.value = s.name;
-        form.description.value = s.description;
-        form.body.value = s.body;
+        source = s.source;
+        skillUi.editable = s.editable;
+        skillUi.fields = s.fields || { ...emptySkillFields(), name: s.name, description: s.description, registre: s.registre };
+        form.markdown.value = s.markdown;
+        // Une compétence en texte libre (hors modèle) s'édite en mode texte
+        setSkillTextMode(!s.fields);
     } else {
-        form.body.value = "1. …\n2. …\n";
+        skillUi.editable = true;
+        skillUi.fields = emptySkillFields();
+        form.markdown.value = "";
+        setSkillTextMode(false);
     }
+    skillUi.name = name;
+    renderSkillForm();
+    $("#skill-form-title").textContent = name ? `🧩 /${name}` : "🧩 Nouvelle compétence";
+    const note = $("#skill-readonly");
+    note.hidden = skillUi.editable;
+    note.textContent = source === "intégrée"
+        ? "Compétence intégrée, en lecture seule. « Personnaliser » en fait ta copie modifiable, qui la remplace."
+        : `Compétence du projet : elle se modifie dans .aria/skills/${name}/SKILL.md.`;
+    $("#btn-skill-customize").hidden = skillUi.editable || source !== "intégrée";
+    $("#btn-skill-save").hidden = !skillUi.editable;
+    $("#btn-skill-cancel").textContent = skillUi.editable ? "Annuler" : "Fermer";
     $("#skills-manage").hidden = true;
     form.hidden = false;
-    form.name.focus();
+    scheduleSkillPreview();
+    if (!name) form.name.focus();
 }
 
 $("#btn-skill-new").addEventListener("click", () => editSkill(null));
 $("#btn-skill-cancel").addEventListener("click", loadSkills);
+$("#btn-case-add").addEventListener("click", () => {
+    skillUi.fields.methode.push({ cas: "", etapes: [""] });
+    renderSkillCases();
+    scheduleSkillPreview();
+});
+
+$("#btn-skill-customize").addEventListener("click", async () => {
+    try {
+        await api(`/api/skills/${skillUi.name}/customize`, { method: "POST" });
+        flashSaved();
+        editSkill(skillUi.name);
+    } catch (err) {
+        $("#skill-error").textContent = err.message;
+        $("#skill-error").hidden = false;
+    }
+});
 
 $("#skill-form").addEventListener("submit", async (event) => {
     event.preventDefault();
     const form = event.target;
+    const name = form.name.value.trim();
+    const body = $("#skill-text-mode").checked
+        ? { name, description: "", body: form.markdown.value }
+        : { fields: readSkillForm() };
     try {
-        await api("/api/skills", {
-            method: "POST",
-            body: JSON.stringify({ name: form.name.value.trim(), description: form.description.value, body: form.body.value }),
-        });
+        await api("/api/skills", { method: "POST", body: JSON.stringify(body) });
         flashSaved();
         loadSkills();
     } catch (err) {

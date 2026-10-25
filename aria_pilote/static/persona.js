@@ -46,7 +46,7 @@ async function loadPersonaSection(selectId) {
     const [{ personas, default: defaultId }, skills] = await Promise.all([api("/api/personas"), api("/api/skills")]);
     personaUi.list = personas;
     personaUi.defaultId = defaultId;
-    personaUi.skills = skills.map((s) => s.name);
+    personaUi.skills = skills.map((s) => ({ name: s.name, registre: s.registre || "sobre" }));
     const wanted = selectId || personaUi.current?.id || defaultId;
     personaUi.current = structuredClone(personas.find((p) => p.id === wanted) || personas[0]);
     renderPersonaPage();
@@ -233,11 +233,12 @@ $("#btn-rule-add").addEventListener("click", () => {
 // Registre selon le contexte : la discussion, puis chaque compétence existante
 function renderRegisters() {
     const registers = personaUi.current.registers || {};
-    const contexts = ["discussion", ...personaUi.skills];
+    // Sans réglage dans le persona, une compétence prend le registre qu'elle suggère
+    const contexts = [{ name: "discussion", registre: "naturel" }, ...personaUi.skills];
     const options = personaUi.catalogue.registers;
-    $("#register-table").replaceChildren(...contexts.flatMap((context) => {
+    $("#register-table").replaceChildren(...contexts.flatMap(({ name: context, registre }) => {
         const select = el("select", {}, ...options.map((r) => el("option", { value: r.id }, r.label)));
-        select.value = registers[context] || (context === "discussion" ? "naturel" : "sobre");
+        select.value = registers[context] || registre;
         select.addEventListener("change", () => {
             personaUi.current.registers = { ...personaUi.current.registers, [context]: select.value };
             savePersona();

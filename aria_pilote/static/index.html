@@ -619,23 +619,64 @@ py -3.11 tools/build_portable.py</pre>
                         <div class="set-card-title">Compétences</div>
                         <button id="btn-skill-new" class="ghost">+ Nouvelle</button>
                     </div>
-                    <p class="muted small">Des instructions que l'agent charge quand une tâche y correspond, ou que tu appelles avec « /nom ».
-                        Celles d'un projet (.aria/skills) apparaissent depuis le chat.</p>
+                    <p class="muted small">Le modèle charge tout seul celle qui correspond à ta demande (d'après « Quand la charger ») ; « /nom » dans le chat
+                        en force une. Celles d'un projet (.aria/skills) apparaissent depuis le chat. Une intégrée se personnalise : ta copie la remplace.</p>
                     <ul id="skills-manage" class="skills-list"></ul>
-                    <form id="skill-form" class="form" hidden>
-                        <label>Nom (minuscules, chiffres, tirets)
-                            <input name="name" required pattern="[a-z0-9][a-z0-9\-]{0,39}">
+                    <form id="skill-form" class="skill-form" hidden novalidate>
+                        <div class="skill-form-head">
+                            <div class="set-card-title" id="skill-form-title">🧩 Compétence</div>
+                            <label class="check">Mode texte <input type="checkbox" class="switch" id="skill-text-mode"></label>
+                        </div>
+                        <p id="skill-readonly" class="muted small" hidden></p>
+                        <div class="skill-grid">
+                            <label>Nom <span class="muted small">C'est aussi la commande /nom</span>
+                                <input name="name" required pattern="[a-z0-9][a-z0-9\-]{0,39}" placeholder="revue-ansible">
+                            </label>
+                            <label>Registre suggéré <span class="muted small">Pré-remplit le tableau des personas</span>
+                                <select name="registre">
+                                    <option value="sobre">Sobre</option>
+                                    <option value="naturel">Naturel</option>
+                                    <option value="professionnel">Professionnel</option>
+                                </select>
+                            </label>
+                        </div>
+                        <div id="skill-fields" class="skill-fields">
+                            <label>Quand la charger <span class="muted small">Une phrase : c'est d'après elle que le modèle choisit</span>
+                                <input name="description" maxlength="300" placeholder="Relire un playbook Ansible pour en trouver les erreurs et les risques.">
+                            </label>
+                            <label>Objectif <span class="muted small">Le résultat attendu, en une phrase</span>
+                                <input name="objectif" maxlength="300">
+                            </label>
+                            <div class="skill-block"><div class="skill-label">Ne pas l'utiliser si <span class="muted small">Et quelle compétence prendre à la place</span></div>
+                                <ul class="rules-list" data-list="eviter"></ul></div>
+                            <div class="skill-block"><div class="skill-label">Méthode <span class="muted small">Des étapes numérotées ; plusieurs cas si la compétence couvre plusieurs situations</span></div>
+                                <div id="skill-cases"></div>
+                                <div class="row"><button type="button" id="btn-case-add" class="ghost">+ Ajouter un cas</button></div></div>
+                            <div class="skill-block"><div class="skill-label">Bonnes pratiques <span class="muted small">Facultatif</span></div>
+                                <ul class="rules-list" data-list="pratiques"></ul></div>
+                            <label>Format de la réponse
+                                <textarea name="format" rows="3"></textarea>
+                            </label>
+                            <div class="skill-block"><div class="skill-label">À faire toujours</div>
+                                <ul class="rules-list" data-list="toujours"></ul></div>
+                            <div class="skill-block"><div class="skill-label">À ne jamais faire</div>
+                                <ul class="rules-list" data-list="jamais"></ul></div>
+                            <div class="skill-block"><div class="skill-label">Vérifier avant de répondre</div>
+                                <ul class="rules-list" data-list="verifier"></ul></div>
+                            <div class="skill-block"><div class="skill-label">Exemple <span class="muted small">Facultatif</span></div>
+                                <input name="exemple_demande" placeholder="Demande : « … »">
+                                <input name="exemple_reponse" placeholder="Réponse attendue (résumé)"></div>
+                        </div>
+                        <label id="skill-text-box" hidden>Fichier SKILL.md
+                            <textarea name="markdown" rows="22" class="mono" spellcheck="false"></textarea>
                         </label>
-                        <label>Description (dit à l'agent quand s'en servir)
-                            <input name="description" required>
-                        </label>
-                        <label>Instructions
-                            <textarea name="body" rows="12" class="mono" required></textarea>
-                        </label>
+                        <details id="skill-preview" class="skill-preview"><summary>👁 Voir le fichier généré</summary><pre class="mono"></pre></details>
                         <p id="skill-error" class="error" hidden></p>
-                        <div class="row">
+                        <div class="row skill-actions">
+                            <span id="skill-tokens" class="muted small"></span>
                             <button type="button" id="btn-skill-cancel" class="ghost">Annuler</button>
-                            <button type="submit" class="primary">Enregistrer</button>
+                            <button type="button" id="btn-skill-customize" class="ghost" hidden>Personnaliser</button>
+                            <button type="submit" id="btn-skill-save" class="primary">Enregistrer</button>
                         </div>
                     </form>
                 </div>
