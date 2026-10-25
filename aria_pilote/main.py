@@ -13,8 +13,8 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from . import (VERSION, agent, background, backups, chat, config, context, conversations, downloads, engines, hardware,
-               hooks, hub, images, models, optimizer, permissions, persona, pick_folder, presets, searxng, skills,
-               subagents, tools, trial, updates, workspace)
+               hooks, hub, images, models, optimizer, permissions, persona, pick_folder, presets, screen, searxng,
+               skills, subagents, tools, trial, updates, workspace)
 from .server import EngineMissing, manager
 
 STATIC_DIR = Path(__file__).parent / "static"
@@ -142,6 +142,7 @@ class ConfigPatch(BaseModel):
     always_plan: bool | None = None
     max_tool_calls: int | None = Field(None, ge=10, le=100)
     auto_check: bool | None = None
+    screen_control: bool | None = None
     web: WebSettings | None = None
     searxng_idle_minutes: int | None = Field(None, ge=0, le=1440)
     backup_retention_days: int | None = Field(None, ge=0, le=3650)
@@ -179,6 +180,7 @@ class ConversationPatch(BaseModel):
     persona_id: str | None = None
     agent: AgentSettings | None = None
     screen_control: bool | None = None  # contrôle du PC dans cette conversation (s'il est activé dans les Réglages)
+    screen_allow: list[str] | None = None  # programmes autorisés pour cette conversation ([] = aucun ; absent = tous)
 
 
 class ApprovalRequest(BaseModel):
@@ -517,6 +519,10 @@ def patch_conversation(cid: str, patch: ConversationPatch):
         if patch.screen_control and not config.get().get("screen_control"):
             raise HTTPException(409, "Le contrôle du PC est coupé dans les Réglages (Agents).")
         conv["screen_control"] = patch.screen_control
+        if not patch.screen_control:
+            conv.pop("screen_allow", None)  # la main rendue : la liste autorisée tombe
+    if patch.screen_allow is not None:
+        conv["screen_allow"] = [p.strip().lower() for p in patch.screen_allow if p.strip()]
     return conversations.save(conv)
 
 
@@ -594,6 +600,22 @@ def conversation_image(cid: str, name: str):
         return FileResponse(images.path(cid, name), headers={"Cache-Control": "private, max-age=86400"})
     except images.ImageError as exc:
         raise HTTPException(404, str(exc))
+
+
+@app.get("/api/screen/windows")
+def screen_windows():
+    """Fenêtres que l'agent pourrait voir (jamais les applis interdites) : pour le choix « Prendre la main »."""
+    if not config.get().get("screen_control"):
+        raise HTTPException(409, "Le contrôle du PC est coupé dans les Réglages (Agents).")
+    try:
+        usable = screen.allowed_windows(screen.windows(), None)
+    except screen.ScreenError as exc:
+        raise HTTPException(400, str(exc))
+    # Un programme par entrée : l'autorisation porte sur l'appli, pas sur une fenêtre dont l'id change
+    by_process = {}
+    for w in usable:
+        by_process.setdefault(w["processus"].lower(), []).append(w["titre"])
+    return [{"processus": proc, "fenetres": titres} for proc, titres in sorted(by_process.items())]
 
 
 def _agent_root(conv):

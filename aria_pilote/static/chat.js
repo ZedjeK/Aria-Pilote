@@ -153,8 +153,80 @@ function syncAgentBar() {
     }
     $("#agent-info").textContent = info.join(" · ");
     renderTodo(a.enabled ? a.todo : null);
+    syncScreenBar();
     syncSidePanel();  // sans choix de ta part, le panneau suit le mode Agent
 }
+
+// Contrôle du PC : le bouton n'apparaît que s'il est activé dans les Réglages ; le bandeau montre l'état de la main
+function syncScreenBar() {
+    const on = Boolean(state.config?.screen_control);
+    const active = on && chat.current?.screen_control;
+    $("#btn-screen").hidden = !(on && chat.current);
+    $("#btn-screen").classList.toggle("attached", Boolean(active));
+    const banner = $("#screen-banner");
+    banner.hidden = !active;
+    if (!active) return;
+    const allow = chat.current.screen_allow;
+    const apps = Array.isArray(allow)
+        ? (allow.length ? allow.join(", ") : "aucune fenêtre pour l'instant — clique sur « Prendre la main »")
+        : "toutes les fenêtres (sauf réglages système, sécurité et terminaux)";
+    const hand = el("button", { className: "ghost", title: "Rendre la main : l'agent ne voit plus l'écran" }, "Rendre la main");
+    hand.addEventListener("click", releaseScreen);
+    banner.replaceChildren(el("span", {}, `🖱 L'agent a la main sur : ${apps}. Il demande ton accord à chaque action.`), hand);
+}
+
+async function releaseScreen() {
+    if (!chat.current) return;
+    chat.current = await api(`/api/conversations/${chat.current.id}`, {
+        method: "PATCH", body: JSON.stringify({ screen_control: false }),
+    });
+    syncAgentBar();
+}
+
+async function openScreenPicker() {
+    if (!chat.current) return;
+    const dialog = $("#screen-dialog");
+    const list = $("#screen-windows");
+    $("#screen-dialog-error").hidden = true;
+    list.replaceChildren(el("li", { className: "muted" }, "Lecture des fenêtres ouvertes…"));
+    dialog.showModal();
+    let windows;
+    try {
+        windows = await api("/api/screen/windows");
+    } catch (err) {
+        $("#screen-dialog-error").textContent = err.message;
+        $("#screen-dialog-error").hidden = false;
+        list.replaceChildren();
+        return;
+    }
+    const already = new Set(Array.isArray(chat.current.screen_allow) ? chat.current.screen_allow : []);
+    list.replaceChildren(...windows.map((w) => {
+        const box = el("input", { type: "checkbox", checked: already.has(w.processus) });
+        box.dataset.processus = w.processus;
+        return el("li", { className: "static" },
+            el("label", { className: "check-line" }, box,
+                el("div", { className: "skill-text" },
+                    el("div", { className: "skill-name" }, w.processus),
+                    el("div", { className: "skill-desc" }, w.fenetres.join(" · ")))));
+    }));
+    if (!windows.length) list.replaceChildren(el("li", { className: "muted" }, "Aucune fenêtre éligible n'est ouverte."));
+}
+
+$("#btn-screen").addEventListener("click", openScreenPicker);
+$("#btn-screen-close").addEventListener("click", () => $("#screen-dialog").close());
+$("#btn-screen-confirm").addEventListener("click", async () => {
+    const allow = [...$("#screen-windows").querySelectorAll("input:checked")].map((b) => b.dataset.processus);
+    try {
+        chat.current = await api(`/api/conversations/${chat.current.id}`, {
+            method: "PATCH", body: JSON.stringify({ screen_control: true, screen_allow: allow }),
+        });
+        $("#screen-dialog").close();
+        syncAgentBar();
+    } catch (err) {
+        $("#screen-dialog-error").textContent = err.message;
+        $("#screen-dialog-error").hidden = false;
+    }
+});
 
 const TODO_MARKS = { pending: "☐", in_progress: "▶", completed: "☑" };
 

@@ -279,5 +279,94 @@ class ActionTest(unittest.TestCase):
         self.assertEqual(self.calls, [])  # refusé : rien n'a bougé
 
 
+class GuardTest(unittest.TestCase):
+    """Garde-fous de l'étape 4D : applis interdites, liste autorisée, bouton sensible, limite d'actions."""
+
+    DENIED = [
+        {"id": 1, "titre": "Paramètres", "processus": "SystemSettings.exe", "rect": (0, 0, 10, 10), "reduite": False},
+        {"id": 2, "titre": "Windows PowerShell", "processus": "powershell.exe", "rect": (0, 0, 10, 10), "reduite": False},
+        {"id": 3, "titre": "Aria Pilote", "processus": "msedgewebview2.exe", "rect": (0, 0, 10, 10), "reduite": False},
+    ]
+
+    def test_applis_interdites(self):
+        for w in self.DENIED:
+            self.assertTrue(screen.is_denied(w), w["titre"])
+        self.assertFalse(screen.is_denied(WINDOWS[0]))  # Bloc-notes
+
+    def test_liste_autorisee(self):
+        listed = WINDOWS + self.DENIED
+        self.assertEqual([w["id"] for w in screen.allowed_windows(listed, None)], [101, 202])  # interdites retirées
+        allow = ["notepad.exe"]
+        self.assertEqual([w["id"] for w in screen.allowed_windows(listed, allow)], [101])
+        self.assertEqual(screen.allowed_windows(listed, []), [])  # rien coché = rien
+        screen.ensure_allowed(WINDOWS[0], ["notepad.exe"])  # ne lève pas
+        with self.assertRaises(screen.ScreenError):
+            screen.ensure_allowed(WINDOWS[0], ["calculatorapp.exe"])
+        with self.assertRaises(screen.ScreenError):
+            screen.ensure_allowed(self.DENIED[0], None)
+
+    def test_bouton_sensible_et_repetition(self):
+        self.assertTrue(tools._is_sensitive("Envoyer le message"))
+        self.assertTrue(tools._is_sensitive("Supprimer définitivement"))
+        self.assertFalse(tools._is_sensitive("Annuler"))
+        cid = new_conversation()
+        sensitive = [{"n": 1, "type": "ButtonControl", "nom": "Envoyer", "rect": (10, 10, 60, 40),
+                      "valeur": None, "mot_de_passe": False, "actif": True}]
+        tools._remember_screen(cid, WINDOWS[0], sensitive)
+        with mock.patch.object(screen, "windows", side_effect=lambda: WINDOWS):
+            p = tools.bind_screen_action(tools.prepare_screen_action(None, {"action": "cliquer", "element": 1}), cid)
+        self.assertIn("⚠", p["preview"])
+        self.assertIn("difficile à défaire", p["preview"])
+
+    def test_limite_d_actions(self):
+        cid = new_conversation()
+        conv = conversations.get(cid)
+        conv["messages"] = [{"role": "tool", "name": "agir_ecran", "status": "ok", "task_id": conv.get("task_id"),
+                             "content": "Fait : x."} for _ in range(tools.MAX_SCREEN_ACTIONS)]
+        conversations.save(conv)
+        tools._remember_screen(cid, WINDOWS[0], ELEMENTS)
+        with mock.patch.object(screen, "windows", side_effect=lambda: WINDOWS):
+            with self.assertRaises(tools.ToolError) as ctx:
+                tools.bind_screen_action(tools.prepare_screen_action(None, {"action": "cliquer", "element": 1}), cid)
+        self.assertIn(str(tools.MAX_SCREEN_ACTIONS), str(ctx.exception))
+
+    def test_fenetre_hors_liste_refusee_a_l_action(self):
+        cid = new_conversation()
+        conversations.update(cid, lambda c: c.__setitem__("screen_allow", ["calculatorapp.exe"]))
+        tools._remember_screen(cid, WINDOWS[0], ELEMENTS)  # Bloc-notes, pas dans la liste
+        with mock.patch.object(screen, "windows", side_effect=lambda: WINDOWS):
+            with self.assertRaises(tools.ToolError) as ctx:
+                tools.bind_screen_action(tools.prepare_screen_action(None, {"action": "cliquer", "element": 1}), cid)
+        self.assertIn("autorisées", str(ctx.exception))
+
+
+class ScreenApiTest(unittest.TestCase):
+    def test_liste_fenetres_coupee_sans_reglage(self):
+        with client() as c:
+            self.assertEqual(c.get("/api/screen/windows").status_code, 409)
+
+    def test_liste_fenetres_par_programme(self):
+        setting(self, screen_control=True)
+        listed = WINDOWS + GuardTest.DENIED
+        with mock.patch.object(screen, "windows", side_effect=lambda: listed):
+            with client() as c:
+                data = c.get("/api/screen/windows").json()
+        procs = [row["processus"] for row in data]
+        self.assertIn("notepad.exe", procs)
+        self.assertNotIn("systemsettings.exe", procs)  # interdite, jamais listée
+
+    def test_allow_list_enregistree_et_rendue(self):
+        cid = new_conversation()
+        with client() as c:
+            setting(self, screen_control=True)
+            c.patch(f"/api/conversations/{cid}", json={"screen_control": True, "screen_allow": ["Notepad.exe", " "]},
+                    headers=ORIGIN)
+            self.assertEqual(conversations.get(cid)["screen_allow"], ["notepad.exe"])  # nettoyée, en minuscules
+            c.patch(f"/api/conversations/{cid}", json={"screen_control": False}, headers=ORIGIN)
+        conv = conversations.get(cid)
+        self.assertFalse(conv["screen_control"])
+        self.assertNotIn("screen_allow", conv)  # la main rendue efface la liste
+
+
 if __name__ == "__main__":
     unittest.main()
