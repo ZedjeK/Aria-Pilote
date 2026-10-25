@@ -1,4 +1,6 @@
-"""Chantier 4, étape 4B : observer l'écran (fenêtres, éléments numérotés, captures), en lecture seule."""
+"""Chantier 4 : observer l'écran (4B : fenêtres, éléments numérotés, captures) et y agir (4C)."""
+import asyncio
+import json
 import unittest
 from unittest import mock
 
@@ -6,7 +8,7 @@ from PIL import Image
 
 from base import ORIGIN, client, new_conversation  # en premier : Aria tourne dans un dossier temporaire
 
-from aria_pilote import agent, chat, config, conversations, screen, tools
+from aria_pilote import agent, chat, config, conversations, screen, toolrun, tools
 from aria_pilote.server import ServerManager
 
 WINDOWS = [
@@ -146,6 +148,135 @@ class CaptureTest(unittest.TestCase):
         self.assertEqual(roles, ["user", "assistant", "tool", "tool", "assistant", "tool", "tool", "user",
                                  "assistant", "tool", "tool", "user"])
         self.assertEqual(built[7]["content"][0]["type"], "image_url")
+
+
+class ActionTest(unittest.TestCase):
+    """agir_ecran : cible prise dans la dernière observation, accord à chaque action, refus en cas de doute."""
+
+    def setUp(self):
+        self.cid = new_conversation()
+        self.calls = []
+        fakes = {
+            "windows": lambda: WINDOWS, "read_elements": lambda w: (ELEMENTS, [], False),
+            "bring_to_front": lambda h: True, "owner_at": lambda x, y: 101, "focused_is_password": lambda: False,
+            "click": lambda *a, **k: self.calls.append(("click", a, k)), "type_text": lambda t: self.calls.append(("type", t)),
+            "press": lambda k: self.calls.append(("press", k)), "scroll": lambda *a: self.calls.append(("scroll", a)),
+            "drag": lambda *a: self.calls.append(("drag", a)),
+        }
+        for name, fake in fakes.items():
+            patcher = mock.patch.object(screen, name, side_effect=fake)
+            patcher.start()
+            self.addCleanup(patcher.stop)
+        patcher = mock.patch.object(screen, "SETTLE_S", 0)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def observe(self, capture=None):
+        tools._remember_screen(self.cid, WINDOWS[0], ELEMENTS, capture)
+
+    def bind(self, **args):
+        return tools.bind_screen_action(tools.prepare_screen_action(None, args), self.cid)
+
+    def test_demandes_mal_formees(self):
+        for args in ({"action": "sauter"}, {"action": "cliquer"}, {"action": "taper"},
+                     {"action": "touches", "touches": "ctrl+licorne"}, {"action": "defiler", "direction": "dedans"},
+                     {"action": "glisser", "element": 1}):
+            with self.assertRaises(tools.ToolError, msg=args):
+                tools.prepare_screen_action(None, args)
+
+    def test_rien_sans_observation(self):
+        with self.assertRaises(tools.ToolError) as ctx:
+            self.bind(action="cliquer", element=1)
+        self.assertIn("Observe d'abord", str(ctx.exception))
+
+    def test_apercu_et_point_vise(self):
+        self.observe()
+        p = self.bind(action="cliquer", element=1)
+        self.assertEqual(p["point"], (300, 165))  # centre du champ 1
+        self.assertIn("Cliquer sur [1] champ « Nom du fichier »", p["preview"])
+        self.assertIn("Sans titre - Bloc-notes", p["preview"])
+
+    def test_coordonnees_remises_a_l_echelle(self):
+        with self.assertRaises(tools.ToolError):  # sans capture, pas de coordonnées
+            self.observe()
+            self.bind(action="cliquer", x=10, y=10)
+        self.observe({"origin": [100, 100], "scale": 0.5, "size": [400, 300]})
+        self.assertEqual(self.bind(action="cliquer", x=100, y=50)["point"], (300, 200))
+        with self.assertRaises(tools.ToolError):
+            self.bind(action="cliquer", x=399, y=299.9 * 3)  # hors de la fenêtre
+
+    def test_refus(self):
+        self.observe()
+        with self.assertRaises(tools.ToolError) as ctx:
+            self.bind(action="taper", element=2, texte="secret")
+        self.assertIn("mot de passe", str(ctx.exception))
+        with self.assertRaises(tools.ToolError):
+            self.bind(action="cliquer", element=9)  # numéro inconnu
+        moved = [{**WINDOWS[0], "rect": (120, 100, 920, 700)}]
+        with mock.patch.object(screen, "windows", side_effect=lambda: moved):
+            with self.assertRaises(tools.ToolError) as ctx:
+                self.bind(action="cliquer", element=1)
+        self.assertIn("a bougé", str(ctx.exception))
+        own = [{**WINDOWS[0], "titre": "Aria Pilote - Opera"}]
+        with mock.patch.object(screen, "windows", side_effect=lambda: own):
+            with self.assertRaises(tools.ToolError) as ctx:
+                self.bind(action="cliquer", element=1)
+        self.assertIn("Aria Pilote", str(ctx.exception))
+
+    def test_action_puis_nouvelle_observation(self):
+        self.observe()
+        result = tools._act(self.bind(action="taper", element=1, texte="bilan.xlsx"), self.cid)
+        self.assertEqual(self.calls, [("click", (300, 165), {}), ("type", "bilan.xlsx")])
+        self.assertTrue(result["output"].startswith("Fait : Taper « bilan.xlsx » dans [1] champ"))
+        self.assertIn("Après l'action", result["output"])
+
+    def test_repetition_comptee(self):
+        """La même action refaite dans la tâche est dite au modèle : il ne peut plus prétendre l'avoir faite une fois."""
+        self.observe()
+        first = tools._act(self.bind(action="cliquer", element=1), self.cid)
+        self.assertNotIn("fois dans cette tâche", first["output"])
+        conversations.append_message(self.cid, {"role": "tool", "name": "agir_ecran", "content": first["output"],
+                                                "status": "ok", "tool_call_id": "c1"})
+        second = tools._act(self.bind(action="cliquer", element=1), self.cid)
+        self.assertIn("(2e fois dans cette tâche)", second["output"])
+        self.assertIn("rends compte à l'utilisateur sans autre action", second["output"])
+
+    def test_cible_recouverte(self):
+        self.observe()
+        p = self.bind(action="cliquer", element=3)
+        with mock.patch.object(screen, "owner_at", side_effect=lambda x, y: 999):
+            with self.assertRaises(tools.ToolError) as ctx:
+                tools._act(p, self.cid)
+        self.assertIn("recouvre", str(ctx.exception))
+        self.assertEqual(self.calls, [])
+
+    def test_mot_de_passe_sous_le_curseur(self):
+        self.observe()
+        p = self.bind(action="taper", texte="hunter2")
+        with mock.patch.object(screen, "focused_is_password", side_effect=lambda: True):
+            with self.assertRaises(tools.ToolError):
+                tools._act(p, self.cid)
+        self.assertEqual(self.calls, [])
+
+    def test_accord_a_chaque_action_et_verrou_du_plan(self):
+        self.assertIsNone(toolrun.APPROVAL_FLAGS["screen_action"])
+        self.assertIn("screen_action", agent.LOCKED_KINDS)
+        self.observe()
+
+        async def scenario():
+            out, seen = {}, []
+            async for ev in toolrun.run_tool(self.cid, None, "agir_ecran", {"action": "cliquer", "element": 1}, "c1", out):
+                data = json.loads(ev.removeprefix("data: ").strip())
+                seen.append(data)
+                if data["type"] == "approval":
+                    toolrun.resolve_approval(data["approval_id"], "deny")
+            return seen, out["result"]
+
+        seen, result = asyncio.run(scenario())
+        self.assertEqual(seen[0]["kind"], "screen_action")
+        self.assertIn("Cliquer sur [1]", seen[0]["preview"])
+        self.assertEqual(result["status"], "denied")
+        self.assertEqual(self.calls, [])  # refusé : rien n'a bougé
 
 
 if __name__ == "__main__":

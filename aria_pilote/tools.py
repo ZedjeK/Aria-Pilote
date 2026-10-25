@@ -13,6 +13,7 @@ import re
 import shutil
 import subprocess
 import tempfile
+import time
 from dataclasses import dataclass
 from typing import Awaitable, Callable
 
@@ -33,11 +34,13 @@ class ToolError(Exception):
 @dataclass
 class Tool:
     name: str
-    kind: str  # read | state | write | command | web | screen
+    kind: str  # read | state | write | command | web | screen | screen_action
     description: str
     parameters: dict
     prepare: Callable[[str, dict], dict]
     run: Callable[[dict, str], Awaitable[dict]]
+    # Facultatif : complète la préparation avec l'état de la conversation (cible d'une action à l'écran), avant l'accord
+    bind: Callable[[dict, str], dict] | None = None
 
 
 # --- utilitaires ---------------------------------------------------------------
@@ -530,19 +533,43 @@ def prepare_load_skill(root, args):
 
 # --- web -------------------------------------------------------------------------
 
-# --- écran (chantier 4, lecture seule) ---------------------------------------------------------
+# --- écran (chantier 4) ---------------------------------------------------------------------------
+# Observer : lire_fenetre (texte) et voir_ecran (capture). Agir : agir_ecran, toujours sur la dernière fenêtre
+# observée, avec ton accord à chaque action, puis une nouvelle observation renvoyée au modèle.
+
+SCREEN_ACTIONS = ("cliquer", "double_clic", "clic_droit", "taper", "touches", "defiler", "glisser")
+SCROLL_DIRECTIONS = ("haut", "bas", "gauche", "droite")
+
 
 def prepare_screen(root, args):
     return {"fenetre": str(args.get("fenetre") or "").strip()}
 
 
 def _remember_screen(cid, window, elements, capture=None):
-    """Ce que le modèle a vu en dernier (fenêtre, éléments numérotés, échelle de la capture) : l'étape 4C agira
-    sur ces numéros."""
+    """Ce que le modèle a vu en dernier : agir_ecran ne vise que cette fenêtre, ses numéros et sa capture."""
     state = {"window": window["id"] if window else None, "title": window["titre"] if window else None,
-             "elements": {str(e["n"]): {k: e[k] for k in ("type", "nom", "rect")} for e in elements},
+             "rect": list(window["rect"]) if window else None,
+             "elements": {str(e["n"]): {k: e[k] for k in ("type", "nom", "rect", "mot_de_passe")} for e in elements},
              "capture": capture}
     conversations.update(cid, lambda conv: conv.__setitem__("screen_state", state))
+
+
+def _observe(cid, window, capture):
+    """Éléments (et capture si demandée) d'une fenêtre : texte pour le modèle, images à joindre, état retenu."""
+    elements, texts, truncated = screen.read_elements(window)
+    text = screen.describe_elements(window, elements, texts, truncated)
+    if not capture:
+        _remember_screen(cid, window, elements)
+        return text, []
+    image, origin = screen.capture_window(window)
+    small, scale = screen.fit(image, images.MAX_SIDE)
+    if elements:
+        small = screen.draw_marks(small, elements, origin, scale)
+    _remember_screen(cid, window, elements, {"origin": list(origin), "scale": scale, "size": list(small.size)})
+    if not manager.vision:
+        return text + "\n\nLe modèle chargé ne voit pas les images : seule la liste ci-dessus est disponible.", []
+    note = "les cadres numérotés correspondent à la liste" if elements else "image réduite"
+    return text + f"\n\nLa capture est jointe juste après ce résultat ({note}).", [images.store(cid, small, "png")]
 
 
 def _read_window(spec, cid):
@@ -550,37 +577,31 @@ def _read_window(spec, cid):
         listed = screen.windows()
         if not spec:
             return _ok(screen.describe_windows(listed))
-        window = screen.find(spec, listed)
-        elements, texts, truncated = screen.read_elements(window)
+        text, _ = _observe(cid, screen.find(spec, listed), capture=False)
     except screen.ScreenError as exc:
         raise ToolError(str(exc))
-    _remember_screen(cid, window, elements)
-    return _ok(_truncate(screen.describe_elements(window, elements, texts, truncated)))
+    return _ok(_truncate(text))
 
 
 def _see_screen(spec, cid):
     try:
         listed = screen.windows()
         if spec:
-            window = screen.find(spec, listed)
-            elements, texts, truncated = screen.read_elements(window)
-            image, origin = screen.capture_window(window)
-            text = screen.describe_elements(window, elements, texts, truncated)
+            text, shots = _observe(cid, screen.find(spec, listed), capture=True)
         else:
-            window, elements = None, []
             image, origin = screen.capture_screen()
+            small, scale = screen.fit(image, images.MAX_SIDE)
+            _remember_screen(cid, None, [], {"origin": list(origin), "scale": scale, "size": list(small.size)})
             text = f"Capture de tous les écrans ({image.width}x{image.height} pixels).\n" + screen.describe_windows(listed)
+            if manager.vision:
+                text += "\n\nLa capture est jointe juste après ce résultat (image réduite)."
+                shots = [images.store(cid, small, "png")]
+            else:
+                text += "\n\nLe modèle chargé ne voit pas les images : seule la liste ci-dessus est disponible."
+                shots = []
     except screen.ScreenError as exc:
         raise ToolError(str(exc))
-    small, scale = screen.fit(image, images.MAX_SIDE)
-    if elements:
-        small = screen.draw_marks(small, elements, origin, scale)
-    _remember_screen(cid, window, elements, {"origin": list(origin), "scale": scale, "size": list(small.size)})
-    if not manager.vision:
-        return _ok(_truncate(text + "\n\nLe modèle chargé ne voit pas les images : seule la liste ci-dessus est disponible."))
-    stored = images.store(cid, small, "png")
-    note = "les cadres numérotés correspondent à la liste" if elements else "image réduite"
-    return _ok(_truncate(text + f"\n\nLa capture est jointe juste après ce résultat ({note})."), images=[stored])
+    return _ok(_truncate(text), **({"images": shots} if shots else {}))
 
 
 async def run_read_window(prepared, cid):
@@ -589,6 +610,185 @@ async def run_read_window(prepared, cid):
 
 async def run_see_screen(prepared, cid):
     return await asyncio.to_thread(_see_screen, prepared["fenetre"], cid)
+
+
+def _number(value, name):
+    if value is None or value == "":
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        raise ToolError(f"« {name} » doit être un nombre.")
+
+
+def prepare_screen_action(root, args):
+    """Vérifie la forme de la demande ; la cible est résolue ensuite, sur la dernière observation (bind)."""
+    action = str(args.get("action") or "").strip().lower().replace("-", "_").replace(" ", "_")
+    if action not in SCREEN_ACTIONS:
+        raise ToolError(f"Action inconnue : « {action} ». Actions possibles : {', '.join(SCREEN_ACTIONS)}.")
+    p = {"action": action, "element": _number(args.get("element"), "element"),
+         "x": _number(args.get("x"), "x"), "y": _number(args.get("y"), "y"),
+         "vers_element": _number(args.get("vers_element"), "vers_element"),
+         "vers_x": _number(args.get("vers_x"), "vers_x"), "vers_y": _number(args.get("vers_y"), "vers_y"),
+         "texte": args.get("texte"), "remplacer": bool(args.get("remplacer")),
+         "touches": str(args.get("touches") or "").strip(),
+         "direction": str(args.get("direction") or "bas").strip().lower(),
+         "quantite": int(_number(args.get("quantite"), "quantite") or 3),
+         "attente": min(screen.MAX_WAIT_S, max(0.0, _number(args.get("attente"), "attente") or 0.0))}
+    pointed = p["element"] is not None or (p["x"] is not None and p["y"] is not None)
+    if action in ("cliquer", "double_clic", "clic_droit", "glisser") and not pointed:
+        raise ToolError("Indique la cible : « element » (son numéro) ou « x » et « y » (sur la dernière capture).")
+    if action == "glisser" and p["vers_element"] is None and (p["vers_x"] is None or p["vers_y"] is None):
+        raise ToolError("Indique où lâcher : « vers_element », ou « vers_x » et « vers_y ».")
+    if action == "taper" and not (isinstance(p["texte"], str) and p["texte"]):
+        raise ToolError("Indique le « texte » à taper.")
+    if action == "touches":
+        try:
+            screen.parse_keys(p["touches"])
+        except screen.ScreenError as exc:
+            raise ToolError(str(exc))
+    if action == "defiler":
+        if p["direction"] not in SCROLL_DIRECTIONS:
+            raise ToolError(f"« direction » : {', '.join(SCROLL_DIRECTIONS)}.")
+        p["quantite"] = min(20, max(1, p["quantite"]))
+    return p
+
+
+def _target_window(state):
+    """La fenêtre observée en dernier, telle qu'elle est maintenant : refus si elle a changé depuis."""
+    if not state or not state.get("window"):
+        raise ToolError("Observe d'abord la fenêtre où agir (lire_fenetre ou voir_ecran avec son nom) : "
+                        "je n'agis que sur ce que tu as vu.")
+    try:
+        window = screen.find(str(state["window"]))
+    except screen.ScreenError:
+        raise ToolError(f"La fenêtre « {state['title']} » n'existe plus : observe à nouveau.")
+    if screen.is_own_window(window):
+        raise ToolError("Je n'agis jamais sur la fenêtre d'Aria Pilote : c'est là que l'utilisateur valide mes actions.")
+    if window["reduite"]:
+        raise ToolError(f"La fenêtre « {window['titre']} » est réduite : demande à l'utilisateur de la rouvrir.")
+    if list(window["rect"]) != list(state["rect"]):
+        raise ToolError("La fenêtre a bougé ou changé de taille depuis ta dernière observation : relis-la avant d'agir.")
+    return window
+
+
+def _point(state, window, element, x, y):
+    """Point de l'écran visé : centre d'un élément numéroté, ou point de la dernière capture remis à l'échelle."""
+    if element is not None:
+        found = state["elements"].get(str(int(element)))
+        if found is None:
+            raise ToolError(f"Pas d'élément n° {int(element)} dans ta dernière observation de « {window['titre']} ».")
+        left, top, right, bottom = found["rect"]
+        return (left + right) / 2, (top + bottom) / 2, found
+    capture = state.get("capture")
+    if not capture:
+        raise ToolError("Des coordonnées se lisent sur une capture : appelle d'abord voir_ecran sur cette fenêtre, "
+                        "ou désigne un élément par son numéro.")
+    sx, sy = capture["origin"][0] + x / capture["scale"], capture["origin"][1] + y / capture["scale"]
+    left, top, right, bottom = window["rect"]
+    if not (left <= sx < right and top <= sy < bottom):
+        raise ToolError(f"Le point ({x:.0f}, {y:.0f}) tombe hors de la fenêtre « {window['titre']} ».")
+    return sx, sy, None
+
+
+def _label(found, x, y):
+    if found:
+        return f"[{found.get('n', '')}] {screen.TYPES.get(found['type'], 'élément')} « {found['nom'] or 'sans nom'} »"
+    return f"le point ({x:.0f}, {y:.0f}) de la capture"
+
+
+def bind_screen_action(prepared, cid):
+    """Cible résolue sur la dernière observation de la conversation, et l'aperçu montré dans la demande d'accord."""
+    state = (conversations.get(cid) or {}).get("screen_state")
+    window = _target_window(state)
+    p = dict(prepared)
+    action = p["action"]
+    found = to_found = None
+    if p["element"] is not None or p["x"] is not None:
+        sx, sy, found = _point(state, window, p["element"], p["x"], p["y"])
+        if found:
+            found = {**found, "n": int(p["element"])}
+        p["point"] = (sx, sy)
+    if action == "glisser":
+        tx, ty, to_found = _point(state, window, p["vers_element"], p["vers_x"], p["vers_y"])
+        p["to"] = (tx, ty)
+    if action == "taper" and found and found.get("mot_de_passe"):
+        raise ToolError("C'est un champ mot de passe : c'est à l'utilisateur de le remplir lui-même.")
+    target = _label(found, p["x"] or 0, p["y"] or 0) if "point" in p else None
+    text = (p["texte"] or "")
+    shown = text if len(text) <= 200 else text[:200] + "…"
+    previews = {
+        "cliquer": f"Cliquer sur {target}",
+        "double_clic": f"Double-cliquer sur {target}",
+        "clic_droit": f"Clic droit sur {target}",
+        "taper": (f"Remplacer le contenu par « {shown} »" if p["remplacer"] else f"Taper « {shown} »")
+                 + (f" dans {target}" if target else " là où est le curseur"),
+        "touches": f"Appuyer sur {p['touches']}",
+        "defiler": f"Faire défiler vers le {p['direction']} ({p['quantite']} crans)" + (f" sur {target}" if target else ""),
+        "glisser": f"Glisser de {target} vers " + (_label({**to_found, 'n': int(p['vers_element'])}, 0, 0) if action == "glisser" and to_found
+                                                   else f"le point ({p['vers_x'] or 0:.0f}, {p['vers_y'] or 0:.0f})"),
+    }
+    p["window"] = window
+    p["preview"] = f"{previews[action]}\nFenêtre : « {window['titre']} » ({window['processus']})"
+    return p
+
+
+def _act(p, cid):
+    state = (conversations.get(cid) or {}).get("screen_state")
+    window = _target_window(state)  # de nouveau : du temps a passé pendant ta décision
+    hwnd = window["id"]
+    screen.bring_to_front(hwnd)
+    for point in [pt for pt in (p.get("point"), p.get("to")) if pt]:
+        if screen.owner_at(*point) != hwnd:
+            raise ToolError("Une autre fenêtre recouvre la cible : je n'ai rien fait. Observe à nouveau.")
+    action = p["action"]
+    if action in ("cliquer", "double_clic", "clic_droit"):
+        screen.click(*p["point"], button="droit" if action == "clic_droit" else "gauche", double=action == "double_clic")
+    elif action == "taper":
+        if p.get("point"):
+            screen.click(*p["point"])
+            time.sleep(0.15)
+        if screen.focused_is_password():
+            raise ToolError("Le curseur est dans un champ mot de passe : c'est à l'utilisateur de le remplir.")
+        if p["remplacer"]:
+            # Tout sélectionner, pour que le texte tapé remplace l'ancien : Ctrl+A n'existe pas partout (anciennes
+            # zones de texte WinForms), Ctrl+Fin puis Ctrl+Maj+Origine marche sur une ou plusieurs lignes
+            screen.press("ctrl+fin")
+            screen.press("ctrl+maj+debut")
+        screen.type_text(p["texte"])
+    elif action == "touches":
+        screen.press(p["touches"])
+    elif action == "defiler":
+        left, top, right, bottom = window["rect"]
+        x, y = p.get("point") or ((left + right) / 2, (top + bottom) / 2)
+        screen.scroll(x, y, p["direction"], p["quantite"])
+    elif action == "glisser":
+        screen.drag(*p["point"], *p["to"])
+    time.sleep(screen.SETTLE_S + p["attente"])
+    done = p["preview"].split("\n")[0]
+    listed = screen.windows()
+    still = next((w for w in listed if w["id"] == hwnd), None)
+    if still is None or still["reduite"]:
+        conversations.update(cid, lambda conv: conv.pop("screen_state", None))
+        return _ok(f"Fait : {done}.\nLa fenêtre « {window['titre']} » s'est fermée ou réduite.\n\n"
+                   + screen.describe_windows(listed))
+    text, shots = _observe(cid, still, capture=bool(state.get("capture")))
+    # La même action déjà faite dans cette tâche : dit noir sur blanc (un petit modèle reclique « pour voir », puis
+    # affirme n'avoir cliqué qu'une fois)
+    conv = conversations.get(cid) or {}
+    before = sum(1 for m in conv.get("messages", []) if m.get("name") == "agir_ecran" and m.get("task_id") == conv.get("task_id")
+                 and (m.get("content") or "").startswith(f"Fait : {done}."))
+    repeat = f" ({before + 1}e fois dans cette tâche)" if before else ""
+    text = _truncate(f"Fait : {done}.{repeat}\n\nAprès l'action :\n{text}")
+    text += "\n\nSi la demande est remplie, rends compte à l'utilisateur sans autre action."
+    return _ok(text, **({"images": shots} if shots else {}))
+
+
+async def run_screen_action(prepared, cid):
+    try:
+        return await asyncio.to_thread(_act, prepared, cid)
+    except screen.ScreenError as exc:
+        raise ToolError(str(exc))
 
 
 def prepare_web_fetch(root, args):
@@ -778,6 +978,30 @@ TOOLS = {t.name: t for t in [
         "écrans sans argument. Coûte environ 1 000 tokens : seulement quand le texte ne suffit pas.",
         _schema({"fenetre": {"type": "string", "description": "Id, morceau du titre ou programme (facultatif)."}}, []),
         prepare_screen, run_see_screen,
+    ),
+    Tool(
+        "agir_ecran", "screen_action",
+        "Agit dans la dernière fenêtre observée (lire_fenetre ou voir_ecran), avec l'accord de l'utilisateur à chaque "
+        "fois : cliquer, double_clic ou clic_droit sur un élément (son numéro) ou un point (x, y de la dernière "
+        "capture) ; taper un texte (dans un élément : il clique d'abord dedans, ce qui défait une sélection ; "
+        "remplacer=true pour remplacer tout son contenu ; ou là où est le curseur) ; touches (« ctrl+s », « entree », "
+        "« alt+tab ») ; defiler (haut, bas, gauche, droite) ; glisser d'un élément ou point vers un autre. "
+        "Renvoie ensuite la fenêtre telle qu'elle est devenue. Une action à la fois.",
+        _schema({
+            "action": {"type": "string", "enum": list(SCREEN_ACTIONS)},
+            "element": {"type": "integer", "description": "Numéro de l'élément visé (dernière observation)."},
+            "x": {"type": "number", "description": "Abscisse sur la dernière capture, si aucun élément ne convient."},
+            "y": {"type": "number", "description": "Ordonnée sur la dernière capture."},
+            "texte": {"type": "string", "description": "Texte à taper (action taper)."},
+            "remplacer": {"type": "boolean", "description": "Taper : remplace tout le contenu du champ au lieu d'ajouter."},
+            "touches": {"type": "string", "description": "Touches à presser ensemble (action touches)."},
+            "direction": {"type": "string", "enum": list(SCROLL_DIRECTIONS), "description": "Sens du défilement."},
+            "quantite": {"type": "integer", "description": "Crans de molette (défaut 3)."},
+            "vers_element": {"type": "integer", "description": "Élément où lâcher (action glisser)."},
+            "vers_x": {"type": "number"}, "vers_y": {"type": "number"},
+            "attente": {"type": "number", "description": "Secondes à attendre avant d'observer le résultat (10 au plus)."},
+        }, ["action"]),
+        prepare_screen_action, run_screen_action, bind_screen_action,
     ),
     Tool(
         "web_search", "web",
