@@ -78,7 +78,7 @@ class WebSwitch(unittest.TestCase):
         self.assertIn(agent.WEB_RULE_OFF, agent._system_prompt({}, str(HOME), None))
 
     def test_web_actif_par_defaut(self):
-        self.assertIsNone(agent.allowed_tools(folder=True))
+        self.assertIn("web_search", agent.allowed_tools(folder=True))
         self.assertIn("chercheur-web", subagents.usable())
         self.assertIn("web_search et web_fetch", agent._system_prompt({}, str(HOME), None))
         self.assertEqual(tools.TOOLS["web_search"].kind, "web")

@@ -62,8 +62,12 @@ def save(cid, data_url):
         raise ImageError("Image illisible : format inconnu ou fichier abîmé.")
     if fmt not in FORMATS:
         raise ImageError("Format non pris en charge : PNG, JPEG, WebP, GIF ou BMP.")
+    return store(cid, img, FORMATS[fmt])
+
+
+def store(cid, img, ext="png"):
+    """Image (Pillow) réduite et rangée dans le dossier de la conversation : collée, jointe ou capture d'écran."""
     img.thumbnail((MAX_SIDE, MAX_SIDE))  # ne fait que réduire, en gardant les proportions
-    ext = FORMATS[fmt]
     # PNG pour les captures (le texte reste net), JPEG pour les photos
     img = img.convert("RGB") if ext == "jpg" or img.mode not in ("RGB", "RGBA", "L") else img
     name = f"{uuid.uuid4().hex}.{ext}"

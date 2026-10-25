@@ -16,7 +16,8 @@ import tempfile
 from dataclasses import dataclass
 from typing import Awaitable, Callable
 
-from . import background, backups, checks, conversations, jobs, skills, web, workspace
+from . import background, backups, checks, conversations, images, jobs, screen, skills, web, workspace
+from .server import manager
 
 SKIP_DIRS = {".git", ".hg", ".svn", "node_modules", ".venv", "venv", "__pycache__", ".mypy_cache", ".idea"}
 MAX_FILE_BYTES = 5 * 1024 * 1024
@@ -32,7 +33,7 @@ class ToolError(Exception):
 @dataclass
 class Tool:
     name: str
-    kind: str  # read | state | write | command | web
+    kind: str  # read | state | write | command | web | screen
     description: str
     parameters: dict
     prepare: Callable[[str, dict], dict]
@@ -529,6 +530,67 @@ def prepare_load_skill(root, args):
 
 # --- web -------------------------------------------------------------------------
 
+# --- écran (chantier 4, lecture seule) ---------------------------------------------------------
+
+def prepare_screen(root, args):
+    return {"fenetre": str(args.get("fenetre") or "").strip()}
+
+
+def _remember_screen(cid, window, elements, capture=None):
+    """Ce que le modèle a vu en dernier (fenêtre, éléments numérotés, échelle de la capture) : l'étape 4C agira
+    sur ces numéros."""
+    state = {"window": window["id"] if window else None, "title": window["titre"] if window else None,
+             "elements": {str(e["n"]): {k: e[k] for k in ("type", "nom", "rect")} for e in elements},
+             "capture": capture}
+    conversations.update(cid, lambda conv: conv.__setitem__("screen_state", state))
+
+
+def _read_window(spec, cid):
+    try:
+        listed = screen.windows()
+        if not spec:
+            return _ok(screen.describe_windows(listed))
+        window = screen.find(spec, listed)
+        elements, texts, truncated = screen.read_elements(window)
+    except screen.ScreenError as exc:
+        raise ToolError(str(exc))
+    _remember_screen(cid, window, elements)
+    return _ok(_truncate(screen.describe_elements(window, elements, texts, truncated)))
+
+
+def _see_screen(spec, cid):
+    try:
+        listed = screen.windows()
+        if spec:
+            window = screen.find(spec, listed)
+            elements, texts, truncated = screen.read_elements(window)
+            image, origin = screen.capture_window(window)
+            text = screen.describe_elements(window, elements, texts, truncated)
+        else:
+            window, elements = None, []
+            image, origin = screen.capture_screen()
+            text = f"Capture de tous les écrans ({image.width}x{image.height} pixels).\n" + screen.describe_windows(listed)
+    except screen.ScreenError as exc:
+        raise ToolError(str(exc))
+    small, scale = screen.fit(image, images.MAX_SIDE)
+    if elements:
+        small = screen.draw_marks(small, elements, origin, scale)
+    _remember_screen(cid, window, elements, {"origin": list(origin), "scale": scale, "size": list(small.size)})
+    if not manager.vision:
+        return _ok(_truncate(text + "\n\nLe modèle chargé ne voit pas les images : seule la liste ci-dessus est disponible."))
+    stored = images.store(cid, small, "png")
+    note = "les cadres numérotés correspondent à la liste" if elements else "image réduite"
+    return _ok(_truncate(text + f"\n\nLa capture est jointe juste après ce résultat ({note})."), images=[stored])
+
+
+async def run_read_window(prepared, cid):
+    return await asyncio.to_thread(_read_window, prepared["fenetre"], cid)
+
+
+async def run_see_screen(prepared, cid):
+    return await asyncio.to_thread(_see_screen, prepared["fenetre"], cid)
+
+
 def prepare_web_fetch(root, args):
     url = (args.get("url") or "").strip()
     if not url.startswith(("http://", "https://")):
@@ -701,6 +763,21 @@ TOOLS = {t.name: t for t in [
             "file": {"type": "string", "description": "Fichier d'appoint de la compétence (facultatif)."},
         }, ["name"]),
         prepare_load_skill, run_prepared_output,
+    ),
+    Tool(
+        "lire_fenetre", "screen",
+        "Écran du PC, en texte : sans argument, la liste des fenêtres ouvertes ; avec une fenêtre (id, morceau du "
+        "titre ou programme), ses éléments numérotés (boutons, champs, cases, menus) et ses textes affichés. "
+        "Rapide et sans image : commence par lui.",
+        _schema({"fenetre": {"type": "string", "description": "Id, morceau du titre ou programme (facultatif)."}}, []),
+        prepare_screen, run_read_window,
+    ),
+    Tool(
+        "voir_ecran", "screen",
+        "Capture d'une fenêtre, avec ses éléments encadrés et numérotés comme dans lire_fenetre, ou de tous les "
+        "écrans sans argument. Coûte environ 1 000 tokens : seulement quand le texte ne suffit pas.",
+        _schema({"fenetre": {"type": "string", "description": "Id, morceau du titre ou programme (facultatif)."}}, []),
+        prepare_screen, run_see_screen,
     ),
     Tool(
         "web_search", "web",

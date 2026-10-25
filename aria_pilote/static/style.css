@@ -548,8 +548,11 @@ button.danger-text { color: var(--err); }
 
 .composer { display: grid; gap: 8px; }
 .composer textarea { resize: vertical; min-height: 60px; }
-.composer-actions { display: flex; align-items: center; gap: 8px; justify-content: flex-end; }
-.composer-actions #chat-model { margin-right: auto; }
+.composer-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; justify-content: flex-end; }
+.composer-actions > * { flex-shrink: 0; }
+/* Fenêtre étroite : le nom du modèle se tronque (nom complet au survol) et les boutons passent à la ligne */
+.composer-actions #chat-model { margin-right: auto; flex: 1 1 120px; min-width: 0; white-space: nowrap; overflow: hidden;
+    text-overflow: ellipsis; }
 
 /* Formulaire de compétence (Réglages › Compétences) */
 .skill-form { display: grid; gap: 12px; }

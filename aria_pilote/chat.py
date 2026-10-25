@@ -11,6 +11,7 @@ from . import config, context, conversations, images, persona, skills
 from .server import manager
 
 SAMPLING_FIELDS = ("temperature", "top_p", "top_k", "min_p", "presence_penalty", "max_tokens")
+SCREENSHOTS_KEPT = 2
 
 
 class UpstreamError(Exception):
@@ -33,10 +34,18 @@ def build_messages(conv, system_prompt):
     keep_full, limit = context.SQUEEZE_LEVELS[conv.get("squeeze", 0)]
     tool_positions = [i for i, m in enumerate(source) if m["role"] == "tool"]
     old_tools = set(tool_positions[:-keep_full]) if keep_full else set(tool_positions)
+    # Captures d'écran : seules les dernières sont renvoyées au modèle (chacune coûte environ 1 000 tokens)
+    shots = [i for i, m in enumerate(source) if m["role"] == "tool" and m.get("images")][-SCREENSHOTS_KEPT:]
+    pending = []
     for i, m in enumerate(source):
+        if pending and m["role"] != "tool":
+            messages.append(_screenshots(conv["id"], pending))
+            pending = []
         if m["role"] == "tool":
             content = context.shrink(m["content"], limit) if i in old_tools else m["content"]
             messages.append({"role": "tool", "tool_call_id": m["tool_call_id"], "content": content})
+            if i in shots:
+                pending += m["images"]  # après le dernier résultat du lot : un message ne coupe pas les appels
         elif m["role"] == "assistant" and m.get("tool_calls"):
             messages.append({"role": "assistant", "content": m["content"] or "", "tool_calls": m["tool_calls"]})
             # Un appel resté sans réponse (Stop pendant l'agent) casserait le chat template
@@ -53,7 +62,14 @@ def build_messages(conv, system_prompt):
             messages.append({"role": "user", "content": user_content(conv["id"], text, m.get("images"))})
         else:
             messages.append({"role": m["role"], "content": m["content"]})
+    if pending:
+        messages.append(_screenshots(conv["id"], pending))
     return messages
+
+
+def _screenshots(cid, shots):
+    """Captures renvoyées par voir_ecran : les modèles ne lisent une image que dans un message, d'où celui-ci."""
+    return {"role": "user", "content": user_content(cid, "[Capture d'écran renvoyée par voir_ecran]", shots)}
 
 
 def user_content(cid, text, attached):
