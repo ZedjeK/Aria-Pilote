@@ -743,6 +743,8 @@ $("#btn-rename").addEventListener("click", async () => {
 function formatStats(m) {
     const s = m.stats || {};
     const parts = [];
+    // La compétence que le modèle a suivie pour cette réponse
+    if (m.skill_used && !m.tool_calls) parts.push(`🧩 ${m.skill_used}`);
     if (m.model) parts.push(m.model);
     if (s.completion_tokens) parts.push(`${s.completion_tokens} tokens`);
     if (s.tok_s) parts.push(`${s.tok_s} tok/s`);

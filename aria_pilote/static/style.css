@@ -550,3 +550,23 @@ button.danger-text { color: var(--err); }
 .composer textarea { resize: vertical; min-height: 60px; }
 .composer-actions { display: flex; align-items: center; gap: 8px; justify-content: flex-end; }
 .composer-actions #chat-model { margin-right: auto; }
+
+/* Formulaire de compétence (Réglages › Compétences) */
+.skill-form { display: grid; gap: 12px; }
+.skill-form label { display: grid; gap: 4px; font-size: 13px; color: var(--muted); }
+.skill-form label.check { display: flex; align-items: center; gap: 8px; }
+.skill-form-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.skill-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 12px; }
+.skill-fields { display: grid; gap: 12px; }
+.skill-block { display: grid; gap: 6px; }
+.skill-label { font-size: 13px; color: var(--muted); }
+.skill-label .muted, .skill-form label > .muted { display: block; }
+.skill-case { border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; display: grid; gap: 6px; }
+.skill-case-head { display: flex; gap: 6px; align-items: center; }
+.skill-case-head input { flex: 1; }
+.skill-form .rules-list input { flex: 1; }
+.skill-preview pre { max-height: 320px; overflow: auto; white-space: pre-wrap; font-size: 12px; margin: 6px 0 0; }
+.skill-actions { display: flex; align-items: center; justify-content: flex-end; gap: 8px; }
+.skill-actions #skill-tokens { margin-right: auto; }
+.skill-form fieldset { border: 0; padding: 0; margin: 0; }
+.skills-list .skill-reg { font-size: 11px; color: var(--muted); }

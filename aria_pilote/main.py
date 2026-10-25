@@ -710,6 +710,19 @@ def save_skill(req: SkillRequest):
         raise HTTPException(400, str(exc))
 
 
+class SkillConvert(BaseModel):
+    fields: dict | None = None
+    markdown: str | None = None
+
+
+@app.post("/api/skills/convert")
+def convert_skill(req: SkillConvert):
+    """Bascule du formulaire : cases -> fichier (aperçu, mode texte), ou fichier -> cases (None si hors modèle)."""
+    if req.fields is not None:
+        return {"markdown": skills.render_markdown(req.fields)}
+    return {"fields": skills.parse_markdown(req.markdown or "")}
+
+
 @app.post("/api/skills/{name}/customize")
 def customize_skill(name: str):
     try:
