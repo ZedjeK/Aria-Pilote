@@ -42,6 +42,8 @@ DEFAULTS = {
     "new_conversation": {"workspace": "", "auto_web": False},
     # Plan exigé avant toute modification, à chaque nouvelle tâche dans un dossier (verrou côté serveur)
     "always_plan": False,
+    # Contrôle du PC (chantier 4) : coupé tant que tu ne l'actives pas ici, puis conversation par conversation
+    "screen_control": False,
     # Preset des nouvelles conversations (et de celles dont le preset a été supprimé)
     "default_preset": "default",
     # Persona des nouvelles conversations (et de celles dont le persona a été supprimé)

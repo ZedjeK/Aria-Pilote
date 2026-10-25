@@ -4,6 +4,7 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
+import base  # noqa: F401  (en premier : Aria tourne dans un dossier temporaire)
 from aria_pilote import persona, skills
 
 BUILTINS = ("analyste", "creatif", "dev", "message-commit", "prof", "projet", "redaction", "revue-code",

@@ -8,6 +8,7 @@ from unittest import mock
 
 from PIL import Image
 
+import base  # noqa: F401  (en premier : Aria tourne dans un dossier temporaire)
 from aria_pilote import chat, context, conversations, images
 from aria_pilote.server import ServerManager
 

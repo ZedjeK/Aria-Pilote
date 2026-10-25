@@ -178,6 +178,7 @@ class ConversationPatch(BaseModel):
     preset_id: str | None = None
     persona_id: str | None = None
     agent: AgentSettings | None = None
+    screen_control: bool | None = None  # contrôle du PC dans cette conversation (s'il est activé dans les Réglages)
 
 
 class ApprovalRequest(BaseModel):
@@ -512,6 +513,10 @@ def patch_conversation(cid: str, patch: ConversationPatch):
         if patch.agent.enabled and not settings.get("workspace"):
             raise HTTPException(400, "Choisis d'abord un dossier de travail.")
         settings["enabled"] = patch.agent.enabled
+    if patch.screen_control is not None:
+        if patch.screen_control and not config.get().get("screen_control"):
+            raise HTTPException(409, "Le contrôle du PC est coupé dans les Réglages (Agents).")
+        conv["screen_control"] = patch.screen_control
     return conversations.save(conv)
 
 
@@ -1104,7 +1109,7 @@ def agent_context(conversation_id: str):
     except hooks.HookError:
         global_hooks = {}
     project = hooks.project_status(root) if root else None
-    allowed = agent.allowed_tools(folder=bool(root))
+    allowed = agent.allowed_tools(folder=bool(root), screen=agent.screen_enabled(conv))
     # + ask_user et propose_plan, + delegate s'il y a des sous-agents utilisables
     tool_count = len(allowed if allowed is not None else tools.TOOLS) + 2 + bool(subagents.usable(root))
     return {

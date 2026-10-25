@@ -925,6 +925,8 @@ function toolNode(m, pendingPlan = false, activeQuestion = false) {
     if (m.syntax === false) node.classList.add("syntax-error");
     node.append(el("pre", {}, JSON.stringify(m.args, null, 2)));
     if (m.content) node.append(el("pre", {}, m.content));
+    const shots = messageImages(m);  // capture de voir_ecran, avec ses repères numérotés
+    if (shots) node.append(shots);
     if (m.backup_id) {
         const actions = el("div", { className: "tool-actions" });
         if (m.undone) {
@@ -1526,6 +1528,7 @@ setInterval(() => {
     $("#chat-model").textContent = s?.state === "ready"
         ? `Modèle : ${s.model.name}`
         : s?.state === "loading" ? "Chargement du modèle…" : "Aucun modèle chargé (sélecteur en haut)";
+    $("#chat-model").title = $("#chat-model").textContent;  // nom complet au survol quand il est tronqué
 }, 1000);
 
 (async () => {
