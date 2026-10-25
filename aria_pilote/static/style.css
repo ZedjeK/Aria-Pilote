@@ -570,3 +570,11 @@ button.danger-text { color: var(--err); }
 .skill-actions #skill-tokens { margin-right: auto; }
 .skill-form fieldset { border: 0; padding: 0; margin: 0; }
 .skills-list .skill-reg { font-size: 11px; color: var(--muted); }
+
+/* Images jointes : vignettes avant l'envoi, puis dans le message */
+.attach-list { display: flex; flex-wrap: wrap; gap: 8px; }
+.attach-thumb { position: relative; }
+.attach-thumb img { height: 64px; max-width: 120px; object-fit: cover; border-radius: 6px; border: 1px solid var(--border); display: block; }
+.attach-thumb button { position: absolute; top: -6px; right: -6px; padding: 0 5px; border-radius: 50%; background: var(--panel); font-size: 11px; }
+.msg-images { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
+.msg-images img { max-height: 180px; max-width: 100%; border-radius: 8px; border: 1px solid var(--border); cursor: zoom-in; }

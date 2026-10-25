@@ -60,6 +60,8 @@
                 <button type="button" id="btn-ctx-close" class="ghost" title="Masquer pour cette conversation">✕</button>
             </div>
             <form id="chat-form" class="composer">
+                <div id="attach-list" class="attach-list" hidden></div>
+                <input type="file" id="attach-input" accept="image/png,image/jpeg,image/webp,image/gif,image/bmp" multiple hidden>
                 <textarea id="chat-input" rows="3" placeholder="Écris ton message… (Entrée pour envoyer, Maj+Entrée pour aller à la ligne)"></textarea>
                 <div id="compact-pop" class="compact-pop" hidden>
                     <span class="small">🗜 Résumer les anciens échanges pour libérer du contexte. L'historique reste affiché.</span>
@@ -76,6 +78,7 @@
                         <span class="ctx-text"></span>
                     </span>
                     <button type="button" id="btn-compact" class="ghost" title="Compacter : résumer les anciens échanges pour libérer du contexte (ou tape /compact)" hidden>🗜</button>
+                    <button type="button" id="btn-attach" class="ghost" title="Joindre une image (ou colle-la, ou glisse-la ici)">📎</button>
                     <button type="button" id="btn-skills" class="ghost" title="Compétences">📚 Compétences</button>
                     <button type="button" id="btn-regen" class="ghost">🔄 Régénérer</button>
                     <button type="button" id="btn-stop" class="ghost" hidden>⏹ Stop</button>

@@ -2,6 +2,7 @@
 
 import json
 import re
+import shutil
 import threading
 import uuid
 from datetime import datetime, timedelta
@@ -92,10 +93,10 @@ def inactive_since(days, now=None):
 
 
 def to_trash(cids):
-    """Envoie ces conversations à la corbeille en un seul lot ; renvoie celles qui y sont parties."""
+    """Envoie ces conversations à la corbeille en un seul lot (avec leurs images) ; renvoie celles qui y sont parties."""
     paths = [_path(cid) for cid in cids if ID_RE.match(cid) and _path(cid).exists()]
     if paths:
-        trash.to_recycle_bin(paths)
+        trash.to_recycle_bin(paths + [p.with_suffix("") for p in paths if p.with_suffix("").is_dir()])
     return [p.stem for p in paths]
 
 
@@ -103,15 +104,18 @@ def delete(cid):
     path = _path(cid)
     if path.exists():
         path.unlink()
+    shutil.rmtree(path.with_suffix(""), ignore_errors=True)  # dossier des images jointes
 
 
-def add_user_message(conv, content, skill=None):
+def add_user_message(conv, content, skill=None, images=None):
     message = {"role": "user", "content": content, "created_at": _now()}
     if skill:
         message["skill"] = skill  # « /nom » tapé dans le chat : la compétence est ajoutée à l'envoi
+    if images:
+        message["images"] = images  # [{"file", "w", "h"}], rangées dans data/conversations/<id>/
     conv["messages"].append(message)
     if conv["title"] == DEFAULT_TITLE:
-        conv["title"] = _make_title(f"/{skill} {content}" if skill else content)
+        conv["title"] = _make_title(f"/{skill} {content}" if skill else content or "🖼 Image")
 
 
 def drop_trailing_assistant(conv):

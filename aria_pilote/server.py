@@ -102,11 +102,17 @@ class ServerManager:
             "state": self.state,
             "error": self.error,
             "model": {"id": self.model.id, "name": self.model.name} if self.model else None,
+            "vision": self.vision,
             "engine": self.engine,
             "pid": self.proc.pid if self.proc and self.proc.poll() is None else None,
             "api_url": f"http://127.0.0.1:{port}/v1" if self.state == "ready" else None,
             "uptime_s": int(time.time() - self.started_at) if self.started_at and self.state == "ready" else None,
         }
+
+    @property
+    def vision(self):
+        """Le modèle chargé a son projecteur vision : il peut lire les images jointes."""
+        return bool(self.model and self.model.mmproj and (self._settings or {}).get("use_mmproj"))
 
     async def load(self, model, settings, engine, auto):
         async with self._lock:

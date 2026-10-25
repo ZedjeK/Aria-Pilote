@@ -7,7 +7,7 @@ import uuid
 
 import httpx
 
-from . import config, context, conversations, persona, skills
+from . import config, context, conversations, images, persona, skills
 from .server import manager
 
 SAMPLING_FIELDS = ("temperature", "top_p", "top_k", "min_p", "presence_penalty", "max_tokens")
@@ -43,14 +43,33 @@ def build_messages(conv, system_prompt):
             for tc in m["tool_calls"]:
                 if tc["id"] not in answered:
                     messages.append({"role": "tool", "tool_call_id": tc["id"], "content": "Action interrompue par l'utilisateur."})
-        elif m["role"] == "user" and m.get("skill"):
-            # « /nom demande » : la compétence, puis le registre de ce mode pour le persona de la conversation
-            root = (conv.get("agent") or {}).get("workspace") if (conv.get("agent") or {}).get("enabled") else None
-            note = persona.register_note(persona.for_conversation(conv), m["skill"])
-            messages.append({"role": "user", "content": skills.expand(m["skill"], m["content"], root) + note})
+        elif m["role"] == "user":
+            text = m["content"]
+            if m.get("skill"):
+                # « /nom demande » : la compétence, puis le registre de ce mode pour le persona de la conversation
+                root = (conv.get("agent") or {}).get("workspace") if (conv.get("agent") or {}).get("enabled") else None
+                note = persona.register_note(persona.for_conversation(conv), m["skill"])
+                text = skills.expand(m["skill"], m["content"], root) + note
+            messages.append({"role": "user", "content": user_content(conv["id"], text, m.get("images"))})
         else:
             messages.append({"role": m["role"], "content": m["content"]})
     return messages
+
+
+def user_content(cid, text, attached):
+    """Texte du message, précédé de ses images si le modèle les voit (format OpenAI accepté par llama-server)."""
+    if not attached:
+        return text
+    if not manager.vision:
+        note = f"[{len(attached)} image(s) jointe(s), que le modèle chargé ne peut pas voir : il n'a pas de projecteur vision]"
+        return f"{note}\n{text}" if text else note
+    parts = []
+    for image in attached:
+        try:
+            parts.append({"type": "image_url", "image_url": {"url": images.data_url(cid, image["file"])}})
+        except images.ImageError:
+            parts.append({"type": "text", "text": "[image jointe introuvable]"})
+    return parts + ([{"type": "text", "text": text}] if text else [])
 
 
 def build_payload(conv, preset, model_name, system_prompt=None, tools=None):

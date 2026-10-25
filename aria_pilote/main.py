@@ -8,13 +8,13 @@ from pathlib import Path
 
 import httpx
 from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import JSONResponse, PlainTextResponse, StreamingResponse
+from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from . import (VERSION, agent, background, backups, chat, config, context, conversations, downloads, engines, hardware,
-               hooks, hub, models, optimizer, permissions, persona, pick_folder, presets, searxng, skills, subagents,
-               tools, trial, updates, workspace)
+               hooks, hub, images, models, optimizer, permissions, persona, pick_folder, presets, searxng, skills,
+               subagents, tools, trial, updates, workspace)
 from .server import EngineMissing, manager
 
 STATIC_DIR = Path(__file__).parent / "static"
@@ -211,6 +211,7 @@ class ChatRequest(BaseModel):
     answer: str | None = None  # réponse à la question en attente de l'agent ("" : il décide lui-même)
     continue_task: bool = False  # bouton « Continuer » : le message prolonge la tâche en cours
     preset_id: str | None = None
+    images: list[str] = []  # images collées ou jointes (data URL), avec un nouveau message seulement
 
 
 class DownloadRequest(BaseModel):
@@ -532,11 +533,21 @@ async def chat_endpoint(req: ChatRequest):
         raise HTTPException(409, "Aucun modèle prêt : charge un modèle dans l'onglet Modèles.")
     conv = _conversation_or_404(req.conversation_id)
     preset = presets.resolve(req.preset_id or conv.get("preset_id") or config.get().get("default_preset"))
-    if req.content is not None and not req.content.strip():
+    if req.content is not None and not req.content.strip() and not req.images:
         raise HTTPException(400, "Message vide.")
+    if req.images:
+        if req.content is None:
+            raise HTTPException(400, "Une image s'envoie avec un nouveau message.")
+        if len(req.images) > images.MAX_PER_MESSAGE:
+            raise HTTPException(400, f"{images.MAX_PER_MESSAGE} images au plus par message.")
+        if not manager.vision:
+            raise HTTPException(409, "Le modèle chargé ne voit pas les images : il lui faut son projecteur vision "
+                                     "(fichier mmproj, option « Vision » dans ses réglages).")
     question = agent.pending_question(conv)
     if req.answer is not None and question is None:
         raise HTTPException(409, "Aucune question de l'agent n'attend de réponse.")
+    if question is not None and req.images:
+        raise HTTPException(409, "Réponds d'abord à la question de l'agent, puis envoie ton image.")
     if question is not None and (req.answer is not None or req.content is not None):
         # Ta réponse (bouton ou message tapé) devient le résultat d'ask_user, puis l'agent reprend
         agent.answer_question(question, req.answer if req.answer is not None else req.content)
@@ -546,7 +557,11 @@ async def chat_endpoint(req: ChatRequest):
         match = re.match(r"^/([a-z0-9][a-z0-9-]*)(?:\s+(.*))?$", req.content.strip(), re.DOTALL)
         if match and match.group(1) in skills.discover(_agent_root(conv)):
             skill, content = match.group(1), (match.group(2) or "").strip()
-        conversations.add_user_message(conv, content, skill)
+        try:
+            attached = [images.save(conv["id"], url) for url in req.images]
+        except images.ImageError as exc:
+            raise HTTPException(400, str(exc))
+        conversations.add_user_message(conv, content, skill, attached)
         # Un plan attend ta décision : ton message (« modifie le plan… ») le prolonge, le verrou reste en place
         if not req.continue_task and not agent.plan_locked(conv):
             conv["task_id"] = backups.new_task_id()  # nouvelle demande, nouvelle tâche (réponses et reprises la prolongent)
@@ -565,6 +580,15 @@ async def chat_endpoint(req: ChatRequest):
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache"},
     )
+
+
+@app.get("/api/conversations/{cid}/images/{name}")
+def conversation_image(cid: str, name: str):
+    _conversation_or_404(cid)
+    try:
+        return FileResponse(images.path(cid, name), headers={"Cache-Control": "private, max-age=86400"})
+    except images.ImageError as exc:
+        raise HTTPException(404, str(exc))
 
 
 def _agent_root(conv):
