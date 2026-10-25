@@ -170,6 +170,30 @@ class Assembly(unittest.TestCase):
         self.assertIn("registre professionnel", messages[-1]["content"])
 
 
+class ActiveSkill(unittest.TestCase):
+    def setUp(self):
+        keep_state(self)
+        self.nova = persona.create(NOVA)
+
+    def test_le_registre_de_la_competence_entre_dans_le_prompt(self):
+        conv = {"persona_id": self.nova["id"], "messages": [{"role": "user", "content": "relis", "skill": "revue-code"}]}
+        self.assertEqual(agent.active_skill(conv), "revue-code")
+        prompt = agent._system_prompt(conv, None, None)
+        # Nova n'a aucun trait en registre professionnel : plus de section personnalité du tout
+        self.assertNotIn("Ta personnalité", prompt)
+        self.assertNotIn("Humour geek", prompt)
+        self.assertIn("Ne jamais inventer un fait.", prompt)  # les règles d'or, elles, restent
+        # Compétence chargée par le modèle en cours de tâche
+        conv = {"persona_id": self.nova["id"], "messages": [
+            {"role": "user", "content": "salut"},
+            {"role": "tool", "name": "load_skill", "status": "ok", "args": {"name": "revue-code"}, "content": "…"}]}
+        self.assertEqual(agent.active_skill(conv), "revue-code")
+        # Nouvelle demande sans compétence : retour au registre de discussion
+        conv["messages"].append({"role": "user", "content": "et sinon ?"})
+        self.assertIsNone(agent.active_skill(conv))
+        self.assertIn("registre naturel", agent._system_prompt(conv, None, None))
+
+
 async def _collect(gen):
     return [e async for e in gen]
 

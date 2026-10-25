@@ -290,10 +290,26 @@ def allowed_tools(folder=True):
     return allowed
 
 
+def active_skill(conv):
+    """Compétence active de la tâche en cours : la dernière chargée depuis ta demande (« /nom » ou load_skill)."""
+    messages = (conv or {}).get("messages") or []
+    last_user = max((i for i, m in enumerate(messages) if m["role"] == "user"), default=None)
+    if last_user is None:
+        return None
+    skill = messages[last_user].get("skill")
+    for m in messages[last_user + 1:]:
+        if m["role"] == "tool" and m.get("name") == "load_skill" and m.get("status") == "ok" \
+                and not (m.get("args") or {}).get("file"):
+            skill = ((m.get("args") or {}).get("name") or "").strip() or skill
+    return skill
+
+
 def _system_prompt(conv, root, memory, plan_required=False):
     """Prompt système, dans l'ordre validé : persona, fiche de l'utilisateur, règles d'Aria Pilote (et priorités),
     planification, compétences, sous-agents, mémoire du projet. Le résumé des anciens échanges est ajouté ensuite."""
-    persona_text, profile_text = persona.prompt_blocks(conv, folder=bool(root))
+    # Le registre de la compétence active est écrit dans le prompt lui-même : une simple note à côté d'un prompt qui
+    # décrit le registre de discussion ne suffisait pas à tous les modèles (Qwen 3.8 gardait ses emojis)
+    persona_text, profile_text = persona.prompt_blocks(conv, folder=bool(root), skill=active_skill(conv))
     web_rule = WEB_RULE if config.web_enabled() else WEB_RULE_OFF
     if root:
         main = AGENT_PROMPT.format(root=root, todo_rule=TODO_RULE, web_rule=web_rule)
@@ -459,6 +475,7 @@ async def _run(conv, preset, model_name, task_id):
         yield chat.event({"type": "memory", "file": memory_file(root), "chars": len(memory)})
     plan_required = (conv.get("plan") or {}).get("status") == "required" and plan_locked(conv)
     system_prompt = _system_prompt(conv, root, memory, plan_required)
+    hook_notes = ""
 
     if root:
         # Hooks du projet pas encore approuvés : ils ne tournent pas, on te les montre
@@ -471,7 +488,8 @@ async def _run(conv, preset, model_name, task_id):
             yield toolrun.hook_event("debut_tache", start)
             notes = "\n".join(o["sortie"] for o in start if o["sortie"])
             if notes:
-                system_prompt += f"\n\nInformations fournies par les hooks de début de tâche :\n{notes}"
+                hook_notes = f"\n\nInformations fournies par les hooks de début de tâche :\n{notes}"
+                system_prompt += hook_notes
         # Dans un dossier, l'agent enchaîne les outils : réponses assez longues, réflexion plafonnée
         preset = {
             **preset,
@@ -550,6 +568,9 @@ async def _run(conv, preset, model_name, task_id):
             calls_done += 1
             async for ev in _execute(cid, root, call, run_ctx):
                 yield ev
+            if call["function"]["name"] == "load_skill":
+                # Nouvelle compétence active : le persona passe à son registre dès l'étape suivante
+                system_prompt = _system_prompt(conversations.get(cid), root, memory, plan_required) + hook_notes
         if run_ctx["stuck"]:
             yield chat.event({"type": "error", "message": (
                 "L'agent tourne en rond (même appel d'outil répété malgré l'avertissement) : tâche arrêtée. "

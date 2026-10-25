@@ -314,10 +314,26 @@ def register_note(persona, skill):
     if not persona:
         return ""
     register = register_for(persona, skill)
+    base = register_for(persona)
     lines = personality(persona, register)
     body = "\n".join(lines) if lines else "- aucun trait de personnalité dans ce registre : reste neutre."
-    return (f"\n\nPour cette compétence, adopte le registre {REGISTERS[register].lower()} de ta personnalité :\n{body}\n"
-            "À la demande suivante sans compétence, reviens à ton registre de discussion.")
+    # Le prompt système décrit encore le registre de discussion : on nomme ce qui doit disparaître ou baisser,
+    # sinon le modèle mélange les deux (constaté sur Qwen 3.8 : emojis gardés en registre professionnel)
+    dropped, lowered = [], []
+    for tid, levels in (persona.get("traits") or {}).items():
+        before, now = levels.get(base, 0), levels.get(register, 0)
+        label = TRAITS[tid]["label"] if tid in TRAITS else None
+        if not label or now >= before:
+            continue
+        (dropped if now == 0 else lowered).append(label if now == 0 else f"{label} (intensité {INTENSITIES[now]})")
+    changes = ""
+    if dropped:
+        changes += f"\nLaisse complètement de côté dans ce registre : {', '.join(dropped)}."
+    if lowered:
+        changes += f"\nAtténue : {', '.join(lowered)}."
+    return (f"\n\nPour cette compétence, adopte le registre {REGISTERS[register].lower()} de ta personnalité, à la place "
+            f"de celui de la discussion :\n{body}{changes}\nApplique-le sans en parler. À la demande suivante sans "
+            "compétence, reviens à ton registre de discussion.")
 
 
 def render_profile(profile):
@@ -341,10 +357,11 @@ def render_profile(profile):
     return "\n".join(lines)
 
 
-def prompt_blocks(conv, folder=False):
-    """(bloc persona, bloc utilisateur) pour le prompt système de la conversation."""
+def prompt_blocks(conv, folder=False, skill=None):
+    """(bloc persona, bloc utilisateur) pour le prompt système de la conversation ; `skill` : compétence active de la
+    tâche, dont le registre remplace celui de la discussion dans le prompt lui-même."""
     persona = for_conversation(conv)
     profile = get_profile()
-    persona_text = render(persona, register_for(persona)) if persona else ""
+    persona_text = render(persona, register_for(persona, skill)) if persona else ""
     profile_text = render_profile(profile) if (not folder or profile.get("in_folder", True)) else ""
     return persona_text, profile_text
