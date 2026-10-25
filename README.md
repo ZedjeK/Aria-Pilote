@@ -11,7 +11,7 @@
 </p>
 
 <p align="center">
-  <a href="#compiler-soi-même"><b>Compiler Aria Pilote</b></a> · v0.15 · Windows 10/11 x64 · carte NVIDIA conseillée · licence MIT (code d'Aria) / AGPL-3.0 (SearXNG embarqué)
+  <a href="#compiler-soi-même"><b>Compiler Aria Pilote</b></a> · v0.16 · Windows 10/11 x64 · carte NVIDIA conseillée · licence MIT (code d'Aria) / AGPL-3.0 (SearXNG embarqué)
 </p>
 
 ## Ce qu'il fait
@@ -30,6 +30,8 @@
 | **Plan et mémoire** | L'agent écrit son plan d'étapes et le coche au fil du travail. Un fichier `MEMOIRE.md` à la racine d'un projet lui donne tes conventions à chaque tâche (l'ancien `ARIA.md` est encore lu, et l'onglet Contexte propose de le renommer) | — |
 | **Persona et fiche Toi** | Qui te répond, sans écrire de prompt : un nom, un avatar, une présentation, des traits choisis dans un catalogue (chaleur, franchise, humour geek, emojis…) avec leur intensité dans trois registres (naturel, sobre, professionnel), des règles d'or et un interrupteur pour le contenu intime. Chaque compétence a son registre : `/revue-code` peut rester sobre quand la discussion est chaleureuse. Plusieurs personas, un par conversation (puce 🎭), export et import. La fiche **Toi** (prénom, tutoiement, langue, métier, ce que tu apprécies) vaut pour tous les personas. Tout reste dans tes données, jamais sur GitHub | — |
 | **Compétences** | Des méthodes de travail que le modèle charge tout seul quand ta demande y correspond, sans déclencheur à écrire : dev, projet, securite, prof, redaction, analyste, creatif, revue-code, script-powershell et message-commit (« /nom » en force une). Chacune suit le même modèle (objectif, quand ne pas s'en servir, méthode par cas, format, règles, vérifications, exemple) et se modifie avec un formulaire ou en mode texte ; une compétence intégrée se personnalise en copie. Sous la réponse, l'étiquette 🧩 dit laquelle a servi | Outils d'Aria |
+| **Images** | Colle (Ctrl+V), glisse ou joins (📎) jusqu'à 5 images par message : une capture d'erreur, une photo, un schéma. Elles sont réduites, rangées avec la conversation et lues par le projecteur vision du modèle (mmproj) ; un modèle sans vision le dit au lieu de faire semblant | — |
+| **Contrôle du PC** (expérimental) | Coupé par défaut. Une fois activé dans les Réglages, « 🖱 Prendre la main » laisse l'agent voir les fenêtres que tu coches et y agir : il lit leurs boutons et champs par l'accessibilité de Windows, les numérote sur la capture, puis clique, tape ou fait défiler, avec ton accord à chaque action. Il n'agit que sur ce qu'il vient d'observer, refuse si la fenêtre a bougé ou si une autre la recouvre, ne lit ni ne remplit jamais un mot de passe, signale les boutons sensibles (envoyer, payer, supprimer…) et s'arrête au bout de 40 actions. Réglages système, sécurité Windows, terminaux et la fenêtre d'Aria restent hors de portée | Outils d'Aria |
 | **Questions** | Quand une info indispensable lui manque, l'agent te pose la question avec des options au lieu de deviner. La tâche se met en pause, survit à un rechargement de la page, et reprend dès ta réponse (un bouton, ou un message tapé) | — |
 | **Recherche web** | Recherche privée par un SearXNG qui tourne sur ton PC, lecture de pages publiques. Les adresses de ta machine et de ton réseau local sont refusées | SearXNG embarqué |
 | **Sécurité locale** | llama-server n'accepte que les requêtes d'Aria (clé régénérée à chaque lancement, CORS limité), l'interface refuse les autres sites et le DNS rebinding, et tout ce qu'Aria lance s'arrête avec elle | — |
@@ -52,7 +54,7 @@ py -3.11 tools/build_portable.py
 | --- | --- |
 | `install_engines.py` | Télécharge `llama-server` officiel (dernière build) et celui de PrismML (version épinglée) avec le runtime CUDA |
 | `install_searxng.py` | Télécharge SearXNG à une version épinglée, lui applique la retouche Windows et génère sa configuration (clé secrète aléatoire, `127.0.0.1` uniquement) |
-| `build_portable.py` | Assemble `..\Aria-Pilote-0.15.0\` : Python portable vérifié par SHA-256, code, moteurs, SearXNG et le lanceur `Aria-Pilote.exe` |
+| `build_portable.py` | Assemble `..\Aria-Pilote-0.16.0\` : Python portable vérifié par SHA-256, code, moteurs, SearXNG et le lanceur `Aria-Pilote.exe` |
 
 Lance ensuite `Aria-Pilote.exe`. L'exe n'est pas signé : si Windows SmartScreen affiche « Windows a protégé votre ordinateur », clique sur « Informations complémentaires » puis « Exécuter quand même ».
 
