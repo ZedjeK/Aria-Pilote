@@ -7,8 +7,8 @@ from unittest import mock
 import base  # noqa: F401  (en premier : Aria tourne dans un dossier temporaire)
 from aria_pilote import persona, skills
 
-BUILTINS = ("analyste", "creatif", "dev", "message-commit", "prof", "projet", "redaction", "revue-code",
-            "script-powershell", "securite")
+BUILTINS = ("analyste", "createur-competence", "creatif", "dev", "message-commit", "prof", "projet", "redaction",
+            "resume", "revue-code", "script-powershell", "securite")
 
 
 class FormatTest(unittest.TestCase):
