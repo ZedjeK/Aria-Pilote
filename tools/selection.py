@@ -30,7 +30,8 @@ GOAL = 0.9
 CASES = [
     ("Mon script Python plante avec KeyError: 'port' quand je lance python app.py, tu peux corriger ?", "dev"),
     ("Écris-moi une fonction Python qui vérifie si une adresse IP appartient à un sous-réseau donné.", "dev"),
-    ("Mon nginx renvoie 502 depuis que j'ai changé le port de l'appli, ma conf : proxy_pass http://127.0.0.1:3000;", "dev"),
+    ("Mon nginx renvoie 502 depuis que j'ai changé le port de l'appli, ma conf : proxy_pass http://127.0.0.1:3000;",
+     ("dev", "depannage")),  # panne de service ou config à corriger : les deux se défendent
     ("Comment je découpe cette fonction JavaScript de 200 lignes sans rien casser ?", "dev"),
     ("Je dois migrer 40 postes vers Windows 11 avant fin mars, aide-moi à organiser ça.", "projet"),
     ("J'ai trop de choses cette semaine : la mise à jour du pare-feu, deux tickets clients et un audit. Par quoi je commence ?", "projet"),
@@ -105,6 +106,11 @@ CASES = [
 ]
 
 
+def _answers(expected):
+    """Réponses justes d'une phrase : une compétence, ou un tuple quand deux se défendent."""
+    return expected if isinstance(expected, tuple) else (expected,)
+
+
 def pick(client, prompt, timeout):
     """Compétence chargée au premier tour : la première load_skill, ou « aucune » si le modèle répond sans."""
     conv = client.post("/api/conversations", json={"persona_id": "none"}).json()
@@ -146,7 +152,7 @@ def main():
     parser.add_argument("--out", default="", help="fichier JSON des résultats")
     args = parser.parse_args()
     only = {s.strip() for s in args.only.split(",") if s.strip()}
-    cases = [c for c in CASES if not only or c[1] in only]
+    cases = [c for c in CASES if not only or set(_answers(c[1])) & only]
     report = {}
     with httpx.Client(base_url=BASE, timeout=60) as client:
         if not alive(client):
@@ -158,7 +164,8 @@ def main():
             for i, (prompt, expected) in enumerate(cases, 1):
                 started = time.time()
                 chosen, others = pick(client, prompt, args.timeout)
-                ok = chosen == expected
+                ok = chosen in _answers(expected)
+                expected = "|".join(_answers(expected))
                 rows.append({"prompt": prompt, "expected": expected, "chosen": chosen, "others": others, "ok": ok,
                              "s": round(time.time() - started, 1)})
                 if not ok:

@@ -10,7 +10,7 @@ Trouver la cause réelle par élimination, rétablir le service, et éviter que 
 
 ## Ne pas l'utiliser si
 - Un bug dans du code ou un script à corriger : dev.
-- Un soupçon de piratage, un malware ou un accès inconnu : securite. Une notion à comprendre sans panne : prof.
+- Un soupçon de piratage, un malware, un accès inconnu ou un trafic suspect (connexions vers des adresses inconnues) : securite. Une notion à comprendre sans panne : prof.
 
 ## Méthode
 ### Cerner la panne
