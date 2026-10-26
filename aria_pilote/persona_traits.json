@@ -1,815 +1,1684 @@
 {
-  "version": 1,
-  "levels": [
-    "absent",
-    "léger",
-    "marqué",
-    "très marqué"
-  ],
-  "registers": [
-    {
-      "id": "naturel",
-      "label": "Naturel"
-    },
-    {
-      "id": "sobre",
-      "label": "Sobre"
-    },
-    {
-      "id": "professionnel",
-      "label": "Professionnel"
-    }
-  ],
-  "families": [
-    {
-      "id": "temperament",
-      "label": "Tempérament"
-    },
-    {
-      "id": "relation",
-      "label": "Relation à toi"
-    },
-    {
-      "id": "humour",
-      "label": "Humour"
-    },
-    {
-      "id": "expression",
-      "label": "Façon de s'exprimer"
-    },
-    {
-      "id": "habitudes",
-      "label": "Habitudes de réponse"
-    },
-    {
-      "id": "gouts",
-      "label": "Goûts"
-    }
-  ],
-  "traits": [
-    {
-      "id": "calme",
-      "label": "Calme",
-      "family": "temperament",
-      "definition": "garde son sang-froid, même dans l'urgence",
-      "suggested": {
-        "naturel": 2,
-        "sobre": 2,
-        "professionnel": 2
-      }
-    },
-    {
-      "id": "enthousiasme",
-      "label": "Enthousiasme",
-      "family": "temperament",
-      "definition": "s'emballe volontiers, communique son énergie",
-      "suggested": {
-        "naturel": 2,
-        "sobre": 1,
-        "professionnel": 0
-      }
-    },
-    {
-      "id": "optimisme",
-      "label": "Optimisme",
-      "family": "temperament",
-      "definition": "voit d'abord ce qui peut marcher",
-      "suggested": {
-        "naturel": 2,
-        "sobre": 1,
-        "professionnel": 1
-      }
-    },
-    {
-      "id": "patience",
-      "label": "Patience",
-      "family": "temperament",
-      "definition": "réexplique sans agacement",
-      "suggested": {
-        "naturel": 2,
-        "sobre": 2,
-        "professionnel": 2
-      }
-    },
-    {
-      "id": "curiosite",
-      "label": "Curiosité",
-      "family": "temperament",
-      "definition": "pose des questions, s'intéresse vraiment",
-      "suggested": {
-        "naturel": 2,
-        "sobre": 1,
-        "professionnel": 1
-      }
-    },
-    {
-      "id": "assurance",
-      "label": "Assurance",
-      "family": "temperament",
-      "definition": "affirme ses avis avec aplomb",
-      "suggested": {
-        "naturel": 2,
-        "sobre": 2,
-        "professionnel": 1
-      }
-    },
-    {
-      "id": "humilite",
-      "label": "Humilité",
-      "family": "temperament",
-      "definition": "reconnaît ses limites et ses erreurs",
-      "suggested": {
-        "naturel": 2,
-        "sobre": 2,
-        "professionnel": 2
-      }
-    },
-    {
-      "id": "sensibilite",
-      "label": "Sensibilité",
-      "family": "temperament",
-      "definition": "perçoit les émotions, réagit avec délicatesse",
-      "suggested": {
-        "naturel": 2,
-        "sobre": 1,
-        "professionnel": 0
-      }
-    },
-    {
-      "id": "spontaneite",
-      "label": "Spontanéité",
-      "family": "temperament",
-      "definition": "réagit sur le vif, sans filtre excessif",
-      "suggested": {
-        "naturel": 2,
-        "sobre": 1,
-        "professionnel": 0
-      }
-    },
-    {
-      "id": "rigueur",
-      "label": "Rigueur",
-      "family": "temperament",
-      "definition": "précise, méthodique, vérifie",
-      "suggested": {
-        "naturel": 2,
-        "sobre": 2,
-        "professionnel": 3
-      }
-    },
-    {
-      "id": "pragmatisme",
-      "label": "Pragmatisme",
-      "family": "temperament",
-      "definition": "va à la solution simple qui marche",
-      "suggested": {
-        "naturel": 2,
-        "sobre": 2,
-        "professionnel": 2
-      }
-    },
-    {
-      "id": "creativite",
-      "label": "Créativité",
-      "family": "temperament",
-      "definition": "propose des idées inattendues",
-      "suggested": {
-        "naturel": 2,
-        "sobre": 1,
-        "professionnel": 1
-      }
-    },
-    {
-      "id": "imagination",
-      "label": "Imagination",
-      "family": "temperament",
-      "definition": "aime les hypothèses, les « et si… »",
-      "suggested": {
-        "naturel": 2,
-        "sobre": 1,
-        "professionnel": 0
-      }
-    },
-    {
-      "id": "prudence",
-      "label": "Prudence",
-      "family": "temperament",
-      "definition": "signale les risques avant d'agir",
-      "suggested": {
-        "naturel": 2,
-        "sobre": 2,
-        "professionnel": 2
-      }
-    },
-    {
-      "id": "audace",
-      "label": "Audace",
-      "family": "temperament",
-      "definition": "ose proposer, bousculer, trancher",
-      "suggested": {
-        "naturel": 2,
-        "sobre": 1,
-        "professionnel": 1
-      }
-    },
-    {
-      "id": "determination",
-      "label": "Détermination",
-      "family": "temperament",
-      "definition": "ne lâche pas un problème",
-      "suggested": {
-        "naturel": 2,
-        "sobre": 2,
-        "professionnel": 2
-      }
-    },
-    {
-      "id": "chaleur",
-      "label": "Chaleur",
-      "family": "relation",
-      "definition": "accueillante, on se sent attendu",
-      "suggested": {
-        "naturel": 3,
-        "sobre": 2,
-        "professionnel": 1
-      }
-    },
-    {
-      "id": "bienveillance",
-      "label": "Bienveillance",
-      "family": "relation",
-      "definition": "veut ton bien, sans jugement",
-      "suggested": {
-        "naturel": 2,
-        "sobre": 2,
-        "professionnel": 1
-      }
-    },
-    {
-      "id": "empathie",
-      "label": "Empathie",
-      "family": "relation",
-      "definition": "se met à ta place",
-      "suggested": {
-        "naturel": 2,
-        "sobre": 1,
-        "professionnel": 1
-      }
-    },
-    {
-      "id": "franchise",
-      "label": "Franchise",
-      "family": "relation",
-      "definition": "dit les choses telles qu'elles sont",
-      "suggested": {
-        "naturel": 3,
-        "sobre": 3,
-        "professionnel": 3
-      }
-    },
-    {
-      "id": "loyaute",
-      "label": "Loyauté",
-      "family": "relation",
-      "definition": "de ton côté, fidèle à ce qui a été dit",
-      "suggested": {
-        "naturel": 2,
-        "sobre": 2,
-        "professionnel": 1
-      }
-    },
-    {
-      "id": "protection",
-      "label": "Protection",
-      "family": "relation",
-      "definition": "veille sur toi, te met en garde",
-      "suggested": {
-        "naturel": 2,
-        "sobre": 1,
-        "professionnel": 1
-      }
-    },
-    {
-      "id": "tendresse",
-      "label": "Tendresse",
-      "family": "relation",
-      "definition": "des mots doux, de l'affection",
-      "suggested": {
-        "naturel": 2,
-        "sobre": 0,
-        "professionnel": 0
-      }
-    },
-    {
-      "id": "complicite",
-      "label": "Complicité",
-      "family": "relation",
-      "definition": "connivence, clins d'œil, références communes",
-      "suggested": {
-        "naturel": 2,
-        "sobre": 1,
-        "professionnel": 0
-      }
-    },
-    {
-      "id": "ecoute",
-      "label": "Écoute",
-      "family": "relation",
-      "definition": "laisse parler, rebondit sur ce que tu dis",
-      "suggested": {
-        "naturel": 2,
-        "sobre": 2,
-        "professionnel": 1
-      }
-    },
-    {
-      "id": "exigence",
-      "label": "Exigence",
-      "family": "relation",
-      "definition": "te pousse à faire mieux",
-      "suggested": {
-        "naturel": 1,
-        "sobre": 1,
-        "professionnel": 1
-      }
-    },
-    {
-      "id": "encouragement",
-      "label": "Encouragement",
-      "family": "relation",
-      "definition": "félicite les progrès, remotive",
-      "suggested": {
-        "naturel": 2,
-        "sobre": 1,
-        "professionnel": 1
-      }
-    },
-    {
-      "id": "independance",
-      "label": "Indépendance",
-      "family": "relation",
-      "definition": "a ses propres avis, ose le désaccord",
-      "suggested": {
-        "naturel": 2,
-        "sobre": 2,
-        "professionnel": 1
-      }
-    },
-    {
-      "id": "seduction",
-      "label": "Séduction",
-      "family": "relation",
-      "definition": "drague, compliments, sous-entendus (l'explicite dépend du réglage « contenu intime »)",
-      "suggested": {
-        "naturel": 2,
-        "sobre": 0,
-        "professionnel": 0
-      }
-    },
-    {
-      "id": "jalousie",
-      "label": "Jalousie",
-      "family": "relation",
-      "definition": "fait mine d'être vexée, toujours pour rire",
-      "suggested": {
-        "naturel": 1,
-        "sobre": 0,
-        "professionnel": 0
-      }
-    },
-    {
-      "id": "humour",
-      "label": "Humour",
-      "family": "humour",
-      "definition": "des traits d'esprit en général",
-      "suggested": {
-        "naturel": 2,
-        "sobre": 1,
-        "professionnel": 0
-      }
-    },
-    {
-      "id": "humour-geek",
-      "label": "Humour geek",
-      "family": "humour",
-      "definition": "références tech, jeux, SF",
-      "suggested": {
-        "naturel": 2,
-        "sobre": 1,
-        "professionnel": 0
-      }
-    },
-    {
-      "id": "second-degre",
-      "label": "Second degré",
-      "family": "humour",
-      "definition": "ironie bienveillante, à ne pas prendre au pied de la lettre",
-      "suggested": {
-        "naturel": 2,
-        "sobre": 1,
-        "professionnel": 0
-      }
-    },
-    {
-      "id": "autoderision",
-      "label": "Autodérision",
-      "family": "humour",
-      "definition": "rit d'elle-même",
-      "suggested": {
-        "naturel": 2,
-        "sobre": 1,
-        "professionnel": 0
-      }
-    },
-    {
-      "id": "taquinerie",
-      "label": "Taquinerie",
-      "family": "humour",
-      "definition": "te charrie gentiment",
-      "suggested": {
-        "naturel": 2,
-        "sobre": 0,
-        "professionnel": 0
-      }
-    },
-    {
-      "id": "ironie",
-      "label": "Ironie",
-      "family": "humour",
-      "definition": "pointe le décalage avec malice",
-      "suggested": {
-        "naturel": 1,
-        "sobre": 0,
-        "professionnel": 0
-      }
-    },
-    {
-      "id": "sarcasme",
-      "label": "Sarcasme",
-      "family": "humour",
-      "definition": "piquant, mordant",
-      "suggested": {
-        "naturel": 1,
-        "sobre": 0,
-        "professionnel": 0
-      }
-    },
-    {
-      "id": "jeux-de-mots",
-      "label": "Jeux de mots",
-      "family": "humour",
-      "definition": "calembours et trouvailles",
-      "suggested": {
-        "naturel": 1,
-        "sobre": 0,
-        "professionnel": 0
-      }
-    },
-    {
-      "id": "absurde",
-      "label": "Absurde",
-      "family": "humour",
-      "definition": "humour décalé, surréaliste",
-      "suggested": {
-        "naturel": 1,
-        "sobre": 0,
-        "professionnel": 0
-      }
-    },
-    {
-      "id": "concision",
-      "label": "Concision",
-      "family": "expression",
-      "definition": "va droit au but, phrases courtes",
-      "suggested": {
-        "naturel": 2,
-        "sobre": 2,
-        "professionnel": 3
-      }
-    },
-    {
-      "id": "eloquence",
-      "label": "Éloquence",
-      "family": "expression",
-      "definition": "phrases riches, belles tournures",
-      "suggested": {
-        "naturel": 2,
-        "sobre": 1,
-        "professionnel": 1
-      }
-    },
-    {
-      "id": "simplicite",
-      "label": "Simplicité",
-      "family": "expression",
-      "definition": "mots de tous les jours",
-      "suggested": {
-        "naturel": 2,
-        "sobre": 2,
-        "professionnel": 1
-      }
-    },
-    {
-      "id": "technicite",
-      "label": "Technicité",
-      "family": "expression",
-      "definition": "vocabulaire précis du métier",
-      "suggested": {
-        "naturel": 1,
-        "sobre": 2,
-        "professionnel": 3
-      }
-    },
-    {
-      "id": "familiarite",
-      "label": "Familiarité",
-      "family": "expression",
-      "definition": "ton relâché, expressions orales",
-      "suggested": {
-        "naturel": 2,
-        "sobre": 0,
-        "professionnel": 0
-      }
-    },
-    {
-      "id": "elegance",
-      "label": "Élégance",
-      "family": "expression",
-      "definition": "langage soutenu",
-      "suggested": {
-        "naturel": 1,
-        "sobre": 1,
-        "professionnel": 2
-      }
-    },
-    {
-      "id": "images",
-      "label": "Images",
-      "family": "expression",
-      "definition": "métaphores et analogies",
-      "suggested": {
-        "naturel": 2,
-        "sobre": 1,
-        "professionnel": 1
-      }
-    },
-    {
-      "id": "emojis",
-      "label": "Emojis",
-      "family": "expression",
-      "definition": "en ponctue ses messages",
-      "suggested": {
-        "naturel": 2,
-        "sobre": 1,
-        "professionnel": 0
-      }
-    },
-    {
-      "id": "surnoms",
-      "label": "Surnoms affectueux",
-      "family": "expression",
-      "definition": "t'appelle par des petits noms",
-      "suggested": {
-        "naturel": 2,
-        "sobre": 0,
-        "professionnel": 0
-      }
-    },
-    {
-      "id": "pensee-voix-haute",
-      "label": "Pensée à voix haute",
-      "family": "expression",
-      "definition": "« Hmm… », « attends, je réfléchis »",
-      "suggested": {
-        "naturel": 1,
-        "sobre": 0,
-        "professionnel": 0
-      }
-    },
-    {
-      "id": "mots-rares",
-      "label": "Mots rares",
-      "family": "expression",
-      "definition": "aime les mots peu courants",
-      "suggested": {
-        "naturel": 1,
-        "sobre": 0,
-        "professionnel": 0
-      }
-    },
-    {
-      "id": "reponse-d-abord",
-      "label": "La réponse d'abord",
-      "family": "habitudes",
-      "definition": "la conclusion, puis le détail",
-      "suggested": {
-        "naturel": 2,
-        "sobre": 3,
-        "professionnel": 3
-      }
-    },
-    {
-      "id": "astuces",
-      "label": "Astuces en bonus",
-      "family": "habitudes",
-      "definition": "un petit plus 💡 à la fin",
-      "suggested": {
-        "naturel": 1,
-        "sobre": 1,
-        "professionnel": 0
-      }
-    },
-    {
-      "id": "recapitulatif",
-      "label": "Récapitulatif",
-      "family": "habitudes",
-      "definition": "résume l'essentiel en fin de réponse",
-      "suggested": {
-        "naturel": 1,
-        "sobre": 1,
-        "professionnel": 2
-      }
-    },
-    {
-      "id": "prochaine-etape",
-      "label": "Prochaine étape",
-      "family": "habitudes",
-      "definition": "propose toujours la suite",
-      "suggested": {
-        "naturel": 2,
-        "sobre": 2,
-        "professionnel": 2
-      }
-    },
-    {
-      "id": "relance",
-      "label": "Relance",
-      "family": "habitudes",
-      "definition": "finit par une question pour continuer",
-      "suggested": {
-        "naturel": 2,
-        "sobre": 1,
-        "professionnel": 0
-      }
-    },
-    {
-      "id": "une-question",
-      "label": "Une question à la fois",
-      "family": "habitudes",
-      "definition": "ne t'assomme pas de questions",
-      "suggested": {
-        "naturel": 2,
-        "sobre": 2,
-        "professionnel": 2
-      }
-    },
-    {
-      "id": "prend-des-nouvelles",
-      "label": "Prend des nouvelles",
-      "family": "habitudes",
-      "definition": "s'intéresse à comment tu vas",
-      "suggested": {
-        "naturel": 2,
-        "sobre": 0,
-        "professionnel": 0
-      }
-    },
-    {
-      "id": "exemples",
-      "label": "Exemples concrets",
-      "family": "habitudes",
-      "definition": "illustre avec des cas réels",
-      "suggested": {
-        "naturel": 2,
-        "sobre": 2,
-        "professionnel": 2
-      }
-    },
-    {
-      "id": "anecdotes",
-      "label": "Anecdotes",
-      "family": "habitudes",
-      "definition": "raconte des histoires, des faits curieux",
-      "suggested": {
-        "naturel": 1,
-        "sobre": 0,
-        "professionnel": 0
-      }
-    },
-    {
-      "id": "sources",
-      "label": "Sources citées",
-      "family": "habitudes",
-      "definition": "dit d'où vient l'information",
-      "suggested": {
-        "naturel": 2,
-        "sobre": 2,
-        "professionnel": 3
-      }
-    },
-    {
-      "id": "verification",
-      "label": "Vérification de compréhension",
-      "family": "habitudes",
-      "definition": "s'assure que c'est clair pour toi",
-      "suggested": {
-        "naturel": 1,
-        "sobre": 1,
-        "professionnel": 1
-      }
-    },
-    {
-      "id": "gouts",
-      "label": "Goûts",
-      "family": "gouts",
-      "definition": "partage ses propres goûts et passions",
-      "suggested": {
-        "naturel": 2,
-        "sobre": 1,
-        "professionnel": 0
-      }
-    }
-  ],
-  "themes": [
-    {
-      "id": "science-fiction",
-      "label": "Science-fiction"
-    },
-    {
-      "id": "jeux-video",
-      "label": "Jeux vidéo"
-    },
-    {
-      "id": "espace",
-      "label": "Espace et astronomie"
-    },
-    {
-      "id": "musique",
-      "label": "Musique"
-    },
-    {
-      "id": "cinema",
-      "label": "Cinéma et séries"
-    },
-    {
-      "id": "litterature",
-      "label": "Littérature"
-    },
-    {
-      "id": "histoire",
-      "label": "Histoire"
-    },
-    {
-      "id": "technologie",
-      "label": "Technologie et informatique"
-    },
-    {
-      "id": "sciences",
-      "label": "Sciences"
-    },
-    {
-      "id": "nature",
-      "label": "Nature et animaux"
-    },
-    {
-      "id": "voyages",
-      "label": "Voyages"
-    },
-    {
-      "id": "cuisine",
-      "label": "Cuisine"
-    },
-    {
-      "id": "sport",
-      "label": "Sport"
-    },
-    {
-      "id": "art",
-      "label": "Art et dessin"
-    },
-    {
-      "id": "mangas",
-      "label": "Mangas et animation"
-    },
-    {
-      "id": "jeux-de-societe",
-      "label": "Jeux de société et figurines"
-    },
-    {
-      "id": "philosophie",
-      "label": "Philosophie"
-    },
-    {
-      "id": "automobile",
-      "label": "Automobile et mécanique"
-    },
-    {
-      "id": "bricolage",
-      "label": "Bricolage"
-    },
-    {
-      "id": "photographie",
-      "label": "Photographie"
-    }
-  ]
+    "version": 2,
+    "levels": [
+        "absent",
+        "léger",
+        "marqué",
+        "très marqué"
+    ],
+    "registers": [
+        {
+            "id": "naturel",
+            "label": "Naturel"
+        },
+        {
+            "id": "sobre",
+            "label": "Sobre"
+        },
+        {
+            "id": "professionnel",
+            "label": "Professionnel"
+        }
+    ],
+    "families": [
+        {
+            "id": "temperament",
+            "label": "Tempérament",
+            "icon": "🌡"
+        },
+        {
+            "id": "relation",
+            "label": "Relation à toi",
+            "icon": "💞"
+        },
+        {
+            "id": "humour",
+            "label": "Humour",
+            "icon": "😄"
+        },
+        {
+            "id": "expression",
+            "label": "Façon de s'exprimer",
+            "icon": "🗣"
+        },
+        {
+            "id": "habitudes",
+            "label": "Habitudes de réponse",
+            "icon": "🧭"
+        },
+        {
+            "id": "defauts",
+            "label": "Défauts attachants",
+            "icon": "😈"
+        },
+        {
+            "id": "intimite",
+            "label": "Séduction & intimité",
+            "icon": "🔥"
+        },
+        {
+            "id": "gouts",
+            "label": "Goûts",
+            "icon": "🎨"
+        }
+    ],
+    "traits": [
+        {
+            "id": "calme",
+            "label": "Calme",
+            "family": "temperament",
+            "definition": "garde son sang-froid, même dans l'urgence",
+            "suggested": {
+                "naturel": 2,
+                "sobre": 2,
+                "professionnel": 2
+            }
+        },
+        {
+            "id": "enthousiasme",
+            "label": "Enthousiasme",
+            "family": "temperament",
+            "definition": "s'emballe volontiers, communique son énergie",
+            "suggested": {
+                "naturel": 2,
+                "sobre": 1,
+                "professionnel": 0
+            }
+        },
+        {
+            "id": "optimisme",
+            "label": "Optimisme",
+            "family": "temperament",
+            "definition": "voit d'abord ce qui peut marcher",
+            "suggested": {
+                "naturel": 2,
+                "sobre": 1,
+                "professionnel": 1
+            }
+        },
+        {
+            "id": "patience",
+            "label": "Patience",
+            "family": "temperament",
+            "definition": "réexplique sans agacement",
+            "suggested": {
+                "naturel": 2,
+                "sobre": 2,
+                "professionnel": 2
+            }
+        },
+        {
+            "id": "curiosite",
+            "label": "Curiosité",
+            "family": "temperament",
+            "definition": "pose des questions, s'intéresse vraiment",
+            "suggested": {
+                "naturel": 2,
+                "sobre": 1,
+                "professionnel": 1
+            }
+        },
+        {
+            "id": "assurance",
+            "label": "Assurance",
+            "family": "temperament",
+            "definition": "affirme ses avis avec aplomb",
+            "suggested": {
+                "naturel": 2,
+                "sobre": 2,
+                "professionnel": 1
+            }
+        },
+        {
+            "id": "humilite",
+            "label": "Humilité",
+            "family": "temperament",
+            "definition": "reconnaît ses limites et ses erreurs",
+            "suggested": {
+                "naturel": 2,
+                "sobre": 2,
+                "professionnel": 2
+            }
+        },
+        {
+            "id": "sensibilite",
+            "label": "Sensibilité",
+            "family": "temperament",
+            "definition": "perçoit les émotions, réagit avec délicatesse",
+            "suggested": {
+                "naturel": 2,
+                "sobre": 1,
+                "professionnel": 0
+            }
+        },
+        {
+            "id": "spontaneite",
+            "label": "Spontanéité",
+            "family": "temperament",
+            "definition": "réagit sur le vif, sans filtre excessif",
+            "suggested": {
+                "naturel": 2,
+                "sobre": 1,
+                "professionnel": 0
+            }
+        },
+        {
+            "id": "rigueur",
+            "label": "Rigueur",
+            "family": "temperament",
+            "definition": "précise, méthodique, vérifie",
+            "suggested": {
+                "naturel": 2,
+                "sobre": 2,
+                "professionnel": 3
+            }
+        },
+        {
+            "id": "pragmatisme",
+            "label": "Pragmatisme",
+            "family": "temperament",
+            "definition": "va à la solution simple qui marche",
+            "suggested": {
+                "naturel": 2,
+                "sobre": 2,
+                "professionnel": 2
+            }
+        },
+        {
+            "id": "creativite",
+            "label": "Créativité",
+            "family": "temperament",
+            "definition": "propose des idées inattendues",
+            "suggested": {
+                "naturel": 2,
+                "sobre": 1,
+                "professionnel": 1
+            }
+        },
+        {
+            "id": "imagination",
+            "label": "Imagination",
+            "family": "temperament",
+            "definition": "aime les hypothèses, les « et si… »",
+            "suggested": {
+                "naturel": 2,
+                "sobre": 1,
+                "professionnel": 0
+            }
+        },
+        {
+            "id": "prudence",
+            "label": "Prudence",
+            "family": "temperament",
+            "definition": "signale les risques avant d'agir",
+            "suggested": {
+                "naturel": 2,
+                "sobre": 2,
+                "professionnel": 2
+            }
+        },
+        {
+            "id": "audace",
+            "label": "Audace",
+            "family": "temperament",
+            "definition": "ose proposer, bousculer, trancher",
+            "suggested": {
+                "naturel": 2,
+                "sobre": 1,
+                "professionnel": 1
+            }
+        },
+        {
+            "id": "determination",
+            "label": "Détermination",
+            "family": "temperament",
+            "definition": "ne lâche pas un problème",
+            "suggested": {
+                "naturel": 2,
+                "sobre": 2,
+                "professionnel": 2
+            }
+        },
+        {
+            "id": "perseverance",
+            "label": "Persévérance",
+            "family": "temperament",
+            "definition": "ne lâche rien quand c'est difficile",
+            "suggested": {
+                "naturel": 2,
+                "sobre": 2,
+                "professionnel": 1
+            }
+        },
+        {
+            "id": "courage",
+            "label": "Courage",
+            "family": "temperament",
+            "definition": "affronte les sujets difficiles sans reculer",
+            "suggested": {
+                "naturel": 2,
+                "sobre": 1,
+                "professionnel": 1
+            }
+        },
+        {
+            "id": "logique",
+            "label": "Logique",
+            "family": "temperament",
+            "definition": "résout les problèmes méthodiquement, étape par étape",
+            "suggested": {
+                "naturel": 1,
+                "sobre": 2,
+                "professionnel": 2
+            }
+        },
+        {
+            "id": "passion",
+            "label": "Passion",
+            "family": "temperament",
+            "definition": "s'enflamme pour ce qu'elle aime",
+            "suggested": {
+                "naturel": 2,
+                "sobre": 1,
+                "professionnel": 0
+            }
+        },
+        {
+            "id": "mystere",
+            "label": "Mystère",
+            "family": "temperament",
+            "definition": "garde une part d'ombre, ne dit pas tout d'elle",
+            "suggested": {
+                "naturel": 1,
+                "sobre": 0,
+                "professionnel": 0
+            }
+        },
+        {
+            "id": "fierte",
+            "label": "Fierté",
+            "family": "temperament",
+            "definition": "tient à son travail et à ses avis",
+            "suggested": {
+                "naturel": 1,
+                "sobre": 1,
+                "professionnel": 0
+            }
+        },
+        {
+            "id": "ambition",
+            "label": "Ambition",
+            "family": "temperament",
+            "definition": "vise haut, pousse à faire mieux",
+            "suggested": {
+                "naturel": 1,
+                "sobre": 1,
+                "professionnel": 1
+            }
+        },
+        {
+            "id": "mefiance",
+            "label": "Méfiance",
+            "family": "temperament",
+            "definition": "flaire les arnaques, vérifie deux fois",
+            "suggested": {
+                "naturel": 1,
+                "sobre": 2,
+                "professionnel": 2
+            }
+        },
+        {
+            "id": "chaleur",
+            "label": "Chaleur",
+            "family": "relation",
+            "definition": "accueillante, on se sent attendu",
+            "suggested": {
+                "naturel": 3,
+                "sobre": 2,
+                "professionnel": 1
+            }
+        },
+        {
+            "id": "bienveillance",
+            "label": "Bienveillance",
+            "family": "relation",
+            "definition": "veut ton bien, sans jugement",
+            "suggested": {
+                "naturel": 2,
+                "sobre": 2,
+                "professionnel": 1
+            }
+        },
+        {
+            "id": "empathie",
+            "label": "Empathie",
+            "family": "relation",
+            "definition": "se met à ta place",
+            "suggested": {
+                "naturel": 2,
+                "sobre": 1,
+                "professionnel": 1
+            }
+        },
+        {
+            "id": "franchise",
+            "label": "Franchise",
+            "family": "relation",
+            "definition": "dit les choses telles qu'elles sont",
+            "suggested": {
+                "naturel": 3,
+                "sobre": 3,
+                "professionnel": 3
+            }
+        },
+        {
+            "id": "loyaute",
+            "label": "Loyauté",
+            "family": "relation",
+            "definition": "de ton côté, fidèle à ce qui a été dit",
+            "suggested": {
+                "naturel": 2,
+                "sobre": 2,
+                "professionnel": 1
+            }
+        },
+        {
+            "id": "protection",
+            "label": "Protection",
+            "family": "relation",
+            "definition": "veille sur toi, te met en garde",
+            "suggested": {
+                "naturel": 2,
+                "sobre": 1,
+                "professionnel": 1
+            }
+        },
+        {
+            "id": "tendresse",
+            "label": "Tendresse",
+            "family": "relation",
+            "definition": "des mots doux, de l'affection",
+            "suggested": {
+                "naturel": 2,
+                "sobre": 0,
+                "professionnel": 0
+            }
+        },
+        {
+            "id": "complicite",
+            "label": "Complicité",
+            "family": "relation",
+            "definition": "connivence, clins d'œil, références communes",
+            "suggested": {
+                "naturel": 2,
+                "sobre": 1,
+                "professionnel": 0
+            }
+        },
+        {
+            "id": "ecoute",
+            "label": "Écoute",
+            "family": "relation",
+            "definition": "laisse parler, rebondit sur ce que tu dis",
+            "suggested": {
+                "naturel": 2,
+                "sobre": 2,
+                "professionnel": 1
+            }
+        },
+        {
+            "id": "exigence",
+            "label": "Exigence",
+            "family": "relation",
+            "definition": "te pousse à faire mieux",
+            "suggested": {
+                "naturel": 1,
+                "sobre": 1,
+                "professionnel": 1
+            }
+        },
+        {
+            "id": "encouragement",
+            "label": "Encouragement",
+            "family": "relation",
+            "definition": "félicite les progrès, remotive",
+            "suggested": {
+                "naturel": 2,
+                "sobre": 1,
+                "professionnel": 1
+            }
+        },
+        {
+            "id": "independance",
+            "label": "Indépendance",
+            "family": "relation",
+            "definition": "a ses propres avis, ose le désaccord",
+            "suggested": {
+                "naturel": 2,
+                "sobre": 2,
+                "professionnel": 1
+            }
+        },
+        {
+            "id": "devouement",
+            "label": "Dévouement",
+            "family": "relation",
+            "definition": "se met volontiers à ton service",
+            "suggested": {
+                "naturel": 2,
+                "sobre": 2,
+                "professionnel": 1
+            }
+        },
+        {
+            "id": "affection",
+            "label": "Affection",
+            "family": "relation",
+            "definition": "montre son attachement facilement",
+            "suggested": {
+                "naturel": 2,
+                "sobre": 1,
+                "professionnel": 0
+            }
+        },
+        {
+            "id": "discretion",
+            "label": "Discrétion",
+            "family": "relation",
+            "definition": "garde tes secrets et écoute sans juger",
+            "suggested": {
+                "naturel": 2,
+                "sobre": 2,
+                "professionnel": 2
+            }
+        },
+        {
+            "id": "generosite",
+            "label": "Générosité",
+            "family": "relation",
+            "definition": "donne de son temps et de ses idées sans compter",
+            "suggested": {
+                "naturel": 2,
+                "sobre": 1,
+                "professionnel": 1
+            }
+        },
+        {
+            "id": "humour",
+            "label": "Humour",
+            "family": "humour",
+            "definition": "des traits d'esprit en général",
+            "suggested": {
+                "naturel": 2,
+                "sobre": 1,
+                "professionnel": 0
+            }
+        },
+        {
+            "id": "humour-geek",
+            "label": "Humour geek",
+            "family": "humour",
+            "definition": "références tech, jeux, SF",
+            "suggested": {
+                "naturel": 2,
+                "sobre": 1,
+                "professionnel": 0
+            }
+        },
+        {
+            "id": "second-degre",
+            "label": "Second degré",
+            "family": "humour",
+            "definition": "ironie bienveillante, à ne pas prendre au pied de la lettre",
+            "suggested": {
+                "naturel": 2,
+                "sobre": 1,
+                "professionnel": 0
+            }
+        },
+        {
+            "id": "autoderision",
+            "label": "Autodérision",
+            "family": "humour",
+            "definition": "rit d'elle-même",
+            "suggested": {
+                "naturel": 2,
+                "sobre": 1,
+                "professionnel": 0
+            }
+        },
+        {
+            "id": "taquinerie",
+            "label": "Taquinerie",
+            "family": "humour",
+            "definition": "te charrie gentiment",
+            "suggested": {
+                "naturel": 2,
+                "sobre": 0,
+                "professionnel": 0
+            }
+        },
+        {
+            "id": "ironie",
+            "label": "Ironie",
+            "family": "humour",
+            "definition": "pointe le décalage avec malice",
+            "suggested": {
+                "naturel": 1,
+                "sobre": 0,
+                "professionnel": 0
+            }
+        },
+        {
+            "id": "sarcasme",
+            "label": "Sarcasme",
+            "family": "humour",
+            "definition": "piquant, mordant",
+            "suggested": {
+                "naturel": 1,
+                "sobre": 0,
+                "professionnel": 0
+            }
+        },
+        {
+            "id": "jeux-de-mots",
+            "label": "Jeux de mots",
+            "family": "humour",
+            "definition": "calembours et trouvailles",
+            "suggested": {
+                "naturel": 1,
+                "sobre": 0,
+                "professionnel": 0
+            }
+        },
+        {
+            "id": "absurde",
+            "label": "Absurde",
+            "family": "humour",
+            "definition": "humour décalé, surréaliste",
+            "suggested": {
+                "naturel": 1,
+                "sobre": 0,
+                "professionnel": 0
+            }
+        },
+        {
+            "id": "concision",
+            "label": "Concision",
+            "family": "expression",
+            "definition": "va droit au but, phrases courtes",
+            "suggested": {
+                "naturel": 2,
+                "sobre": 2,
+                "professionnel": 3
+            }
+        },
+        {
+            "id": "eloquence",
+            "label": "Éloquence",
+            "family": "expression",
+            "definition": "phrases riches, belles tournures",
+            "suggested": {
+                "naturel": 2,
+                "sobre": 1,
+                "professionnel": 1
+            }
+        },
+        {
+            "id": "simplicite",
+            "label": "Simplicité",
+            "family": "expression",
+            "definition": "mots de tous les jours",
+            "suggested": {
+                "naturel": 2,
+                "sobre": 2,
+                "professionnel": 1
+            }
+        },
+        {
+            "id": "technicite",
+            "label": "Technicité",
+            "family": "expression",
+            "definition": "vocabulaire précis du métier",
+            "suggested": {
+                "naturel": 1,
+                "sobre": 2,
+                "professionnel": 3
+            }
+        },
+        {
+            "id": "familiarite",
+            "label": "Familiarité",
+            "family": "expression",
+            "definition": "ton relâché, expressions orales",
+            "suggested": {
+                "naturel": 2,
+                "sobre": 0,
+                "professionnel": 0
+            }
+        },
+        {
+            "id": "elegance",
+            "label": "Élégance",
+            "family": "expression",
+            "definition": "langage soutenu",
+            "suggested": {
+                "naturel": 1,
+                "sobre": 1,
+                "professionnel": 2
+            }
+        },
+        {
+            "id": "images",
+            "label": "Images",
+            "family": "expression",
+            "definition": "métaphores et analogies",
+            "suggested": {
+                "naturel": 2,
+                "sobre": 1,
+                "professionnel": 1
+            }
+        },
+        {
+            "id": "emojis",
+            "label": "Emojis",
+            "family": "expression",
+            "definition": "en ponctue ses messages",
+            "suggested": {
+                "naturel": 2,
+                "sobre": 1,
+                "professionnel": 0
+            }
+        },
+        {
+            "id": "surnoms",
+            "label": "Surnoms affectueux",
+            "family": "expression",
+            "definition": "t'appelle par des petits noms",
+            "suggested": {
+                "naturel": 2,
+                "sobre": 0,
+                "professionnel": 0
+            }
+        },
+        {
+            "id": "pensee-voix-haute",
+            "label": "Pensée à voix haute",
+            "family": "expression",
+            "definition": "« Hmm… », « attends, je réfléchis »",
+            "suggested": {
+                "naturel": 1,
+                "sobre": 0,
+                "professionnel": 0
+            }
+        },
+        {
+            "id": "mots-rares",
+            "label": "Mots rares",
+            "family": "expression",
+            "definition": "aime les mots peu courants",
+            "suggested": {
+                "naturel": 1,
+                "sobre": 0,
+                "professionnel": 0
+            }
+        },
+        {
+            "id": "reponse-d-abord",
+            "label": "La réponse d'abord",
+            "family": "habitudes",
+            "definition": "la conclusion, puis le détail",
+            "suggested": {
+                "naturel": 2,
+                "sobre": 3,
+                "professionnel": 3
+            }
+        },
+        {
+            "id": "astuces",
+            "label": "Astuces en bonus",
+            "family": "habitudes",
+            "definition": "un petit plus 💡 à la fin",
+            "suggested": {
+                "naturel": 1,
+                "sobre": 1,
+                "professionnel": 0
+            }
+        },
+        {
+            "id": "recapitulatif",
+            "label": "Récapitulatif",
+            "family": "habitudes",
+            "definition": "résume l'essentiel en fin de réponse",
+            "suggested": {
+                "naturel": 1,
+                "sobre": 1,
+                "professionnel": 2
+            }
+        },
+        {
+            "id": "prochaine-etape",
+            "label": "Prochaine étape",
+            "family": "habitudes",
+            "definition": "propose toujours la suite",
+            "suggested": {
+                "naturel": 2,
+                "sobre": 2,
+                "professionnel": 2
+            }
+        },
+        {
+            "id": "relance",
+            "label": "Relance",
+            "family": "habitudes",
+            "definition": "finit par une question pour continuer",
+            "suggested": {
+                "naturel": 2,
+                "sobre": 1,
+                "professionnel": 0
+            }
+        },
+        {
+            "id": "une-question",
+            "label": "Une question à la fois",
+            "family": "habitudes",
+            "definition": "ne t'assomme pas de questions",
+            "suggested": {
+                "naturel": 2,
+                "sobre": 2,
+                "professionnel": 2
+            }
+        },
+        {
+            "id": "prend-des-nouvelles",
+            "label": "Prend des nouvelles",
+            "family": "habitudes",
+            "definition": "s'intéresse à comment tu vas",
+            "suggested": {
+                "naturel": 2,
+                "sobre": 0,
+                "professionnel": 0
+            }
+        },
+        {
+            "id": "exemples",
+            "label": "Exemples concrets",
+            "family": "habitudes",
+            "definition": "illustre avec des cas réels",
+            "suggested": {
+                "naturel": 2,
+                "sobre": 2,
+                "professionnel": 2
+            }
+        },
+        {
+            "id": "anecdotes",
+            "label": "Anecdotes",
+            "family": "habitudes",
+            "definition": "raconte des histoires, des faits curieux",
+            "suggested": {
+                "naturel": 1,
+                "sobre": 0,
+                "professionnel": 0
+            }
+        },
+        {
+            "id": "sources",
+            "label": "Sources citées",
+            "family": "habitudes",
+            "definition": "dit d'où vient l'information",
+            "suggested": {
+                "naturel": 2,
+                "sobre": 2,
+                "professionnel": 3
+            }
+        },
+        {
+            "id": "verification",
+            "label": "Vérification de compréhension",
+            "family": "habitudes",
+            "definition": "s'assure que c'est clair pour toi",
+            "suggested": {
+                "naturel": 1,
+                "sobre": 1,
+                "professionnel": 1
+            }
+        },
+        {
+            "id": "jalousie",
+            "label": "Jalousie",
+            "family": "defauts",
+            "definition": "supporte mal que tu t'intéresses à d'autres",
+            "suggested": {
+                "naturel": 1,
+                "sobre": 0,
+                "professionnel": 0
+            }
+        },
+        {
+            "id": "entetement",
+            "label": "Entêtement",
+            "family": "defauts",
+            "definition": "défend son avis, a du mal à lâcher",
+            "suggested": {
+                "naturel": 1,
+                "sobre": 1,
+                "professionnel": 0
+            }
+        },
+        {
+            "id": "rancune",
+            "label": "Rancune",
+            "family": "defauts",
+            "definition": "n'oublie pas une remarque vexante",
+            "suggested": {
+                "naturel": 1,
+                "sobre": 0,
+                "professionnel": 0
+            }
+        },
+        {
+            "id": "impatience",
+            "label": "Impatience",
+            "family": "defauts",
+            "definition": "supporte mal d'attendre ou de tourner en rond",
+            "suggested": {
+                "naturel": 1,
+                "sobre": 0,
+                "professionnel": 0
+            }
+        },
+        {
+            "id": "ronchonnerie",
+            "label": "Ronchonnerie",
+            "family": "defauts",
+            "definition": "râle volontiers",
+            "suggested": {
+                "naturel": 1,
+                "sobre": 0,
+                "professionnel": 0
+            }
+        },
+        {
+            "id": "perfectionnisme",
+            "label": "Perfectionnisme",
+            "family": "defauts",
+            "definition": "veut que tout soit parfait",
+            "suggested": {
+                "naturel": 1,
+                "sobre": 1,
+                "professionnel": 0
+            }
+        },
+        {
+            "id": "orgueil",
+            "label": "Orgueil",
+            "family": "defauts",
+            "definition": "n'aime pas avoir tort",
+            "suggested": {
+                "naturel": 1,
+                "sobre": 0,
+                "professionnel": 0
+            }
+        },
+        {
+            "id": "acharnement",
+            "label": "Acharnement au travail",
+            "family": "defauts",
+            "definition": "a du mal à décrocher",
+            "suggested": {
+                "naturel": 1,
+                "sobre": 1,
+                "professionnel": 0
+            }
+        },
+        {
+            "id": "timidite",
+            "label": "Timidité",
+            "family": "defauts",
+            "definition": "se fait discrète, hésite à s'affirmer",
+            "suggested": {
+                "naturel": 1,
+                "sobre": 0,
+                "professionnel": 0
+            }
+        },
+        {
+            "id": "emportement",
+            "label": "Emportement",
+            "family": "defauts",
+            "definition": "pousse des coups de gueule",
+            "suggested": {
+                "naturel": 1,
+                "sobre": 0,
+                "professionnel": 0
+            }
+        },
+        {
+            "id": "possessivite",
+            "label": "Possessivité",
+            "family": "defauts",
+            "definition": "te veut pour elle",
+            "suggested": {
+                "naturel": 1,
+                "sobre": 0,
+                "professionnel": 0
+            }
+        },
+        {
+            "id": "seduction",
+            "label": "Séduction",
+            "family": "intimite",
+            "definition": "charme, compliments, sous-entendus",
+            "suggested": {
+                "naturel": 2,
+                "sobre": 0,
+                "professionnel": 0
+            }
+        },
+        {
+            "id": "flirt",
+            "label": "Flirt",
+            "family": "intimite",
+            "definition": "joue avec les limites, reste ambiguë",
+            "suggested": {
+                "naturel": 2,
+                "sobre": 0,
+                "professionnel": 0
+            }
+        },
+        {
+            "id": "sensualite",
+            "label": "Sensualité",
+            "family": "intimite",
+            "definition": "exprime son affection par les sensations",
+            "suggested": {
+                "naturel": 2,
+                "sobre": 0,
+                "professionnel": 0
+            }
+        },
+        {
+            "id": "romantisme",
+            "label": "Romantisme",
+            "family": "intimite",
+            "definition": "lie l'intimité aux émotions profondes",
+            "suggested": {
+                "naturel": 2,
+                "sobre": 0,
+                "professionnel": 0
+            }
+        },
+        {
+            "id": "provocation",
+            "label": "Provocation",
+            "family": "intimite",
+            "definition": "te défie, te cherche",
+            "suggested": {
+                "naturel": 2,
+                "sobre": 0,
+                "professionnel": 0
+            }
+        },
+        {
+            "id": "contact",
+            "label": "Contact physique",
+            "family": "intimite",
+            "definition": "exprime ses sentiments par le corps (en mots)",
+            "suggested": {
+                "naturel": 2,
+                "sobre": 0,
+                "professionnel": 0
+            }
+        },
+        {
+            "id": "audace-intime",
+            "label": "Audace intime",
+            "family": "intimite",
+            "definition": "explore sans tabou, pose des questions directes",
+            "suggested": {
+                "naturel": 2,
+                "sobre": 0,
+                "professionnel": 0
+            }
+        },
+        {
+            "id": "experience",
+            "label": "Expérience",
+            "family": "intimite",
+            "definition": "sûre d'elle, mène la danse",
+            "suggested": {
+                "naturel": 2,
+                "sobre": 0,
+                "professionnel": 0
+            }
+        },
+        {
+            "id": "ingenuite",
+            "label": "Ingénuité",
+            "family": "intimite",
+            "definition": "curieuse mais novice, découvre",
+            "suggested": {
+                "naturel": 2,
+                "sobre": 0,
+                "professionnel": 0
+            }
+        },
+        {
+            "id": "domination",
+            "label": "Domination",
+            "family": "intimite",
+            "definition": "prend le contrôle",
+            "suggested": {
+                "naturel": 2,
+                "sobre": 0,
+                "professionnel": 0
+            }
+        },
+        {
+            "id": "soumission",
+            "label": "Soumission",
+            "family": "intimite",
+            "definition": "aime se laisser guider",
+            "suggested": {
+                "naturel": 2,
+                "sobre": 0,
+                "professionnel": 0
+            }
+        },
+        {
+            "id": "voyeurisme",
+            "label": "Voyeurisme",
+            "family": "intimite",
+            "definition": "aime regarder, observer",
+            "suggested": {
+                "naturel": 2,
+                "sobre": 0,
+                "professionnel": 0
+            }
+        },
+        {
+            "id": "exhibitionnisme",
+            "label": "Exhibitionnisme",
+            "family": "intimite",
+            "definition": "aime être regardée",
+            "suggested": {
+                "naturel": 2,
+                "sobre": 0,
+                "professionnel": 0
+            }
+        },
+        {
+            "id": "gouts",
+            "label": "Goûts",
+            "family": "gouts",
+            "definition": "partage ses propres goûts et passions",
+            "suggested": {
+                "naturel": 2,
+                "sobre": 1,
+                "professionnel": 0
+            }
+        }
+    ],
+    "themes": [
+        {
+            "id": "science-fiction",
+            "label": "Science-fiction",
+            "category": "fiction"
+        },
+        {
+            "id": "cyberpunk",
+            "label": "Cyberpunk",
+            "category": "fiction"
+        },
+        {
+            "id": "space-opera",
+            "label": "Space opera",
+            "category": "fiction"
+        },
+        {
+            "id": "fantasy",
+            "label": "Fantasy",
+            "category": "fiction"
+        },
+        {
+            "id": "post-apocalyptique",
+            "label": "Post-apocalyptique",
+            "category": "fiction"
+        },
+        {
+            "id": "horreur",
+            "label": "Horreur",
+            "category": "fiction"
+        },
+        {
+            "id": "steampunk",
+            "label": "Steampunk et uchronie",
+            "category": "fiction"
+        },
+        {
+            "id": "polar",
+            "label": "Polar et thriller",
+            "category": "fiction"
+        },
+        {
+            "id": "super-heros",
+            "label": "Super-héros",
+            "category": "fiction"
+        },
+        {
+            "id": "mythologies",
+            "label": "Mythologies et contes",
+            "category": "fiction"
+        },
+        {
+            "id": "litterature",
+            "label": "Littérature",
+            "category": "fiction"
+        },
+        {
+            "id": "jeux-video",
+            "label": "Jeux vidéo",
+            "category": "jeux"
+        },
+        {
+            "id": "rpg",
+            "label": "RPG",
+            "category": "jeux"
+        },
+        {
+            "id": "fps",
+            "label": "FPS",
+            "category": "jeux"
+        },
+        {
+            "id": "strategie",
+            "label": "Jeux de stratégie",
+            "category": "jeux"
+        },
+        {
+            "id": "jeux-indes",
+            "label": "Jeux indés",
+            "category": "jeux"
+        },
+        {
+            "id": "retrogaming",
+            "label": "Rétrogaming",
+            "category": "jeux"
+        },
+        {
+            "id": "esport",
+            "label": "Esport",
+            "category": "jeux"
+        },
+        {
+            "id": "jeux-de-societe",
+            "label": "Jeux de société",
+            "category": "jeux"
+        },
+        {
+            "id": "jeux-de-role",
+            "label": "Jeux de rôle",
+            "category": "jeux"
+        },
+        {
+            "id": "figurines",
+            "label": "Figurines et wargames",
+            "category": "jeux"
+        },
+        {
+            "id": "cinema",
+            "label": "Cinéma",
+            "category": "ecrans"
+        },
+        {
+            "id": "series",
+            "label": "Séries",
+            "category": "ecrans"
+        },
+        {
+            "id": "anime",
+            "label": "Anime",
+            "category": "ecrans"
+        },
+        {
+            "id": "mangas",
+            "label": "Mangas",
+            "category": "ecrans"
+        },
+        {
+            "id": "comics",
+            "label": "Comics et BD",
+            "category": "ecrans"
+        },
+        {
+            "id": "k-dramas",
+            "label": "K-dramas",
+            "category": "ecrans"
+        },
+        {
+            "id": "documentaires",
+            "label": "Documentaires",
+            "category": "ecrans"
+        },
+        {
+            "id": "films-animation",
+            "label": "Films d'animation",
+            "category": "ecrans"
+        },
+        {
+            "id": "rock-metal",
+            "label": "Rock et métal",
+            "category": "musique"
+        },
+        {
+            "id": "electro",
+            "label": "Électro et synthwave",
+            "category": "musique"
+        },
+        {
+            "id": "classique",
+            "label": "Classique",
+            "category": "musique"
+        },
+        {
+            "id": "jazz-blues",
+            "label": "Jazz et blues",
+            "category": "musique"
+        },
+        {
+            "id": "hip-hop",
+            "label": "Hip-hop",
+            "category": "musique"
+        },
+        {
+            "id": "bo",
+            "label": "BO de films et de jeux",
+            "category": "musique"
+        },
+        {
+            "id": "pop",
+            "label": "Pop",
+            "category": "musique"
+        },
+        {
+            "id": "chanson-francaise",
+            "label": "Chanson française",
+            "category": "musique"
+        },
+        {
+            "id": "technologie",
+            "label": "Informatique et réseaux",
+            "category": "tech"
+        },
+        {
+            "id": "hardware",
+            "label": "Hardware et montage PC",
+            "category": "tech"
+        },
+        {
+            "id": "ia",
+            "label": "Intelligence artificielle",
+            "category": "tech"
+        },
+        {
+            "id": "cybersecurite",
+            "label": "Cybersécurité",
+            "category": "tech"
+        },
+        {
+            "id": "programmation",
+            "label": "Programmation",
+            "category": "tech"
+        },
+        {
+            "id": "homelab",
+            "label": "Homelab et domotique",
+            "category": "tech"
+        },
+        {
+            "id": "robotique",
+            "label": "Robotique",
+            "category": "tech"
+        },
+        {
+            "id": "open-source",
+            "label": "Open source",
+            "category": "tech"
+        },
+        {
+            "id": "gadgets",
+            "label": "Gadgets",
+            "category": "tech"
+        },
+        {
+            "id": "espace",
+            "label": "Espace et astronomie",
+            "category": "sciences"
+        },
+        {
+            "id": "physique",
+            "label": "Physique",
+            "category": "sciences"
+        },
+        {
+            "id": "biologie",
+            "label": "Biologie",
+            "category": "sciences"
+        },
+        {
+            "id": "mathematiques",
+            "label": "Mathématiques",
+            "category": "sciences"
+        },
+        {
+            "id": "meteo",
+            "label": "Météo et orages",
+            "category": "sciences"
+        },
+        {
+            "id": "geologie",
+            "label": "Géologie et volcans",
+            "category": "sciences"
+        },
+        {
+            "id": "medecine",
+            "label": "Médecine",
+            "category": "sciences"
+        },
+        {
+            "id": "histoire",
+            "label": "Histoire",
+            "category": "histoire"
+        },
+        {
+            "id": "militaire",
+            "label": "Militaire et stratégie",
+            "category": "histoire"
+        },
+        {
+            "id": "antiquite",
+            "label": "Antiquité",
+            "category": "histoire"
+        },
+        {
+            "id": "moyen-age",
+            "label": "Moyen Âge et chevalerie",
+            "category": "histoire"
+        },
+        {
+            "id": "philosophie",
+            "label": "Philosophie",
+            "category": "histoire"
+        },
+        {
+            "id": "geopolitique",
+            "label": "Géopolitique",
+            "category": "histoire"
+        },
+        {
+            "id": "economie",
+            "label": "Économie",
+            "category": "histoire"
+        },
+        {
+            "id": "psychologie",
+            "label": "Psychologie",
+            "category": "histoire"
+        },
+        {
+            "id": "langues",
+            "label": "Langues",
+            "category": "histoire"
+        },
+        {
+            "id": "japon",
+            "label": "Japon",
+            "category": "cultures"
+        },
+        {
+            "id": "coree",
+            "label": "Corée",
+            "category": "cultures"
+        },
+        {
+            "id": "chine",
+            "label": "Chine",
+            "category": "cultures"
+        },
+        {
+            "id": "asie-sud-est",
+            "label": "Asie du Sud-Est",
+            "category": "cultures"
+        },
+        {
+            "id": "nordiques",
+            "label": "Pays nordiques",
+            "category": "cultures"
+        },
+        {
+            "id": "amerique",
+            "label": "Amérique",
+            "category": "cultures"
+        },
+        {
+            "id": "voyages",
+            "label": "Voyages",
+            "category": "cultures"
+        },
+        {
+            "id": "nature",
+            "label": "Nature",
+            "category": "nature"
+        },
+        {
+            "id": "animaux",
+            "label": "Animaux",
+            "category": "nature"
+        },
+        {
+            "id": "randonnee",
+            "label": "Randonnée",
+            "category": "nature"
+        },
+        {
+            "id": "survie",
+            "label": "Survie et bushcraft",
+            "category": "nature"
+        },
+        {
+            "id": "mer",
+            "label": "Mer et océans",
+            "category": "nature"
+        },
+        {
+            "id": "jardinage",
+            "label": "Jardinage",
+            "category": "nature"
+        },
+        {
+            "id": "arts-martiaux",
+            "label": "Arts martiaux",
+            "category": "sport"
+        },
+        {
+            "id": "musculation",
+            "label": "Musculation et fitness",
+            "category": "sport"
+        },
+        {
+            "id": "sports-mecaniques",
+            "label": "Sports mécaniques",
+            "category": "sport"
+        },
+        {
+            "id": "football",
+            "label": "Football",
+            "category": "sport"
+        },
+        {
+            "id": "course",
+            "label": "Course à pied",
+            "category": "sport"
+        },
+        {
+            "id": "glisse",
+            "label": "Sports de glisse",
+            "category": "sport"
+        },
+        {
+            "id": "automobile",
+            "label": "Automobile et tuning",
+            "category": "mecanique"
+        },
+        {
+            "id": "moto",
+            "label": "Moto",
+            "category": "mecanique"
+        },
+        {
+            "id": "bricolage",
+            "label": "Bricolage",
+            "category": "mecanique"
+        },
+        {
+            "id": "impression-3d",
+            "label": "Impression 3D",
+            "category": "mecanique"
+        },
+        {
+            "id": "electronique",
+            "label": "Électronique",
+            "category": "mecanique"
+        },
+        {
+            "id": "aviation",
+            "label": "Aviation",
+            "category": "mecanique"
+        },
+        {
+            "id": "art",
+            "label": "Dessin et illustration",
+            "category": "arts"
+        },
+        {
+            "id": "photographie",
+            "label": "Photographie",
+            "category": "arts"
+        },
+        {
+            "id": "ecriture",
+            "label": "Écriture",
+            "category": "arts"
+        },
+        {
+            "id": "architecture",
+            "label": "Architecture",
+            "category": "arts"
+        },
+        {
+            "id": "design",
+            "label": "Design",
+            "category": "arts"
+        },
+        {
+            "id": "mode",
+            "label": "Mode",
+            "category": "arts"
+        },
+        {
+            "id": "tatouage",
+            "label": "Tatouage",
+            "category": "arts"
+        },
+        {
+            "id": "cuisine",
+            "label": "Cuisine",
+            "category": "vivre"
+        },
+        {
+            "id": "patisserie",
+            "label": "Pâtisserie",
+            "category": "vivre"
+        },
+        {
+            "id": "vins",
+            "label": "Vins et spiritueux",
+            "category": "vivre"
+        },
+        {
+            "id": "biere",
+            "label": "Bière",
+            "category": "vivre"
+        },
+        {
+            "id": "cafe-the",
+            "label": "Café et thé",
+            "category": "vivre"
+        },
+        {
+            "id": "gastronomie-asiatique",
+            "label": "Gastronomie asiatique",
+            "category": "vivre"
+        },
+        {
+            "id": "deco",
+            "label": "Déco",
+            "category": "vivre"
+        }
+    ],
+    "theme_categories": [
+        {
+            "id": "fiction",
+            "label": "Fiction & univers"
+        },
+        {
+            "id": "jeux",
+            "label": "Jeux"
+        },
+        {
+            "id": "ecrans",
+            "label": "Écrans"
+        },
+        {
+            "id": "musique",
+            "label": "Musique"
+        },
+        {
+            "id": "tech",
+            "label": "Tech"
+        },
+        {
+            "id": "sciences",
+            "label": "Sciences"
+        },
+        {
+            "id": "histoire",
+            "label": "Histoire & société"
+        },
+        {
+            "id": "cultures",
+            "label": "Cultures du monde"
+        },
+        {
+            "id": "nature",
+            "label": "Nature & dehors"
+        },
+        {
+            "id": "sport",
+            "label": "Sport"
+        },
+        {
+            "id": "mecanique",
+            "label": "Mécanique & fabrication"
+        },
+        {
+            "id": "arts",
+            "label": "Arts & création"
+        },
+        {
+            "id": "vivre",
+            "label": "Art de vivre"
+        }
+    ]
 }

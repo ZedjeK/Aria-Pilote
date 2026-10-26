@@ -51,13 +51,68 @@ class Catalogue(unittest.TestCase):
     def test_identifiants_et_intensites(self):
         ids = [t["id"] for t in persona.CATALOGUE["traits"]]
         self.assertEqual(len(ids), len(set(ids)))
-        self.assertEqual(len(ids), 62)
+        self.assertEqual(len(ids), 96)
         families = {f["id"] for f in persona.CATALOGUE["families"]}
         for trait in persona.CATALOGUE["traits"]:
             self.assertIn(trait["family"], families)
             self.assertEqual(set(trait["suggested"]), set(persona.REGISTERS))
             self.assertTrue(all(0 <= v <= 3 for v in trait["suggested"].values()))
+            if trait["family"] == persona.INTIMATE_FAMILY:  # jamais suggérés hors du registre naturel
+                self.assertEqual((trait["suggested"]["sobre"], trait["suggested"]["professionnel"]), (0, 0))
         self.assertIn("gouts", persona.TRAITS)
+        self.assertEqual(persona.TRAITS["seduction"]["family"], "intimite")
+        self.assertEqual(persona.TRAITS["jalousie"]["family"], "defauts")
+        # Goûts : chaque thème dans une catégorie connue, identifiants uniques, anciens identifiants gardés
+        categories = {c["id"] for c in persona.CATALOGUE["theme_categories"]}
+        themes = [t["id"] for t in persona.CATALOGUE["themes"]]
+        self.assertEqual(len(themes), len(set(themes)))
+        self.assertGreaterEqual(len(themes), 100)
+        self.assertTrue(all(t["category"] in categories for t in persona.CATALOGUE["themes"]))
+        for old in ("science-fiction", "jeux-video", "espace", "cinema", "mangas", "technologie", "automobile"):
+            self.assertIn(old, persona.THEMES)
+
+
+class Personnalite(unittest.TestCase):
+    """Personnalité rangée par famille, goûts détaillés, garde-fou de l'intimité."""
+
+    BASE = {"name": "Test", "intimate": True, "traits": {
+        "calme": {"naturel": 2, "sobre": 1, "professionnel": 1},
+        "entetement": {"naturel": 2},
+        "flirt": {"naturel": 3, "sobre": 3, "professionnel": 3},
+    }}
+
+    def test_intimite_forcee_hors_du_registre_naturel(self):
+        p = persona.clean(self.BASE)
+        self.assertEqual(p["traits"]["flirt"], {"naturel": 3, "sobre": 0, "professionnel": 0})
+
+    def test_rendu_par_famille(self):
+        text = persona.render(persona.clean(self.BASE), "naturel")
+        self.assertLess(text.index("Tempérament :"), text.index("Défauts attachants :"))
+        self.assertIn("Séduction & intimité :\n- Flirt (intensité très marquée)", text)
+        self.assertNotIn("Flirt", persona.render(persona.clean(self.BASE), "professionnel"))
+
+    def test_intimite_ignoree_sans_le_reglage(self):
+        p = persona.clean({**self.BASE, "intimate": False})
+        self.assertNotIn("Flirt", persona.render(p, "naturel"))
+        self.assertNotIn("Flirt", persona.register_note(p, "dev"))  # pas même nommée parmi les traits retirés
+
+    def test_gouts_detailles(self):
+        p = persona.clean({**self.BASE, "themes": ["cyberpunk", "japon", "inconnu"],
+                           "favorites": ["Blade Runner 1982", "Blade Runner 1982", " "], "dislikes": ["le Comic Sans"],
+                           "opinions": ["quatre espaces, pas deux"]})
+        self.assertIn("gouts", p["traits"])  # des goûts saisis : l'intensité suggérée est ajoutée
+        self.assertEqual(p["favorites"], ["Blade Runner 1982"])  # doublons et vides retirés
+        text = persona.render(p, "naturel")
+        self.assertIn("- Ce qui te passionne : Cyberpunk, Japon.", text)
+        self.assertIn("- Tes coups de cœur : Blade Runner 1982.", text)
+        self.assertIn("- Ce que tu n'aimes pas : le Comic Sans.", text)
+        self.assertIn("- Tes avis tranchés : quatre espaces, pas deux.", text)
+        p["traits"]["gouts"]["professionnel"] = 0
+        self.assertNotIn("coups de cœur", persona.render(p, "professionnel"))
+
+    def test_liste_trop_longue_refusee(self):
+        with self.assertRaises(persona.PersonaError):
+            persona.clean({**self.BASE, "favorites": ["x" * 151]})
 
 
 class Personas(unittest.TestCase):

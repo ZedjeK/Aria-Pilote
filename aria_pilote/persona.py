@@ -18,6 +18,13 @@ from . import config
 CATALOGUE = json.loads((Path(__file__).parent / "persona_traits.json").read_text(encoding="utf-8"))
 TRAITS = {t["id"]: t for t in CATALOGUE["traits"]}
 THEMES = {t["id"]: t["label"] for t in CATALOGUE["themes"]}
+FAMILIES = {f["id"]: f["label"] for f in CATALOGUE["families"]}
+# Séduction & intimité : jamais hors du registre naturel, et seulement si le contenu intime est autorisé
+INTIMATE_FAMILY = "intimite"
+INTIMATE_REGISTERS = {"naturel"}
+# Goûts précis, au-delà des thèmes : là où vit vraiment la personnalité
+TASTE_LISTS = {"favorites": "Tes coups de cœur", "dislikes": "Ce que tu n'aimes pas", "opinions": "Tes avis tranchés"}
+MAX_TASTES, MAX_TASTE_CHARS = 30, 150
 REGISTERS = {r["id"]: r["label"] for r in CATALOGUE["registers"]}
 INTENSITIES = {1: "légère", 2: "marquée", 3: "très marquée"}
 GENDERS = {"feminin": "au féminin", "masculin": "au masculin", "neutre": "sans marque de genre (tournures neutres)"}
@@ -49,6 +56,9 @@ DEFAULT_PERSONA = {
         "concision": {"naturel": 2, "sobre": 1, "professionnel": 0},
     },
     "themes": [],
+    "favorites": [],
+    "dislikes": [],
+    "opinions": [],
     "rules": ["Ne jamais inventer un fait : dire quand on ne sait pas, puis vérifier ou demander."],
     "intimate": False,
     "registers": {DISCUSSION: "naturel"},
@@ -95,12 +105,20 @@ def clean(data, warnings=None):
             except (TypeError, ValueError):
                 level = 0
             traits[tid][register] = min(3, max(0, level))
+            if TRAITS[tid]["family"] == INTIMATE_FAMILY and register not in INTIMATE_REGISTERS:
+                traits[tid][register] = 0  # garde-fou : pas de drague dans une revue de code
     themes = []
     for theme in data.get("themes") or []:
         if theme in THEMES:
             themes.append(theme) if theme not in themes else None
         else:
             warnings.append(f"Thème inconnu ignoré : {theme}")
+    tastes = {}
+    for key, label in TASTE_LISTS.items():
+        items = [_text(item, MAX_TASTE_CHARS, label) for item in (data.get(key) or [])]
+        tastes[key] = list(dict.fromkeys(i for i in items if i))[:MAX_TASTES]
+    if (themes or any(tastes.values())) and "gouts" not in traits:
+        traits["gouts"] = dict(TRAITS["gouts"]["suggested"])  # des goûts saisis : ils doivent pouvoir s'exprimer
     rules = [_text(r, MAX_RULE_CHARS, "Règle d'or") for r in (data.get("rules") or [])]
     rules = [r for r in rules if r][:MAX_RULES]
     registers = {}
@@ -115,6 +133,7 @@ def clean(data, warnings=None):
         "presentation": _text(data.get("presentation"), MAX_PRESENTATION, "Présentation"),
         "traits": traits,
         "themes": themes,
+        **tastes,
         "rules": rules,
         "intimate": bool(data.get("intimate")),
         "registers": registers,
@@ -281,19 +300,35 @@ def register_for(persona, skill=None):
     return registers.get(DISCUSSION, "naturel")
 
 
+def _expressed(persona, tid, register):
+    """Intensité d'un trait dans ce registre (0 : il n'apparaît pas), garde-fou de l'intimité compris."""
+    trait = TRAITS.get(tid)
+    if not trait:
+        return 0
+    if trait["family"] == INTIMATE_FAMILY and (not persona.get("intimate") or register not in INTIMATE_REGISTERS):
+        return 0
+    return ((persona.get("traits") or {}).get(tid) or {}).get(register, 0)
+
+
 def personality(persona, register):
-    """Les traits de la colonne en vigueur (un trait à 0 n'apparaît pas), et les goûts s'ils sont présents."""
+    """Les traits de la colonne en vigueur, rangés par famille (un trait à 0 n'apparaît pas), puis les goûts."""
     lines = []
-    for tid, levels in (persona.get("traits") or {}).items():
-        level = levels.get(register, 0)
-        trait = TRAITS.get(tid)
-        if not trait or not level or tid == "gouts":
+    for family, label in FAMILIES.items():
+        if family == "gouts":
             continue
-        lines.append(f"- {trait['label']} (intensité {INTENSITIES[level]}) : {trait['definition']}.")
-    tastes = (persona.get("traits") or {}).get("gouts", {}).get(register, 0)
+        items = [f"- {TRAITS[tid]['label']} (intensité {INTENSITIES[level]}) : {TRAITS[tid]['definition']}."
+                 for tid in persona.get("traits") or {}
+                 if TRAITS.get(tid, {}).get("family") == family and (level := _expressed(persona, tid, register))]
+        if items:
+            lines += [f"{label} :", *items]
+    level = _expressed(persona, "gouts", register)
     themes = [THEMES[t] for t in persona.get("themes") or [] if t in THEMES]
-    if tastes and themes:
-        lines.append(f"- Tes goûts, à évoquer de façon {INTENSITIES[tastes]} : {', '.join(themes)}.")
+    tastes = [(TASTE_LISTS[key], persona.get(key) or []) for key in TASTE_LISTS]
+    if level and (themes or any(items for _, items in tastes)):
+        lines.append(f"Tes goûts (à évoquer de façon {INTENSITIES[level]}, sans les réciter) :")
+        if themes:
+            lines.append(f"- Ce qui te passionne : {', '.join(themes)}.")
+        lines += [f"- {label} : {' ; '.join(items)}." for label, items in tastes if items]
     return lines
 
 
@@ -325,8 +360,8 @@ def register_note(persona, skill):
     # Le prompt système décrit encore le registre de discussion : on nomme ce qui doit disparaître ou baisser,
     # sinon le modèle mélange les deux (constaté sur Qwen 3.8 : emojis gardés en registre professionnel)
     dropped, lowered = [], []
-    for tid, levels in (persona.get("traits") or {}).items():
-        before, now = levels.get(base, 0), levels.get(register, 0)
+    for tid in persona.get("traits") or {}:
+        before, now = _expressed(persona, tid, base), _expressed(persona, tid, register)
         label = TRAITS[tid]["label"] if tid in TRAITS else None
         if not label or now >= before:
             continue
