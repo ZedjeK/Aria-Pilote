@@ -9,7 +9,9 @@ compétence chargée avec load_skill au premier tour (ou « aucune » s'il répo
 
 import argparse
 import json
+import shutil
 import sys
+import tempfile
 import time
 from collections import Counter
 from datetime import datetime
@@ -95,6 +97,10 @@ CASES = [
     ("Peux-tu relire ma traduction en anglais ? « We have eventually rebooted the server yesterday. »", "traduction"),
     ("Translate this to French for my team: « Please make sure to back up your files before Friday's maintenance "
      "window. »", "traduction"),
+    ("Prépare le MEMOIRE.md de ce projet.", "memoire-projet"),
+    ("Mets à jour la mémoire du projet : on est passés de unittest à pytest.", "memoire-projet"),
+    ("Écris le fichier mémoire qui explique à l'agent comment installer, lancer et tester ce dépôt.", "memoire-projet"),
+    ("Analyse ce dossier et note ses conventions de code pour tes prochaines tâches.", "memoire-projet"),
     ("Salut ! Ça va aujourd'hui ?", NONE),
     ("Merci, c'était parfait.", NONE),
     ("Quelle est la capitale du Japon ?", NONE),
@@ -106,20 +112,46 @@ CASES = [
 ]
 
 
+# Compétences qui n'ont de sens qu'avec un dossier attaché : leurs phrases tournent dans un petit projet de test
+FOLDER_SKILLS = {"memoire-projet"}
+FIXTURE = {
+    "README.md": "# Facturier\n\nPetit outil qui génère les factures PDF du mois à partir d'un CSV.\n",
+    "requirements.txt": "reportlab>=4.0\n",
+    "facturier/__init__.py": "",
+    "facturier/main.py": "# Point d'entrée : py -m facturier factures.csv\n",
+    "tests/test_main.py": "import unittest\n",
+}
+
+
+def _workspace():
+    folder = Path(tempfile.mkdtemp(prefix="aria-selection-"))
+    for rel, text in FIXTURE.items():
+        (folder / rel).parent.mkdir(parents=True, exist_ok=True)
+        (folder / rel).write_text(text, encoding="utf-8")
+    return folder
+
+
 def _answers(expected):
     """Réponses justes d'une phrase : une compétence, ou un tuple quand deux se défendent."""
     return expected if isinstance(expected, tuple) else (expected,)
 
 
-def pick(client, prompt, timeout):
+def pick(client, prompt, timeout, folder=False):
     """Compétence chargée au premier tour : la première load_skill, ou « aucune » si le modèle répond sans."""
     conv = client.post("/api/conversations", json={"persona_id": "none"}).json()
     cid = conv["id"]
-    client.patch(f"/api/conversations/{cid}", json={"title": "[sélection]"})
+    ws = _workspace() if folder else None
+    patch = {"title": "[sélection]"}
+    if ws:
+        patch["agent"] = {"enabled": True, "workspace": str(ws)}
+    client.patch(f"/api/conversations/{cid}", json=patch)
     chosen, others, deadline = NONE, [], time.time() + timeout
     try:
         with client.stream("POST", "/api/chat", json={"conversation_id": cid, "content": prompt},
                            timeout=httpx.Timeout(30, read=None)) as resp:
+            if resp.status_code != 200:
+                # Moteur arrêté ou refus : ce n'est pas un choix du modèle, on le dit
+                return f"erreur {resp.status_code}", []
             for line in resp.iter_lines():
                 if time.time() > deadline:
                     chosen = "délai"
@@ -140,6 +172,8 @@ def pick(client, prompt, timeout):
                     break  # réponse finie sans load_skill (les appels d'un tour arrivent après son step_end)
     finally:
         client.delete(f"/api/conversations/{cid}", headers=ORIGIN)
+        if ws:
+            shutil.rmtree(ws, ignore_errors=True)
     return chosen, others
 
 
@@ -163,7 +197,7 @@ def main():
             rows, misses = [], Counter()
             for i, (prompt, expected) in enumerate(cases, 1):
                 started = time.time()
-                chosen, others = pick(client, prompt, args.timeout)
+                chosen, others = pick(client, prompt, args.timeout, folder=bool(set(_answers(expected)) & FOLDER_SKILLS))
                 ok = chosen in _answers(expected)
                 expected = "|".join(_answers(expected))
                 rows.append({"prompt": prompt, "expected": expected, "chosen": chosen, "others": others, "ok": ok,
