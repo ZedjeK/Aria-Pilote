@@ -44,14 +44,16 @@ WEB_RULE = """- web_search et web_fetch servent aux infos récentes et à la doc
   Ne mets jamais le contenu des fichiers de l'utilisateur dans une recherche ou une adresse web."""
 WEB_RULE_OFF = "- L'accès web est coupé dans les réglages : appuie-toi sur les fichiers, ou demande à l'utilisateur."
 
-TODO_RULE = """- Pour une tâche en plusieurs étapes, commence par update_todo avec ton plan, puis tiens-le à jour
-  à chaque étape (une seule étape in_progress à la fois)."""
+TODO_RULE = """- Pour une tâche en plusieurs étapes (au moins trois actions), commence par update_todo avec ton plan, puis
+  tiens-le à jour à chaque étape (une seule étape in_progress à la fois) ; l'utilisateur le voit sous ta réponse.
+  Avant ta réponse finale, renvoie-le avec les étapes faites cochées. Pour une simple question, pas de plan."""
 
 # Sans dossier attaché : une discussion, avec quelques outils qui ne touchent jamais aux fichiers
 DISCUSSION_PROMPT = """Outils disponibles dans cette conversation : load_skill (charger une compétence), ask_user (poser une question),
-propose_plan (soumettre un plan){extra}.
+propose_plan (soumettre un plan), update_todo (ton plan d'étapes, affiché sous ta réponse){extra}.
 - Pour une simple conversation ou une question rapide, réponds directement. Pour une vraie demande (du code, un
   plan, un texte à écrire, une explication, un choix…), charge d'abord la compétence qui y correspond (liste plus bas).
+{todo_rule}
 - Tu n'as accès à aucun fichier de l'utilisateur. S'il veut que tu travailles dans ses fichiers, dis-lui d'attacher
   un dossier à la conversation (bouton « Attacher un dossier »).
 {web_rule}
@@ -109,7 +111,7 @@ QUESTION_DECIDE = "L'utilisateur te laisse décider : choisis l'option la plus r
 QUESTION_SKIPPED = "Non exécuté : attends d'abord la réponse de l'utilisateur à ta question."
 
 # Sans dossier attaché, seuls ces outils existent : ils ne touchent jamais aux fichiers de l'utilisateur
-NO_FOLDER_TOOLS = {"load_skill", "web_search", "web_fetch"}
+NO_FOLDER_TOOLS = {"load_skill", "web_search", "web_fetch", "update_todo"}
 SCREEN_RULE = """Écran du PC : l'utilisateur t'a ouvert son écran. C'est le dernier recours : si une commande, un
 fichier ou le web suffit, passe par eux. lire_fenetre sans argument liste les fenêtres ouvertes ; avec une fenêtre, il
 donne ses éléments numérotés et ses textes, sans image. voir_ecran ajoute la capture, aux mêmes numéros : plus
@@ -338,7 +340,7 @@ def _system_prompt(conv, root, memory, plan_required=False):
             extra += ", delegate (sous-agents)"
         if screen_enabled(conv):
             extra += ", lire_fenetre, voir_ecran et agir_ecran (observer l'écran et y agir)"
-        main = DISCUSSION_PROMPT.format(extra=extra, web_rule=web_rule)
+        main = DISCUSSION_PROMPT.format(extra=extra, web_rule=web_rule, todo_rule=TODO_RULE)
     parts = [persona_text, profile_text, main, PRIORITY_RULE, PLAN_REQUIRED if plan_required else PLAN_RULE,
              SCREEN_RULE if screen_enabled(conv) else "", skills.prompt_section(root), subagents.prompt_section(root)]
     if memory:

@@ -509,7 +509,12 @@ def prepare_update_todo(root, args):
 
 async def run_update_todo(prepared, cid):
     items = prepared["items"]
-    conversations.update(cid, lambda c: c.setdefault("agent", {}).update(todo=items))
+
+    def store(conv):
+        # Le plan appartient à la tâche en cours : l'interface ne l'affiche sous la réponse que pour cette tâche
+        conv["todo"] = {"task_id": conv.get("task_id"), "items": items}
+
+    conversations.update(cid, store)
     text = "\n".join(f"{TODO_MARKS[i['status']]} {i['content']}" for i in items)
     return _ok(f"Plan mis à jour :\n{text}", todo=items)
 

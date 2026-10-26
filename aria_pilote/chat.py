@@ -29,6 +29,7 @@ def build_messages(conv, system_prompt):
     if summary.get("text"):
         system_prompt = (f"{system_prompt}\n\n" if system_prompt else "") + context.SUMMARY_HEADER + summary["text"]
     messages = [{"role": "system", "content": system_prompt}] if system_prompt else []
+    cid = conv.get("id")  # absent dans la conversation interne d'un sous-agent (jamais d'image)
     answered = {m["tool_call_id"] for m in source if m["role"] == "tool"}
     # Seuls les derniers résultats d'outils restent entiers : les plus anciens ont déjà servi
     keep_full, limit = context.SQUEEZE_LEVELS[conv.get("squeeze", 0)]
@@ -39,7 +40,7 @@ def build_messages(conv, system_prompt):
     pending = []
     for i, m in enumerate(source):
         if pending and m["role"] != "tool":
-            messages.append(_screenshots(conv["id"], pending))
+            messages.append(_screenshots(cid, pending))
             pending = []
         if m["role"] == "tool":
             content = context.shrink(m["content"], limit) if i in old_tools else m["content"]
@@ -59,11 +60,11 @@ def build_messages(conv, system_prompt):
                 root = (conv.get("agent") or {}).get("workspace") if (conv.get("agent") or {}).get("enabled") else None
                 note = persona.register_note(persona.for_conversation(conv), m["skill"])
                 text = skills.expand(m["skill"], m["content"], root) + note
-            messages.append({"role": "user", "content": user_content(conv["id"], text, m.get("images"))})
+            messages.append({"role": "user", "content": user_content(cid, text, m.get("images"))})
         else:
             messages.append({"role": m["role"], "content": m["content"]})
     if pending:
-        messages.append(_screenshots(conv["id"], pending))
+        messages.append(_screenshots(cid, pending))
     return messages
 
 
