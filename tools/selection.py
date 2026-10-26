@@ -83,6 +83,17 @@ CASES = [
     ("Résume ce long message en trois points : « Bonjour, suite à l'audit, il faut changer les mots de passe admin, "
      "activer la double authentification sur le VPN, mettre à jour les deux pare-feu avant la fin du mois et "
      "documenter les accès des prestataires. Merci. »", "resume"),
+    ("Depuis ce matin, plus personne n'accède au partage réseau du NAS, mais internet fonctionne. Qu'est-ce que je "
+     "vérifie ?", "depannage"),
+    ("Mon serveur Debian est devenu très lent depuis hier soir, la charge monte à 30.", "depannage"),
+    ("Le Wi-Fi coupe toutes les dix minutes dans le bureau du fond, les autres pièces vont bien.", "depannage"),
+    ("Windows Update échoue avec l'erreur 0x80070005 sur trois postes du service compta.", "depannage"),
+    ("Traduis ce mail en anglais pour le support Synology : le volume 1 est passé en mode dégradé après le "
+     "remplacement du disque 2.", "traduction"),
+    ("Traduis en français ce message d'erreur : « The specified network name is no longer available. »", "traduction"),
+    ("Peux-tu relire ma traduction en anglais ? « We have eventually rebooted the server yesterday. »", "traduction"),
+    ("Translate this to French for my team: « Please make sure to back up your files before Friday's maintenance "
+     "window. »", "traduction"),
     ("Salut ! Ça va aujourd'hui ?", NONE),
     ("Merci, c'était parfait.", NONE),
     ("Quelle est la capitale du Japon ?", NONE),
