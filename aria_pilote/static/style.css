@@ -603,3 +603,21 @@ button.danger-text { color: var(--err); }
     place-items: center; font-size: 10px; font-weight: 700; color: var(--panel); }
 @keyframes plan-spin { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) { .plan-inline.running .step.in_progress .step-mark { animation: none; border-color: var(--accent); } }
+
+/* Personnalité par famille, et carte des goûts */
+.family-sections { display: grid; gap: 8px; }
+.family-section { border: 1px solid var(--border); border-radius: 8px; padding: 6px 10px; }
+.family-section > summary { cursor: pointer; font-weight: 600; padding: 2px 0; }
+.family-section[open] > summary { margin-bottom: 8px; }
+.family-section .trait-add { position: relative; margin-top: 8px; }
+.trait-menu.inline { position: static; width: auto; max-height: 300px; margin-top: 6px; }
+.dots.locked { color: var(--muted); text-align: center; }
+.themes-list { display: grid; gap: 6px; }
+.theme-category > summary { cursor: pointer; font-size: 13px; }
+.theme-chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 6px 0 4px; }
+.chip { padding: 3px 10px; border-radius: 12px; font-size: 12px; background: transparent; border: 1px solid var(--border); }
+.chip.on { border-color: var(--accent-2); color: var(--accent); background: color-mix(in srgb, var(--accent-2) 14%, transparent); }
+.taste-lists { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px; }
+.taste-list { display: grid; gap: 6px; align-content: start; }
+.taste-list .rules-list input, .taste-add input { flex: 1; min-width: 0; }
+.taste-add { display: flex; gap: 6px; }

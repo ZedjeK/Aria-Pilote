@@ -68,8 +68,8 @@ function renderPersonaPage() {
         if (field.type === "checkbox") field.checked = Boolean(p[key]);
         else field.value = p[key] ?? "";
     }
-    renderTraitGrid();
-    renderThemes();
+    $("#family-sections").replaceChildren();  // autre persona : on repart de « ouvert s'il a des traits »
+    renderPersonality();
     renderRules();
     renderRegisters();
     renderPersonaPreview();
@@ -102,23 +102,45 @@ function savePersona() {
 for (const field of document.querySelectorAll("[data-persona]")) {
     field.addEventListener("change", () => {
         personaUi.current[field.dataset.persona] = field.type === "checkbox" ? field.checked : field.value;
+        if (field.dataset.persona === "intimate") renderFamilies();  // le bloc Séduction & intimité dit s'il compte
         savePersona();
     });
 }
 
 $("#persona-pick").addEventListener("change", () => loadPersonaSection($("#persona-pick").value));
 
-// Grille des traits : une ligne par trait, trois registres, trois crans chacun
+// Personnalité : un bloc par famille (tempérament, relation, humour…), puis la carte des goûts.
+// Chaque trait a une intensité par registre : trois crans (léger, marqué, très marqué).
+const LEVEL_LABELS = ["absent", "léger", "marqué", "très marqué"];
+const INTIMATE_FAMILY = "intimite";
+const TASTE_LISTS = [
+    { key: "favorites", label: "❤ Coups de cœur", hint: "Ex. Mirror's Edge et Faith, Blade Runner 1982, Kraftwerk" },
+    { key: "dislikes", label: "💢 N'aime pas", hint: "Ex. le Comic Sans, admin/admin, le câblage spaghetti" },
+    { key: "opinions", label: "⚡ Avis tranchés", hint: "Ex. quatre espaces pour l'indentation, pas deux" },
+];
+
+function traitFamily(traitId) {
+    return personaUi.catalogue.traits.find((t) => t.id === traitId)?.family;
+}
+
+function renderPersonality() {
+    renderFamilies();
+    renderTastes();
+}
+
 function dots(traitId, register) {
-    const level = personaUi.current.traits[traitId][register] || 0;
-    const box = el("span", { className: "dots", title: `${["absent", "léger", "marqué", "très marqué"][level]}` });
+    // Séduction & intimité : jamais hors du registre naturel (le serveur l'impose aussi)
+    if (traitFamily(traitId) === INTIMATE_FAMILY && register !== "naturel") {
+        return el("span", { className: "dots locked", title: "Jamais dans ce registre" }, "—");
+    }
+    const level = personaUi.current.traits[traitId]?.[register] || 0;
+    const box = el("span", { className: "dots", title: LEVEL_LABELS[level] });
     for (let k = 1; k <= 3; k++) {
-        const dot = el("button", { type: "button", className: `dot${k <= level ? " on" : ""}`, title: ["léger", "marqué", "très marqué"][k - 1] });
+        const dot = el("button", { type: "button", className: `dot${k <= level ? " on" : ""}`, title: LEVEL_LABELS[k] });
         dot.addEventListener("click", () => {
             // Clic sur le cran déjà atteint : on redescend d'un cran (jusqu'à absent)
-            personaUi.current.traits[traitId][register] = level === k ? k - 1 : k;
-            renderTraitGrid();
-            renderThemes();
+            personaUi.current.traits[traitId] = { ...personaUi.current.traits[traitId], [register]: level === k ? k - 1 : k };
+            renderPersonality();
             savePersona();
         });
         box.append(dot);
@@ -126,70 +148,127 @@ function dots(traitId, register) {
     return box;
 }
 
-function renderTraitGrid() {
-    const grid = $("#trait-grid");
-    const traits = personaUi.current.traits;
+function traitGrid(ids) {
     const byId = Object.fromEntries(personaUi.catalogue.traits.map((t) => [t.id, t]));
     const head = [el("span"), ...personaUi.catalogue.registers.map((r) => el("span", { className: "grid-head" }, r.label)), el("span")];
-    const rows = Object.keys(traits).filter((id) => byId[id]).flatMap((id) => {
+    const rows = ids.flatMap((id) => {
         const remove = el("button", { type: "button", className: "ghost remove", title: "Retirer ce trait" }, "✕");
         remove.addEventListener("click", () => {
             delete personaUi.current.traits[id];
-            renderTraitGrid();
-            renderThemes();
+            renderPersonality();
             savePersona();
         });
-        const label = el("span", { className: "trait-name", title: byId[id].definition }, id === "gouts" ? "🎨 Goûts" : byId[id].label);
-        return [label, ...REGISTER_IDS.map((r) => dots(id, r)), remove];
+        return [el("span", { className: "trait-name", title: byId[id].definition }, byId[id].label),
+            ...REGISTER_IDS.map((r) => dots(id, r)), remove];
     });
-    grid.replaceChildren(...head, ...rows);
-    grid.hidden = !rows.length;  // sans trait, seule reste « + Ajouter un trait »
+    return el("div", { className: "trait-grid" }, ...head, ...rows);
 }
 
-// Menu « + Ajouter un trait » : le catalogue par famille, sans les traits déjà choisis
-$("#btn-trait-add").addEventListener("click", () => {
-    const menu = $("#trait-menu");
-    if (!menu.hidden) {
-        menu.hidden = true;
-        return;
-    }
-    const chosen = new Set(Object.keys(personaUi.current.traits));
-    const groups = personaUi.catalogue.families.map((family) => {
-        const items = personaUi.catalogue.traits.filter((t) => t.family === family.id && !chosen.has(t.id));
-        if (!items.length) return null;
-        return el("div", { className: "trait-family" }, el("div", { className: "set-label" }, family.label),
-            ...items.map((t) => {
-                const item = el("button", { type: "button", className: "trait-option" },
-                    el("span", {}, t.id === "gouts" ? "🎨 Goûts" : t.label), el("span", { className: "muted small" }, t.definition));
-                item.addEventListener("click", () => {
-                    personaUi.current.traits[t.id] = { ...t.suggested };  // intensités suggérées, modifiables
-                    menu.hidden = true;
-                    renderTraitGrid();
-                    renderThemes();
-                    savePersona();
-                });
-                return item;
-            }));
-    }).filter(Boolean);
-    menu.replaceChildren(...(groups.length ? groups : [el("p", { className: "muted small" }, "Tous les traits sont déjà choisis.")]));
-    menu.hidden = false;
-});
-
-function renderThemes() {
-    const box = $("#themes-box");
-    box.hidden = !personaUi.current.traits.gouts;
-    if (box.hidden) return;
-    const chosen = new Set(personaUi.current.themes || []);
-    $("#themes-list").replaceChildren(...personaUi.catalogue.themes.map((theme) => {
-        const check = el("input", { type: "checkbox", checked: chosen.has(theme.id) });
-        check.addEventListener("change", () => {
-            const themes = new Set(personaUi.current.themes || []);
-            if (check.checked) themes.add(theme.id);
-            else themes.delete(theme.id);
-            personaUi.current.themes = personaUi.catalogue.themes.map((t) => t.id).filter((id) => themes.has(id));
+function familyMenu(family, chosen, menu) {
+    const items = personaUi.catalogue.traits.filter((t) => t.family === family.id && !chosen.has(t.id));
+    menu.replaceChildren(...(items.length ? items.map((t) => {
+        const item = el("button", { type: "button", className: "trait-option" },
+            el("span", {}, t.label), el("span", { className: "muted small" }, t.definition));
+        item.addEventListener("click", () => {
+            personaUi.current.traits[t.id] = { ...t.suggested };  // intensités suggérées, modifiables
+            renderPersonality();
             savePersona();
         });
-        return el("label", { className: "theme" }, check, theme.label);
+        return item;
+    }) : [el("p", { className: "muted small" }, "Tous les traits de cette famille sont déjà choisis.")]));
+}
+
+function renderFamilies() {
+    const box = $("#family-sections");
+    const open = new Set([...box.querySelectorAll("details[open]")].map((d) => d.dataset.family));
+    const first = !box.children.length;
+    const traits = personaUi.current.traits;
+    const chosen = new Set(Object.keys(traits));
+    box.replaceChildren(...personaUi.catalogue.families.filter((f) => f.id !== "gouts").map((family) => {
+        const ids = Object.keys(traits).filter((id) => traitFamily(id) === family.id);
+        const section = el("details", { className: "family-section" });
+        section.dataset.family = family.id;
+        section.open = first ? ids.length > 0 : open.has(family.id);
+        section.append(el("summary", {}, `${family.icon || ""} ${family.label}`,
+            el("span", { className: "muted small" }, ids.length ? ` · ${ids.length}` : " · aucun")));
+        if (family.id === INTIMATE_FAMILY) {
+            section.append(el("p", { className: "muted small" }, personaUi.current.intimate
+                ? "Seulement en registre naturel : jamais dans une compétence sobre ou professionnelle."
+                : "Ne compte pas tant que « Contenu intime autorisé » n'est pas coché (plus bas). Seulement en registre naturel."));
+        }
+        if (ids.length) section.append(traitGrid(ids));
+        const menu = el("div", { className: "trait-menu inline" });
+        menu.hidden = true;
+        const add = el("button", { type: "button", className: "ghost" }, "+ Ajouter");
+        add.addEventListener("click", () => {
+            if (menu.hidden) familyMenu(family, chosen, menu);
+            menu.hidden = !menu.hidden;
+        });
+        section.append(el("div", { className: "trait-add" }, add, menu));
+        return section;
+    }));
+}
+
+function renderTastes() {
+    const p = personaUi.current;
+    // Intensité des goûts, par registre : c'est elle qui dose à quel point la personnalité en parle
+    const row = $("#tastes-level");
+    if (p.traits.gouts) {
+        row.replaceChildren(traitGrid(["gouts"]));
+    } else {
+        const enable = el("button", { type: "button", className: "ghost" }, "Activer les goûts");
+        enable.addEventListener("click", () => {
+            p.traits.gouts = { ...personaUi.catalogue.traits.find((t) => t.id === "gouts").suggested };
+            renderPersonality();
+            savePersona();
+        });
+        row.replaceChildren(el("span", { className: "muted small" }, "Pas encore de goûts : elle n'en parlera pas. "), enable);
+    }
+    const chosen = new Set(p.themes || []);
+    $("#themes-list").replaceChildren(...personaUi.catalogue.theme_categories.map((category) => {
+        const themes = personaUi.catalogue.themes.filter((t) => t.category === category.id);
+        const count = themes.filter((t) => chosen.has(t.id)).length;
+        const box = el("details", { className: "theme-category" });
+        box.open = count > 0;
+        box.append(el("summary", {}, category.label, el("span", { className: "muted small" }, count ? ` · ${count}` : "")),
+            el("div", { className: "theme-chips" }, ...themes.map((theme) => {
+                const chip = el("button", { type: "button", className: `chip${chosen.has(theme.id) ? " on" : ""}` }, theme.label);
+                chip.addEventListener("click", () => {
+                    const set = new Set(p.themes || []);
+                    if (set.has(theme.id)) set.delete(theme.id);
+                    else set.add(theme.id);
+                    p.themes = personaUi.catalogue.themes.map((t) => t.id).filter((id) => set.has(id));
+                    if (set.size && !p.traits.gouts) p.traits.gouts = { ...personaUi.catalogue.traits.find((t) => t.id === "gouts").suggested };
+                    renderTastes();
+                    savePersona();
+                });
+                return chip;
+            })));
+        return box;
+    }));
+    $("#taste-lists").replaceChildren(...TASTE_LISTS.map(({ key, label, hint }) => {
+        const items = p[key] || [];
+        const list = el("ul", { className: "rules-list" }, ...items.map((text, i) => {
+            const input = el("input", { value: text, maxLength: 150 });
+            input.addEventListener("change", () => { p[key][i] = input.value; savePersona(); });
+            const remove = el("button", { type: "button", className: "ghost danger-text", title: "Retirer" }, "✕");
+            remove.addEventListener("click", () => { p[key].splice(i, 1); renderTastes(); savePersona(); });
+            return el("li", {}, input, remove);
+        }));
+        const input = el("input", { placeholder: hint, maxLength: 150 });
+        const add = el("button", { type: "button", className: "ghost" }, "+ Ajouter");
+        const commit = () => {
+            const text = input.value.trim();
+            if (!text) return;
+            p[key] = [...items, text];
+            if (!p.traits.gouts) p.traits.gouts = { ...personaUi.catalogue.traits.find((t) => t.id === "gouts").suggested };
+            renderTastes();
+            savePersona();
+        };
+        add.addEventListener("click", commit);
+        input.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); commit(); } });
+        return el("div", { className: "taste-list" }, el("div", { className: "set-label" }, label), list,
+            el("div", { className: "taste-add" }, input, add));
     }));
 }
 
@@ -330,8 +409,8 @@ $("#persona-import-file").addEventListener("change", async () => {
     }
 });
 
-// Clic ailleurs : le menu des traits se ferme
+// Clic ailleurs : les menus « + Ajouter » des familles se ferment
 document.addEventListener("click", (event) => {
-    const menu = $("#trait-menu");
-    if (!menu.hidden && !event.target.closest(".trait-add")) menu.hidden = true;
+    if (event.target.closest(".trait-add")) return;
+    for (const menu of document.querySelectorAll(".family-section .trait-menu")) menu.hidden = true;
 });
