@@ -21,7 +21,7 @@ DOWNLOADS_DIR = ENGINES_DIR / "_downloads"
 
 UPSTREAM_REPO = "ggml-org/llama.cpp"
 PRISM_REPO = "PrismML-Eng/llama.cpp"
-PRISM_TAG = "prism-b10777-e3de715"
+PRISM_TAG = "prism-b10826-c9c34bc"
 
 # backend -> (motif du zip llama, motif du zip runtime CUDA ou None)
 BACKENDS = {
