@@ -68,6 +68,21 @@ CASES = [
     ("Écris le message de commit pour ce changement : j'ai ajouté la reprise des téléchargements interrompus dans downloader.py.", "message-commit"),
     ("Comment je formule le commit pour ce diff ? « - timeout = 10 » « + timeout = 30 » dans config.py", "message-commit"),
     ("Rédige un message de commit pour la correction du bug d'encodage des noms de fichiers.", "message-commit"),
+    ("Crée-moi une compétence pour écrire mes playbooks Ansible.", "createur-competence"),
+    ("Je veux une nouvelle compétence qui rédige mes comptes rendus d'intervention toujours de la même façon.", "createur-competence"),
+    ("Ma compétence revue-ansible ne se déclenche jamais, aide-moi à améliorer sa description.", "createur-competence"),
+    ("Aide-moi à écrire un SKILL.md pour préparer mes rapports de sauvegarde hebdomadaires.", "createur-competence"),
+    ("Résume-moi cet article : « Proxmox VE 9 passe à Debian 13, ajoute les instantanés sur stockage LVM partagé, "
+     "améliore la migration à chaud et abandonne les anciens noyaux 6.2. La mise à jour depuis la 8 se fait avec "
+     "pve8to9 puis apt. »", "resume"),
+    ("Fais-moi un résumé de ce fil de mails : « Paul : le NAS ne répond plus depuis ce matin. Marie : le disque 3 est "
+     "en panne, j'en commande un. Paul : on le change quand ? Marie : samedi 9 h, il faudra couper l'accès. »", "resume"),
+    ("Voici les notes de la réunion d'hier, résume l'essentiel : « budget validé pour deux switchs ; Karim teste le "
+     "VLAN invités d'ici mardi ; la migration de la messagerie est repoussée à janvier ; question des licences en "
+     "suspens. »", "resume"),
+    ("Résume ce long message en trois points : « Bonjour, suite à l'audit, il faut changer les mots de passe admin, "
+     "activer la double authentification sur le VPN, mettre à jour les deux pare-feu avant la fin du mois et "
+     "documenter les accès des prestataires. Merci. »", "resume"),
     ("Salut ! Ça va aujourd'hui ?", NONE),
     ("Merci, c'était parfait.", NONE),
     ("Quelle est la capitale du Japon ?", NONE),
