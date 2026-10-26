@@ -586,3 +586,20 @@ button.danger-text { color: var(--err); }
 .attach-thumb button { position: absolute; top: -6px; right: -6px; padding: 0 5px; border-radius: 50%; background: var(--panel); font-size: 11px; }
 .msg-images { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
 .msg-images img { max-height: 180px; max-width: 100%; border-radius: 8px; border: 1px solid var(--border); cursor: zoom-in; }
+
+/* Plan de la tâche en cours, sous la conversation */
+.plan-inline { margin: 6px 0 0; padding: 6px 12px; border: 1px solid var(--border); border-radius: 10px;
+    background: var(--panel); font-size: 13px; max-height: 38vh; overflow: auto; }
+.plan-inline summary { cursor: pointer; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.plan-inline ul { list-style: none; margin: 8px 0 4px; padding: 0; display: grid; gap: 7px; }
+.plan-inline li.step { display: flex; align-items: center; gap: 9px; }
+.plan-inline .step-mark { position: relative; flex: none; width: 15px; height: 15px; border-radius: 50%; box-sizing: border-box; }
+.plan-inline .step.pending .step-mark { border: 1.5px dashed var(--muted); }
+.plan-inline .step.in_progress .step-mark { border: 2px solid var(--border); border-top-color: var(--accent); }
+.plan-inline.running .step.in_progress .step-mark { animation: plan-spin .8s linear infinite; }
+.plan-inline .step.completed { color: var(--muted); }
+.plan-inline .step.completed .step-mark { background: var(--muted); }
+.plan-inline .step.completed .step-mark::after { content: "✓"; position: absolute; inset: 0; display: grid;
+    place-items: center; font-size: 10px; font-weight: 700; color: var(--panel); }
+@keyframes plan-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .plan-inline.running .step.in_progress .step-mark { animation: none; border-color: var(--accent); } }

@@ -152,7 +152,7 @@ function syncAgentBar() {
         if (chat.memoryLoaded) info.push("ARIA.md chargé");
     }
     $("#agent-info").textContent = info.join(" · ");
-    renderTodo(a.enabled ? a.todo : null);
+    renderTodo(chat.current?.todo?.items || a.todo || null);
     syncScreenBar();
     syncSidePanel();  // sans choix de ta part, le panneau suit le mode Agent
 }
@@ -229,6 +229,33 @@ $("#btn-screen-confirm").addEventListener("click", async () => {
 });
 
 const TODO_MARKS = { pending: "☐", in_progress: "▶", completed: "☑" };
+
+// Plan de la tâche en cours, sous la conversation : ✓ fait, roue en cours, cercle pointillé à venir.
+// Un plan d'une tâche précédente ne s'affiche plus (il reste dans l'onglet Plan du panneau latéral).
+function currentPlan() {
+    const todo = chat.current?.todo;
+    if (!todo?.items?.length) return null;
+    return todo.task_id && todo.task_id !== chat.current.task_id ? null : todo.items;
+}
+
+function renderPlanCard({ reset = false } = {}) {
+    const card = $("#plan-card");
+    const items = currentPlan();
+    card.hidden = !items;
+    if (!items) return;
+    const done = items.filter((i) => i.status === "completed").length;
+    const current = items.find((i) => i.status === "in_progress");
+    const plural = items.length > 1 ? "s" : "";
+    card.querySelector("summary").textContent = done === items.length
+        ? `✓ Plan terminé : ${items.length} étape${plural}`
+        : `Plan : ${done}/${items.length} étape${plural}${current ? ` · ${current.content}` : ""}`;
+    card.querySelector("ul").replaceChildren(...items.map((i) => el("li", { className: `step ${i.status}` },
+        el("span", { className: "step-mark", ariaHidden: "true" }), el("span", {}, i.content))));
+    // Ouvert pendant la tâche, replié une fois tout fait ; entre les deux, ton dernier choix est gardé
+    card.classList.toggle("running", Boolean(chat.controller));  // la roue ne tourne que si l'agent travaille
+    if (chat.controller) card.open = true;
+    else if (reset) card.open = done < items.length;
+}
 
 function renderTodo(items) {
     // Onglet Plan du panneau latéral
@@ -1168,6 +1195,7 @@ function taskFooterNode(taskId, undone) {
 function renderMessages() {
     const box = $("#messages");
     const messages = chat.current?.messages || [];
+    renderPlanCard({ reset: true });
     if (!messages.length) {
         box.replaceChildren(el("p", { className: "hint muted" }, "Pose ta première question 💬"));
         return;
@@ -1244,6 +1272,10 @@ function showChatError(message, continuable = false) {
 // --- Envoi et streaming -----------------------------------------------------
 
 function setBusy(busy) {
+    const card = $("#plan-card");
+    card.classList.toggle("running", busy);
+    if (busy) card.open = true;
+    else if (!card.hidden && currentPlan()?.every((i) => i.status === "completed")) card.open = false;
     $("#btn-send").disabled = busy;
     $("#btn-regen").disabled = busy;
     $("#btn-compact").disabled = busy;
@@ -1307,6 +1339,7 @@ async function send(content, answer, continueTask = false, pictures = []) {
         while (["assistant", "tool"].includes(chat.current.messages.at(-1)?.role)) chat.current.messages.pop();
     } else {
         chat.current.messages.push({ role: "user", content, localImages: pictures });
+        if (!continueTask) delete chat.current.todo;
     }
     renderMessages();
     const box = $("#messages");
@@ -1436,7 +1469,11 @@ async function send(content, answer, continueTask = false, pictures = []) {
                     + `${ev.before.toLocaleString("fr-FR")} → ${ev.used.toLocaleString("fr-FR")} tokens`));
                 if (ev.saturated) showChatError("Le contexte reste trop petit pour cette tâche : recharge le modèle avec un contexte plus grand.");
             } else if (ev.type === "tool_result") {
-                if (ev.todo) renderTodo(ev.todo);
+                if (ev.todo) {
+                    renderTodo(ev.todo);
+                    chat.current.todo = { task_id: null, items: ev.todo };  // tâche en cours : affiché sans condition
+                    renderPlanCard();
+                }
                 if (ev.backup_id) refreshChangesSoon();
                 const card = toolCards[ev.call_id];
                 // Commande lancée ou arrêtée en arrière-plan : l'onglet Arrière-plan suit

@@ -72,7 +72,7 @@ class WebSwitch(unittest.TestCase):
         self.assertNotIn("web_search", allowed)
         self.assertNotIn("web_fetch", allowed)
         self.assertIn("read_file", allowed)
-        self.assertEqual(agent.allowed_tools(folder=False), ["load_skill"])
+        self.assertEqual(set(agent.allowed_tools(folder=False)), {"load_skill", "update_todo"})
         self.assertNotIn("chercheur-web", subagents.usable())  # il n'a que des outils web
         self.assertIn("explorateur", subagents.usable(str(HOME)))  # avec un dossier attaché
         self.assertIn(agent.WEB_RULE_OFF, agent._system_prompt({}, str(HOME), None))

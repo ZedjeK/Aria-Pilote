@@ -85,6 +85,12 @@ class ImagesTest(unittest.TestCase):
         conversations.delete(self.cid)
         self.assertFalse(images.folder(self.cid).exists())
 
+    def test_conversation_de_sous_agent_sans_id(self):
+        """Régression 0.16.0 : la conversation interne d'un sous-agent n'a pas d'id, la délégation plantait."""
+        sub = {"messages": [{"role": "user", "content": "Explore le dossier"}], "squeeze": 0}
+        built = chat.build_messages(sub, "Tu es un sous-agent.")
+        self.assertEqual(built[-1], {"role": "user", "content": "Explore le dossier"})
+
     def test_titre_d_un_message_image_seule(self):
         conversations.add_user_message(self.conv, "", images=[{"file": "x.png", "w": 1, "h": 1}])
         self.assertEqual(self.conv["title"], "🖼 Image")
