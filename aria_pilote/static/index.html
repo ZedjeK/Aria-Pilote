@@ -44,6 +44,7 @@
                 <button id="btn-agent-root" class="ghost" hidden>Attacher</button>
                 <button id="btn-rules" class="ghost" title="Commandes toujours autorisées dans ce projet" hidden>Règles</button>
                 <button id="btn-screen" class="ghost" title="Laisser l'agent voir l'écran et agir dans les fenêtres que tu choisis" hidden>🖱 Prendre la main</button>
+                <button id="btn-mcp" class="ghost" hidden>🔌 MCP</button>
                 <span id="agent-info" class="muted small"></span>
             </div>
             <div id="screen-banner" class="screen-banner" hidden></div>
@@ -135,6 +136,7 @@
             <a href="#/reglages/autorisations" data-section="autorisations">🛡 Autorisations</a>
             <a href="#/reglages/competences" data-section="competences">📚 Compétences et sous-agents</a>
             <a href="#/reglages/hooks" data-section="hooks">🪝 Hooks</a>
+            <a href="#/reglages/mcp" data-section="mcp">🔌 Serveurs MCP</a>
             <a href="#/reglages/web" data-section="web">🌐 Web et SearXNG</a>
             <div class="nav-group">Système</div>
             <a href="#/reglages/donnees" data-section="donnees">💾 Données</a>
@@ -714,6 +716,58 @@ py -3.11 tools/build_portable.py</pre>
                     </div>
                 </div>
             </section>
+            <section class="settings-section" data-section="mcp" data-title="Serveurs MCP" hidden>
+                <p class="muted">Un serveur MCP (Model Context Protocol) donne de nouveaux outils à l'agent : GitHub, base de données,
+                    fichiers, navigateur… Chaque appel te demande ton accord, sauf les outils que tu autorises d'office.
+                    Chaque outil occupe aussi du contexte : n'active d'office que ceux qui servent souvent.</p>
+                <p id="mcp-config-error" class="error" hidden></p>
+                <div id="mcp-servers" class="mcp-list"></div>
+                <div class="set-card">
+                    <div class="set-card-title">Ajouter un serveur</div>
+                    <div class="form mcp-form">
+                        <label>Nom
+                            <input id="mcp-new-name" maxlength="32" placeholder="Ex. github">
+                        </label>
+                        <label>Type
+                            <select id="mcp-new-type">
+                                <option value="stdio">Local : une commande</option>
+                                <option value="http">Distant : une adresse</option>
+                            </select>
+                        </label>
+                        <label data-mcp="stdio">Commande
+                            <input id="mcp-new-command" class="mono" placeholder="Ex. npx, uvx ou ${ARIA_PYTHON}">
+                        </label>
+                        <label data-mcp="stdio" class="wide">Arguments (un par ligne)
+                            <textarea id="mcp-new-args" rows="3" class="mono" spellcheck="false" placeholder="-y
+@modelcontextprotocol/server-github"></textarea>
+                        </label>
+                        <label data-mcp="stdio" class="wide">Variables d'environnement (NOM=valeur, une par ligne)
+                            <textarea id="mcp-new-env" rows="2" class="mono" spellcheck="false" placeholder="GITHUB_PERSONAL_ACCESS_TOKEN=…"></textarea>
+                        </label>
+                        <label data-mcp="http" class="wide" hidden>Adresse
+                            <input id="mcp-new-url" class="mono" placeholder="https://exemple.fr/mcp">
+                        </label>
+                        <label data-mcp="http" class="wide" hidden>En-têtes (Nom: valeur, un par ligne)
+                            <textarea id="mcp-new-headers" rows="2" class="mono" spellcheck="false" placeholder="Authorization: Bearer …"></textarea>
+                        </label>
+                    </div>
+                    <p class="muted small">npx demande Node.js (winget install OpenJS.NodeJS.LTS), uvx demande uv (winget install astral-sh.uv).
+                        ${ARIA_PYTHON} lance le Python d'Aria. Les jetons et variables sont gardés en clair dans mcp.json, sur ton PC.</p>
+                    <p id="mcp-new-error" class="error" hidden></p>
+                    <div class="row">
+                        <button id="btn-mcp-add" class="primary">Ajouter et démarrer</button>
+                    </div>
+                </div>
+                <details class="set-card">
+                    <summary>Modifier mcp.json directement (pour coller une config trouvée sur le web)</summary>
+                    <textarea id="set-mcp" rows="12" class="mono" spellcheck="false"></textarea>
+                    <p id="mcp-path" class="muted small"></p>
+                    <p id="mcp-json-error" class="error" hidden></p>
+                    <div class="row">
+                        <button id="btn-mcp-save" class="primary">Enregistrer et redémarrer</button>
+                    </div>
+                </details>
+            </section>
             <section class="settings-section" data-section="web" data-title="Web et SearXNG" hidden>
                 <div class="set-card">
                     <div class="set-card-title">Recherche web</div>
@@ -853,6 +907,23 @@ py -3.11 tools/build_portable.py</pre>
         <p id="screen-dialog-error" class="error" hidden></p>
         <div class="row">
             <button id="btn-screen-confirm" class="primary">Autoriser ces fenêtres</button>
+        </div>
+    </dialog>
+
+    <dialog id="mcp-dialog" class="skills-dialog">
+        <div class="skills-head">
+            <h2>🔌 Serveurs MCP de cette conversation</h2>
+            <button id="btn-mcp-close" class="ghost">Fermer</button>
+        </div>
+        <p class="muted small">Coche les serveurs dont l'agent verra les outils ici. Chaque outil occupe du contexte, et chaque
+            appel te demande ton accord (sauf les outils autorisés d'office dans les Réglages).</p>
+        <ul id="mcp-choices" class="skills-list"></ul>
+        <p id="mcp-total" class="muted small"></p>
+        <p id="mcp-dialog-error" class="error" hidden></p>
+        <div class="row">
+            <button id="btn-mcp-apply" class="primary">Appliquer à cette conversation</button>
+            <button id="btn-mcp-default" class="ghost">Revenir aux serveurs actifs d'office</button>
+            <a class="button ghost" href="#/reglages/mcp" id="btn-mcp-settings">Réglages des serveurs</a>
         </div>
     </dialog>
 

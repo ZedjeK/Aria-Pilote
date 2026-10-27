@@ -757,6 +757,14 @@ async def restart_mcp(name: str):
     return mcp_client.registry.status()
 
 
+@app.get("/api/mcp/{name}/log")
+def mcp_log(name: str):
+    conn = mcp_client.registry.connections.get(name)
+    if conn is None:
+        raise HTTPException(404, "Serveur MCP inconnu.")
+    return {"text": conn.log_tail(mcp_client.LOG_VIEW_CHARS)}
+
+
 @app.patch("/api/mcp/{name}")
 async def patch_mcp(name: str, req: MCPServerPatch):
     if name not in mcp_client.registry.connections:
@@ -1208,6 +1216,8 @@ def agent_context(conversation_id: str):
         "layers": layers,
         "skills": [{"name": s.name, "source": s.source} for s in skills.discover(root).values()],
         "subagents": [{"name": a.name, "source": a.source, "tools": a.tools} for a in subagents.discover(root).values()],
+        "mcp": [{"name": s["name"], "tools": len([t for t in s["tools"] if t["mode"] != "off"]), "tokens": s["tokens"],
+                 "state": s["state"]} for s in mcp_client.registry.status()["servers"] if s["name"] in agent.mcp_servers(conv)],
         "hooks": {"global": {event: len(rules) for event, rules in global_hooks.items() if rules},
                   "project": {"trusted": project["trusted"], "error": project["error"]} if project else None},
         "rules": permissions.rules(root) if root else [],

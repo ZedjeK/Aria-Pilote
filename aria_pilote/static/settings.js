@@ -2,7 +2,7 @@
 // S'appuie sur $, api, el, state, loadModels, loadEngines, renderHardware (app.js) et SKILL_SOURCES (chat.js).
 
 const SECTIONS = ["general", "persona", "modele-defaut", "mes-modeles", "presets", "decouvrir", "moteurs", "materiel",
-    "comportement", "autorisations", "competences", "hooks", "web", "donnees"];
+    "comportement", "autorisations", "competences", "hooks", "mcp", "web", "donnees"];
 
 // --- Navigation ------------------------------------------------------------------
 
@@ -575,6 +575,207 @@ $("#btn-hooks-save").addEventListener("click", async () => {
 
 // --- Web et SearXNG ---------------------------------------------------------------------
 
+// --- Serveurs MCP ---------------------------------------------------------------------
+
+const MCP_STATES = { pret: "🟢 prêt", demarrage: "🟡 démarrage…", erreur: "🔴 erreur", arrete: "⚪ arrêté" };
+const MCP_MODES = [["ask", "Demander"], ["allow", "Toujours autoriser"], ["off", "Désactivé"]];
+let mcpPoll = null;
+
+function mcpSectionOpen() {
+    return !$('.settings-section[data-section="mcp"]').hidden && !$("#view-settings").hidden;
+}
+
+async function loadMcp() {
+    clearTimeout(mcpPoll);
+    let data;
+    try {
+        data = await api("/api/mcp");
+    } catch (err) {
+        $("#mcp-config-error").textContent = err.message;
+        $("#mcp-config-error").hidden = false;
+        return;
+    }
+    renderMcp(data);
+    // Serveurs qui démarrent encore (au lancement d'Aria) : on repasse voir
+    if (data.servers.some((s) => s.state === "demarrage")) {
+        mcpPoll = setTimeout(() => { if (mcpSectionOpen()) loadMcp(); }, 1500);
+    }
+}
+
+function renderMcp(data) {
+    state.mcp = data;
+    syncMcpChip();
+    $("#mcp-config-error").textContent = data.config_error ? `mcp.json : ${data.config_error}` : "";
+    $("#mcp-config-error").hidden = !data.config_error;
+    const textarea = $("#set-mcp");
+    if (document.activeElement !== textarea) textarea.value = data.content;
+    $("#mcp-path").textContent = data.config_path;
+    const box = $("#mcp-servers");
+    box.replaceChildren(...data.servers.map(mcpServerCard));
+    if (!data.servers.length) {
+        box.append(el("p", { className: "muted" }, "Aucun serveur pour l'instant : ajoute le premier ci-dessous."));
+    }
+}
+
+async function mcpPatch(name, patch) {
+    const data = await api(`/api/mcp/${encodeURIComponent(name)}`, { method: "PATCH", body: JSON.stringify(patch) });
+    flashSaved();
+    renderMcp({ ...state.mcp, ...data });
+}
+
+function mcpServerCard(s) {
+    const card = el("div", { className: "set-card mcp-server" });
+    const restart = el("button", { className: "ghost" }, "↻ Relancer");
+    restart.addEventListener("click", async () => {
+        restart.disabled = true;
+        restart.textContent = "Démarrage…";
+        try {
+            renderMcp({ ...state.mcp, ...(await api(`/api/mcp/${encodeURIComponent(s.name)}/restart`, { method: "POST" })) });
+        } catch (err) {
+            alert(err.message);
+            restart.disabled = false;
+            restart.textContent = "↻ Relancer";
+        }
+    });
+    const logButton = el("button", { className: "ghost" }, "Journal");
+    const log = el("pre", { className: "mcp-log", hidden: true });
+    logButton.addEventListener("click", async () => {
+        if (!log.hidden) { log.hidden = true; return; }
+        const r = await api(`/api/mcp/${encodeURIComponent(s.name)}/log`);
+        log.textContent = r.text || "(rien d'écrit par le serveur)";
+        log.hidden = false;
+    });
+    const remove = el("button", { className: "ghost danger-text" }, "Retirer");
+    remove.addEventListener("click", async () => {
+        if (!confirm(`Retirer le serveur « ${s.name} » de mcp.json ?`)) return;
+        try {
+            const config = JSON.parse(state.mcp.content);
+            delete config.mcpServers[s.name];
+            await saveMcpConfig(config);
+        } catch (err) {
+            alert(err.message);
+        }
+    });
+    const badge = el("span", { className: `badge${s.state === "erreur" ? " err" : s.state === "pret" ? " loaded" : ""}` },
+        MCP_STATES[s.state] || s.state);
+    const count = s.state === "pret" ? `${s.tools.length} outil${s.tools.length > 1 ? "s" : ""} · ≈ ${s.tokens} tokens` : "";
+    card.append(el("div", { className: "set-card-head" },
+        el("div", {}, el("div", { className: "set-card-title" }, `${s.name}  `, badge), el("div", { className: "mcp-meta" }, s.target)),
+        el("span", { className: "muted small nowrap", title: "Place prise dans le contexte par la description de ses outils" }, count)));
+    const info = [s.type === "http" ? "distant" : "local"];
+    if (s.server_info?.name) info.push(`${s.server_info.name}${s.server_info.version ? ` ${s.server_info.version}` : ""}`);
+    if (s.protocol) info.push(`protocole ${s.protocol}`);
+    card.append(el("div", { className: "mcp-meta" }, info.join(" · ")));
+
+    const enabled = el("input", { type: "checkbox", checked: s.enabled });
+    enabled.addEventListener("change", () => mcpPatch(s.name, { enabled: enabled.checked }).catch((e) => alert(e.message)));
+    const byDefault = el("input", { type: "checkbox", checked: s.default_active, disabled: !s.enabled });
+    byDefault.addEventListener("change", () => mcpPatch(s.name, { default_active: byDefault.checked }).catch((e) => alert(e.message)));
+    card.append(el("div", { className: "mcp-toggles" },
+        el("label", { className: "check-line" }, enabled, " Activé (démarré avec Aria)"),
+        el("label", { className: "check-line" }, byDefault,
+            " Actif d'office dans les conversations (sinon, à cocher avec 🔌 dans la conversation)")));
+    if (s.error) card.append(el("pre", { className: "mcp-error" }, s.error));
+
+    if (s.tools.length) {
+        card.append(el("ul", { className: "skills-list" }, ...s.tools.map((t) => {
+            const mode = el("select", { title: "Ce que fait Aria quand l'agent appelle cet outil" },
+                ...MCP_MODES.map(([value, label]) => el("option", { value, selected: t.mode === value }, label)));
+            mode.addEventListener("change", () => mcpPatch(s.name, { tools: { [t.name]: mode.value } }).catch((e) => alert(e.message)));
+            const hints = [];
+            if (t.read_only) hints.push(el("span", { className: "badge", title: "Indication du serveur : elle ne vaut pas accord" }, "lecture seule"));
+            if (t.destructive) hints.push(el("span", { className: "badge err" }, "destructeur"));
+            return el("li", { className: "static" },
+                el("div", { className: "skill-text" },
+                    el("div", { className: "skill-name" }, t.name, " ", ...hints),
+                    el("div", { className: "skill-desc" }, t.description)),
+                mode);
+        })));
+    }
+    card.append(el("div", { className: "row" }, restart, logButton, remove), log);
+    return card;
+}
+
+async function saveMcpConfig(config) {
+    await api("/api/mcp/config", { method: "PUT", body: JSON.stringify({ content: JSON.stringify(config, null, 4) }) });
+    flashSaved();
+    await loadMcp();
+}
+
+function mcpLines(text) {
+    return text.split("\n").map((l) => l.trim()).filter(Boolean);
+}
+
+function mcpPairs(text, separator, what) {
+    const out = {};
+    for (const line of mcpLines(text)) {
+        const at = line.indexOf(separator);
+        if (at < 1) throw new Error(`${what} : « ${line} » n'a pas la forme Nom${separator}valeur.`);
+        out[line.slice(0, at).trim()] = line.slice(at + 1).trim();
+    }
+    return out;
+}
+
+$("#mcp-new-type").addEventListener("change", () => {
+    const type = $("#mcp-new-type").value;
+    for (const label of document.querySelectorAll(".mcp-form [data-mcp]")) label.hidden = label.dataset.mcp !== type;
+});
+
+$("#btn-mcp-add").addEventListener("click", async () => {
+    const error = $("#mcp-new-error");
+    error.hidden = true;
+    const button = $("#btn-mcp-add");
+    try {
+        const name = $("#mcp-new-name").value.trim();
+        if (!/^[A-Za-z0-9_-]{1,32}$/.test(name)) throw new Error("Nom : lettres, chiffres, - et _ (32 au plus).");
+        const config = JSON.parse(state.mcp?.content || '{"mcpServers": {}}');
+        config.mcpServers ||= {};
+        if (config.mcpServers[name]) throw new Error(`Le serveur « ${name} » existe déjà.`);
+        if ($("#mcp-new-type").value === "http") {
+            const spec = { url: $("#mcp-new-url").value.trim() };
+            const headers = mcpPairs($("#mcp-new-headers").value, ":", "En-têtes");
+            if (Object.keys(headers).length) spec.headers = headers;
+            config.mcpServers[name] = spec;
+        } else {
+            const spec = { command: $("#mcp-new-command").value.trim(), args: mcpLines($("#mcp-new-args").value) };
+            const env = mcpPairs($("#mcp-new-env").value, "=", "Variables");
+            if (Object.keys(env).length) spec.env = env;
+            config.mcpServers[name] = spec;
+        }
+        button.disabled = true;
+        button.textContent = "Démarrage…";
+        await saveMcpConfig(config);
+        for (const id of ["#mcp-new-name", "#mcp-new-command", "#mcp-new-args", "#mcp-new-env", "#mcp-new-url", "#mcp-new-headers"]) {
+            $(id).value = "";
+        }
+    } catch (err) {
+        error.textContent = err.message;
+        error.hidden = false;
+    } finally {
+        button.disabled = false;
+        button.textContent = "Ajouter et démarrer";
+    }
+});
+
+// mcp.json s'enregistre au bouton, comme les hooks : un JSON à moitié collé ne remplace jamais le bon
+$("#btn-mcp-save").addEventListener("click", async () => {
+    const error = $("#mcp-json-error");
+    error.hidden = true;
+    const button = $("#btn-mcp-save");
+    button.disabled = true;
+    try {
+        await api("/api/mcp/config", { method: "PUT", body: JSON.stringify({ content: $("#set-mcp").value }) });
+        flashSaved();
+        $("#set-mcp").blur();
+        await loadMcp();
+    } catch (err) {
+        error.textContent = err.message;
+        error.hidden = false;
+    } finally {
+        button.disabled = false;
+    }
+});
+
 async function loadSearx() {
     $("#sx-error").hidden = true;
     const s = await api("/api/searxng");
@@ -898,6 +1099,7 @@ const LOADERS = {
     autorisations: loadRules,
     competences: loadSkills,
     hooks: loadHooks,
+    mcp: loadMcp,
     comportement: () => fillConfigFields($('.settings-section[data-section="comportement"]')),
     web: () => {
         fillConfigFields($('.settings-section[data-section="web"]'));

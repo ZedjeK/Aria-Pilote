@@ -317,6 +317,21 @@ class ApiTest(unittest.TestCase):
         self.http.patch(f"/api/conversations/{cid}", json={"mcp_default": True}, headers=ORIGIN)
         self.assertNotIn("mcp", conversations.get(cid))
 
+    def test_journal_et_panneau_contexte(self):
+        conn = mcp_client.Connection("test", mcp_client.validate_spec("test", TEST_SPEC))
+        mcp_client.registry.connections["test"] = conn
+        mcp_client.LOG_DIR.mkdir(parents=True, exist_ok=True)
+        conn.log_path.write_text("serveur démarré\n", encoding="utf-8")
+        self.addCleanup(conn.log_path.unlink, missing_ok=True)
+        self.assertIn("serveur démarré", self.http.get("/api/mcp/test/log", headers=ORIGIN).json()["text"])
+        self.assertEqual(self.http.get("/api/mcp/inconnu/log", headers=ORIGIN).status_code, 404)
+        cid = new_conversation()
+        ctx = self.http.get(f"/api/agent/context?conversation_id={cid}", headers=ORIGIN).json()
+        self.assertEqual([s["name"] for s in ctx["mcp"]], ["test"])  # actif d'office
+        conversations.update(cid, lambda c: c.__setitem__("mcp", []))
+        ctx = self.http.get(f"/api/agent/context?conversation_id={cid}", headers=ORIGIN).json()
+        self.assertEqual(ctx["mcp"], [])
+
 
 if __name__ == "__main__":
     unittest.main()

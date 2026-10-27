@@ -39,7 +39,8 @@ START_TIMEOUT_S = 30
 LIST_TIMEOUT_S = 10
 CALL_TIMEOUT_S = 120
 STOP_TIMEOUT_S = 5
-LOG_TAIL_CHARS = 1500
+LOG_TAIL_CHARS = 1500  # avec un message d'erreur
+LOG_VIEW_CHARS = 20000  # bouton Journal des Réglages
 NAME_RE = re.compile(r"^[A-Za-z0-9_-]{1,32}$")
 MAX_FUNCTION_NAME = 64  # limite des noms de fonction côté API OpenAI (et llama-server)
 
@@ -187,16 +188,16 @@ class Connection:
     def log_path(self):
         return LOG_DIR / f"{self.name}.log"
 
-    def log_tail(self):
+    def log_tail(self, chars=LOG_TAIL_CHARS):
         try:
-            raw = self.log_path.read_bytes()[-LOG_TAIL_CHARS * 2:]
+            raw = self.log_path.read_bytes()[-chars * 2:]
         except OSError:
             return ""
         try:
             text = raw.decode("utf-8")
         except UnicodeDecodeError:
             text = raw.decode("cp1252", errors="replace")  # un serveur Python écrit son stderr dans la page de code
-        return text[-LOG_TAIL_CHARS:].strip()
+        return text[-chars:].strip()
 
     def timeout(self):
         value = self.spec.get("timeout")
