@@ -154,6 +154,7 @@ function syncAgentBar() {
     $("#agent-info").textContent = info.join(" · ");
     renderTodo(chat.current?.todo?.items || a.todo || null);
     syncScreenBar();
+    syncMcpChip();
     syncSidePanel();  // sans choix de ta part, le panneau suit le mode Agent
 }
 
@@ -227,6 +228,85 @@ $("#btn-screen-confirm").addEventListener("click", async () => {
         $("#screen-dialog-error").hidden = false;
     }
 });
+
+// Serveurs MCP : la puce 🔌 montre ceux dont l'agent voit les outils ici ; la fenêtre permet d'en choisir d'autres
+async function loadMcpState() {
+    try {
+        state.mcp = await api("/api/mcp");
+    } catch {
+        state.mcp = null;
+    }
+    syncMcpChip();
+}
+
+function mcpActive(conv) {
+    const usable = (state.mcp?.servers || []).filter((s) => s.enabled);
+    const chosen = Array.isArray(conv?.mcp) ? conv.mcp : null;
+    return usable.filter((s) => (chosen ? chosen.includes(s.name) : s.default_active));
+}
+
+function syncMcpChip() {
+    const chip = $("#btn-mcp");
+    const usable = (state.mcp?.servers || []).filter((s) => s.enabled);
+    chip.hidden = !(usable.length && chat.current);
+    if (chip.hidden) return;
+    const active = mcpActive(chat.current);
+    // Un serveur en erreur reste coché, mais ses outils manquent à l'agent : ⚠ le signale
+    chip.textContent = active.length
+        ? `🔌 ${active.map((s) => s.name + (s.state === "erreur" ? " ⚠" : "")).join(", ")}` : "🔌 MCP";
+    chip.title = active.length
+        ? `Outils MCP proposés à l'agent : ${active.map((s) => s.name).join(", ")}.\nClique pour en choisir d'autres.`
+        : "Aucun serveur MCP dans cette conversation : clique pour en choisir.";
+    chip.classList.toggle("attached", active.length > 0);
+}
+
+async function openMcpPicker() {
+    if (!chat.current) return;
+    await loadMcpState();
+    const active = new Set(mcpActive(chat.current).map((s) => s.name));
+    const total = () => {
+        const sum = [...$("#mcp-choices").querySelectorAll("input:checked")]
+            .reduce((n, b) => n + Number(b.dataset.tokens || 0), 0);
+        $("#mcp-total").textContent = `Contexte pris par les outils cochés : ≈ ${sum} tokens.`;
+    };
+    $("#mcp-dialog-error").hidden = true;
+    $("#mcp-choices").replaceChildren(...(state.mcp?.servers || []).filter((s) => s.enabled).map((s) => {
+        const box = el("input", { type: "checkbox", checked: active.has(s.name) });
+        box.dataset.name = s.name;
+        box.dataset.tokens = s.tokens;
+        box.addEventListener("change", total);
+        const what = s.state === "pret" ? `${s.tools.length} outil${s.tools.length > 1 ? "s" : ""} · ≈ ${s.tokens} tokens`
+            : (s.state === "erreur" ? "🔴 en erreur (voir les Réglages)" : "pas encore prêt");
+        return el("li", { className: "static" },
+            el("label", { className: "check-line" }, box,
+                el("div", { className: "skill-text" },
+                    el("div", { className: "skill-name" }, s.name, " ", s.default_active ? el("span", { className: "badge" }, "d'office") : ""),
+                    el("div", { className: "skill-desc" }, what))));
+    }));
+    total();
+    $("#mcp-dialog").showModal();
+}
+
+async function applyMcpChoice(body) {
+    try {
+        chat.current = await api(`/api/conversations/${chat.current.id}`, { method: "PATCH", body: JSON.stringify(body) });
+        $("#mcp-dialog").close();
+        syncMcpChip();
+        refreshContext();
+    } catch (err) {
+        $("#mcp-dialog-error").textContent = err.message;
+        $("#mcp-dialog-error").hidden = false;
+    }
+}
+
+$("#btn-mcp").addEventListener("click", openMcpPicker);
+$("#btn-mcp-close").addEventListener("click", () => $("#mcp-dialog").close());
+$("#btn-mcp-settings").addEventListener("click", () => $("#mcp-dialog").close());
+$("#btn-mcp-apply").addEventListener("click", () => applyMcpChoice({
+    mcp: [...$("#mcp-choices").querySelectorAll("input:checked")].map((b) => b.dataset.name),
+}));
+$("#btn-mcp-default").addEventListener("click", () => applyMcpChoice({ mcp_default: true }));
+loadMcpState();
 
 const TODO_MARKS = { pending: "☐", in_progress: "▶", completed: "☑" };
 
@@ -710,6 +790,10 @@ async function refreshContext() {
     parts.push(section(titled("Mémoire du projet"), ...memoryParts));
     parts.push(section(titled("Compétences", openSkills), chips(c.skills, (s) => `/${s.name}`)));
     parts.push(section(titled("Sous-agents"), chips(c.subagents, (s) => `${s.name} (${s.tools.length} outils)`)));
+    if (c.mcp?.length) {
+        parts.push(section(titled("Serveurs MCP", openMcpPicker),
+            chips(c.mcp, (s) => `🔌 ${s.name} (${s.tools} outils, ≈ ${s.tokens} tokens)`)));
+    }
     const globalHooks = Object.entries(c.hooks.global).map(([event, n]) => `${event} : ${n}`).join(" · ");
     const project = c.hooks.project;
     parts.push(section(titled("Hooks", () => { location.hash = "#/reglages/hooks"; }),
@@ -900,10 +984,12 @@ const TOOL_STATUS = {
     pending: "en attente de ta réponse", skipped: "après ta réponse", unanswered: "sans réponse",
 };
 
-function shortArgs(args) {
-    const main = args?.path ?? args?.pattern ?? args?.command ?? args?.query ?? args?.url ?? args?.name ?? args?.id ?? "";
-    const text = String(main);
+function shortText(text) {
     return text.length > 70 ? text.slice(0, 69) + "…" : text;
+}
+
+function shortArgs(args) {
+    return shortText(String(args?.path ?? args?.pattern ?? args?.command ?? args?.query ?? args?.url ?? args?.name ?? args?.id ?? ""));
 }
 
 function subStepNode(step) {
@@ -1019,8 +1105,13 @@ function toolNode(m, pendingPlan = false, activeQuestion = false) {
     node.dataset.callId = m.tool_call_id || "";
     const bg = m.args?.background ? (m.args.keep ? "⚙ arrière-plan, gardée · " : "⚙ arrière-plan · ") : "";
     const syntax = m.syntax === false ? " · ⚠ syntaxe" : m.syntax === true ? " · ✓ syntaxe" : "";
-    const rule = m.rule ? ` · ✓ autorisée par la règle « ${m.rule} »` : "";
-    node.append(el("summary", {}, `🔧 ${m.name}  ${shortArgs(m.args)} · ${bg}${TOOL_STATUS[m.status] || m.status}${syntax}${rule}`));
+    const mcp = m.name?.startsWith("mcp__") ? m.name.slice(5).split("__") : null;
+    const rule = mcp && m.rule ? " · ✓ autorisé d'office" : m.rule ? ` · ✓ autorisée par la règle « ${m.rule} »` : "";
+    const label = mcp ? `🔌 ${mcp[0]} › ${mcp.slice(1).join("__")}` : `🔧 ${m.name}`;
+    // Un outil MCP a ses propres arguments : les deux premiers, en bref
+    const brief = mcp ? shortText(Object.entries(m.args || {}).slice(0, 2)
+        .map(([k, v]) => `${k}=${typeof v === "object" ? JSON.stringify(v) : v}`).join(", ")) : shortArgs(m.args);
+    node.append(el("summary", {}, `${label}  ${brief} · ${bg}${TOOL_STATUS[m.status] || m.status}${syntax}${rule}`));
     if (m.syntax === false) node.classList.add("syntax-error");
     node.append(el("pre", {}, JSON.stringify(m.args, null, 2)));
     if (m.content) node.append(el("pre", {}, m.content));

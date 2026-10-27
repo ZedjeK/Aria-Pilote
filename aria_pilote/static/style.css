@@ -615,6 +615,16 @@ button.danger-text { color: var(--err); }
 .themes-list { display: grid; gap: 6px; }
 .theme-category > summary { cursor: pointer; font-size: 13px; }
 .theme-chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 6px 0 4px; }
+.mcp-form label.wide { grid-column: 1 / -1; }
+.mcp-list { display: grid; gap: 14px; }
+.nowrap { white-space: nowrap; }
+.mcp-server .mcp-meta { font: 12px/1.5 var(--mono); color: var(--muted); overflow-wrap: anywhere; }
+.mcp-server .mcp-error { margin: 0; padding: 8px 12px; background: var(--deep); border: 1px solid var(--err); border-radius: 8px;
+    font: 12px/1.5 var(--mono); white-space: pre-wrap; max-height: 260px; overflow: auto; }
+.mcp-server .mcp-log { margin: 0; padding: 8px 12px; background: var(--deep); border: 1px solid var(--border); border-radius: 8px;
+    font: 12px/1.5 var(--mono); white-space: pre-wrap; max-height: 260px; overflow: auto; }
+.mcp-server .skills-list li select { width: auto; flex: none; }
+.mcp-toggles { display: flex; flex-wrap: wrap; gap: 6px 18px; }
 .chip { padding: 3px 10px; border-radius: 12px; font-size: 12px; background: transparent; border: 1px solid var(--border); }
 .chip.on { border-color: var(--accent-2); color: var(--accent); background: color-mix(in srgb, var(--accent-2) 14%, transparent); }
 .taste-lists { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px; }
