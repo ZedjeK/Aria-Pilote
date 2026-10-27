@@ -28,5 +28,8 @@ services/searxng/service.json
 # Hooks globaux de l'utilisateur
 /hooks.json
 
+# Serveurs MCP de l'utilisateur (peuvent contenir des jetons)
+/mcp.json
+
 # Résultats du banc d'essai (propres à chaque machine)
 bench/results/

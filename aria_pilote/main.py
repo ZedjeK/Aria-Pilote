@@ -13,7 +13,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from . import (VERSION, agent, background, backups, chat, config, context, conversations, downloads, engines, hardware,
-               hooks, hub, images, models, optimizer, permissions, persona, pick_folder, presets, screen, searxng,
+               hooks, hub, images, mcp_client, models, optimizer, permissions, persona, pick_folder, presets, screen, searxng,
                skills, subagents, tools, trial, updates, workspace)
 from .server import EngineMissing, manager
 
@@ -40,7 +40,11 @@ async def lifespan(app):
     # En tâche de fond : le démarrage n'attend jamais GitHub
     update = asyncio.create_task(updates.check()) if config.get().get("update_check", True) else None
     idle = asyncio.create_task(searxng.manager.watch_idle())
+    # Serveurs MCP : démarrés en tâche de fond, l'interface s'ouvre sans les attendre
+    mcp_start = asyncio.create_task(mcp_client.registry.start_all())
     yield
+    mcp_start.cancel()
+    await mcp_client.registry.stop_all()
     autoload.cancel()
     idle.cancel()
     if update:
@@ -181,6 +185,8 @@ class ConversationPatch(BaseModel):
     agent: AgentSettings | None = None
     screen_control: bool | None = None  # contrôle du PC dans cette conversation (s'il est activé dans les Réglages)
     screen_allow: list[str] | None = None  # programmes autorisés pour cette conversation ([] = aucun ; absent = tous)
+    mcp: list[str] | None = None  # serveurs MCP proposés dans cette conversation
+    mcp_default: bool = False  # revenir aux serveurs actifs d'office
 
 
 class ApprovalRequest(BaseModel):
@@ -523,6 +529,13 @@ def patch_conversation(cid: str, patch: ConversationPatch):
             conv.pop("screen_allow", None)  # la main rendue : la liste autorisée tombe
     if patch.screen_allow is not None:
         conv["screen_allow"] = [p.strip().lower() for p in patch.screen_allow if p.strip()]
+    if patch.mcp_default:
+        conv.pop("mcp", None)
+    elif patch.mcp is not None:
+        unknown = [n for n in patch.mcp if n not in mcp_client.registry.connections]
+        if unknown:
+            raise HTTPException(400, f"Serveur MCP inconnu : {unknown[0]}")
+        conv["mcp"] = list(dict.fromkeys(patch.mcp))
     return conversations.save(conv)
 
 
@@ -708,6 +721,53 @@ def get_skill(name: str, conversation_id: str | None = None):
         return skills.to_dict(skills.get(name, _skills_root(conversation_id)), with_body=True)
     except skills.SkillError as exc:
         raise HTTPException(404, str(exc))
+
+
+class MCPServerPatch(BaseModel):
+    enabled: bool | None = None
+    default_active: bool | None = None
+    tools: dict[str, str] | None = None  # outil -> ask | allow | off
+
+
+class MCPConfigText(BaseModel):
+    content: str  # contenu complet de mcp.json
+
+
+@app.get("/api/mcp")
+def get_mcp():
+    return {**mcp_client.registry.status(), "content": mcp_client.read_text()}
+
+
+@app.put("/api/mcp/config")
+async def put_mcp_config(req: MCPConfigText):
+    try:
+        mcp_client.save_text(req.content)
+    except mcp_client.MCPConfigError as exc:
+        raise HTTPException(400, str(exc))
+    await mcp_client.registry.start_all()
+    return mcp_client.registry.status()
+
+
+@app.post("/api/mcp/{name}/restart")
+async def restart_mcp(name: str):
+    try:
+        await mcp_client.registry.restart(name)
+    except KeyError:
+        raise HTTPException(404, "Serveur MCP inconnu.")
+    return mcp_client.registry.status()
+
+
+@app.patch("/api/mcp/{name}")
+async def patch_mcp(name: str, req: MCPServerPatch):
+    if name not in mcp_client.registry.connections:
+        raise HTTPException(404, "Serveur MCP inconnu.")
+    try:
+        mcp_client.update_settings(name, req.enabled, req.default_active, req.tools)
+    except mcp_client.MCPConfigError as exc:
+        raise HTTPException(400, str(exc))
+    if req.enabled is not None:
+        await mcp_client.registry.start_all()  # démarre ou arrête le serveur
+    return mcp_client.registry.status()
 
 
 class HooksText(BaseModel):
@@ -1131,9 +1191,8 @@ def agent_context(conversation_id: str):
     except hooks.HookError:
         global_hooks = {}
     project = hooks.project_status(root) if root else None
-    allowed = agent.allowed_tools(folder=bool(root), screen=agent.screen_enabled(conv))
-    # + ask_user et propose_plan, + delegate s'il y a des sous-agents utilisables
-    tool_count = len(allowed if allowed is not None else tools.TOOLS) + 2 + bool(subagents.usable(root))
+    # Outils d'Aria, outils MCP actifs, ask_user et propose_plan, + delegate s'il y a des sous-agents utilisables
+    tool_count = len(agent.task_tools(conv, root)[1])
     return {
         "usage": {**(conv.get("context") or {}), "summarized": summary.get("upto", 0) if summary.get("text") else 0,
                   "squeeze": conv.get("squeeze", 0)},
