@@ -48,6 +48,8 @@ DEFAULTS = {
     "default_preset": "default",
     # Persona des nouvelles conversations (et de celles dont le persona a été supprimé)
     "default_persona": "aria",
+    # Serveurs MCP (déclarés dans mcp.json) : coupé, actif d'office, mode de chaque outil (ask, allow, off)
+    "mcp": {"servers": {}},
     # Appels d'outils au plus par tâche de l'agent
     "max_tool_calls": 25,
     # Recherche web : coupée, l'agent ne voit plus web_search ni web_fetch (ni les sous-agents qui n'ont que ça)

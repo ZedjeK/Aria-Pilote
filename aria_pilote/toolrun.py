@@ -4,11 +4,11 @@ import asyncio
 import json
 import uuid
 
-from . import chat, conversations, hooks, permissions, tools
+from . import chat, conversations, hooks, mcp_client, permissions, tools
 
 # Types d'outils soumis à accord, et le drapeau qui les autorise pour toute la conversation
 # (None : jamais d'autorisation globale)
-APPROVAL_FLAGS = {"write": "auto_write", "web": "auto_web", "command": None, "screen_action": None}
+APPROVAL_FLAGS = {"write": "auto_write", "web": "auto_web", "command": None, "screen_action": None, "mcp": None}
 
 # Accords en attente : approval_id -> (future, conversation_id, type d'outil, dossier de travail, commande)
 _approvals = {}
@@ -61,7 +61,11 @@ async def run_tool(cid, root, name, args, call_id, out, allowed=None, parent_id=
     `allowed` limite les outils utilisables (sous-agents) ; `parent_id` rattache la demande d'accord
     à la carte d'un sous-agent dans l'interface.
     """
-    tool = tools.TOOLS.get(name) if allowed is None or name in allowed else None
+    if allowed is not None and name not in allowed:
+        tool = None
+    else:
+        # Un outil MCP n'existe que s'il a été donné à la tâche (liste explicite des outils permis)
+        tool = tools.TOOLS.get(name) or (mcp_client.registry.tool(name) if allowed is not None else None)
     if tool is None:
         names = ", ".join(allowed if allowed is not None else tools.TOOLS)
         out["result"] = {"status": "error", "output": f"Outil indisponible : {name}. Outils disponibles : {names}."}
@@ -91,7 +95,8 @@ async def run_tool(cid, root, name, args, call_id, out, allowed=None, parent_id=
     decision = "allow"
     command = prepared.get("command") if tool.kind == "command" else None
     rule = permissions.find(root, command) if command and root else None  # « toujours autoriser » dans ce projet
-    if tool.kind in APPROVAL_FLAGS and rule is None and not settings.get(APPROVAL_FLAGS[tool.kind] or "", False):
+    auto = prepared.get("auto_allowed")  # outil MCP réglé sur « Toujours autoriser »
+    if tool.kind in APPROVAL_FLAGS and rule is None and not auto and not settings.get(APPROVAL_FLAGS[tool.kind] or "", False):
         approval_id = uuid.uuid4().hex[:12]
         future = asyncio.get_running_loop().create_future()
         _approvals[approval_id] = (future, cid, tool.kind, root, command)
@@ -121,6 +126,8 @@ async def run_tool(cid, root, name, args, call_id, out, allowed=None, parent_id=
         out["result"] = {"status": "error", "output": f"Erreur système : {exc}"}
     if rule:
         out["result"]["rule"] = rule  # affiché sur la carte : autorisée sans te demander, par cette règle
+    elif auto:
+        out["result"]["rule"] = "outil MCP autorisé d'office (Réglages)"
 
     # Hooks « apres_outil » : leur sortie complète le résultat que voit le modèle (linter, tests…)
     after = await hooks.run("apres_outil", root, name, args, out["result"]) if root else []
