@@ -300,14 +300,26 @@ class Connection:
             if self._ready and not self._ready.done():
                 self._ready.set_result(False)
 
-    async def request(self, kind, payload=None, timeout=None):
+    async def request(self, kind, payload=None, timeout=None, retry=True):
         if self.state != "pret" or not self._task or self._task.done():
             await self.start()  # serveur tombé : une relance, puis l'appel
         if self.state != "pret":
             raise ConnectionError(f"Serveur MCP « {self.name} » indisponible : {self.error or self.state}")
         future = asyncio.get_running_loop().create_future()
+        task = self._task
         self._queue.put_nowait((kind, payload, future))
-        return await asyncio.wait_for(future, timeout or self.timeout() + 5)
+        # On surveille aussi la connexion : si elle se ferme (arrêt en cours, chute) sans avoir pris l'appel,
+        # il resterait dans une file que plus personne ne lit
+        done, _ = await asyncio.wait({future, task}, timeout=timeout or self.timeout() + 5,
+                                     return_when=asyncio.FIRST_COMPLETED)
+        if future in done:
+            return future.result()
+        if task in done and retry:
+            return await self.request(kind, payload, timeout, retry=False)  # une relance du serveur, une seule
+        if task in done:
+            raise ConnectionError(f"Serveur MCP « {self.name} » arrêté pendant l'appel : {self.error or 'connexion fermée'}")
+        future.cancel()
+        raise asyncio.TimeoutError()
 
 
 async def _list_all(client):
