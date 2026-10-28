@@ -641,6 +641,8 @@ button.danger-text { color: var(--err); }
     font: 12px/1.5 var(--mono); white-space: pre-wrap; max-height: 260px; overflow: auto; }
 .mcp-server .skills-list li select { width: auto; flex: none; }
 .mcp-toggles { display: flex; flex-wrap: wrap; gap: 6px 18px; }
+button.chip-on { border-color: var(--accent-2); color: var(--accent);
+    background: color-mix(in srgb, var(--accent-2) 14%, transparent); }
 .chip { padding: 3px 10px; border-radius: 12px; font-size: 12px; background: transparent; border: 1px solid var(--border); }
 .chip.on { border-color: var(--accent-2); color: var(--accent); background: color-mix(in srgb, var(--accent-2) 14%, transparent); }
 .taste-lists { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px; }
