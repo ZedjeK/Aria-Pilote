@@ -944,6 +944,8 @@ function messageNode(m) {
         node.append(m.content);
         const pictures = messageImages(m);
         if (pictures) node.append(pictures);
+        const files = messageFiles(m);
+        if (files) node.append(files);
         return node;
     }
     node.append(
@@ -965,6 +967,17 @@ function messageImages(m) {
         const img = el("img", { src, alt: "Image jointe", loading: "lazy" });
         if (!src.startsWith("data:")) img.addEventListener("click", () => window.open(src, "_blank"));
         return img;
+    }));
+}
+
+// Fichiers joints d'un message : nom, type et taille du texte lu (le contenu part au modèle, pas à l'écran)
+function messageFiles(m) {
+    const files = m.files?.length ? m.files : m.localFiles || [];
+    if (!files.length) return null;
+    return el("div", { className: "msg-files" }, ...files.map((f) => {
+        const info = f.chars !== undefined
+            ? `${f.kind} · ${f.chars.toLocaleString("fr-FR")} caractères${f.truncated ? " (début seulement)" : ""}` : "envoi…";
+        return el("span", { className: "file-chip", title: info }, `📄 ${f.name}`, el("span", { className: "muted" }, ` · ${info}`));
     }));
 }
 
@@ -1397,7 +1410,7 @@ async function readEvents(resp, onEvent) {
 async function send(content, answer, continueTask = false, pictures = []) {
     // answer : réponse à la question en attente de l'agent (content vaut alors null)
     // continueTask : bouton « Continuer », le message prolonge la tâche en cours
-    // pictures : images jointes au nouveau message (data URL)
+    // pictures : pièces jointes du nouveau message ({kind: "image", src} ou {kind: "file", name, data})
     if (chat.controller) return;
     $("#chat-error").hidden = true;
     if (state.status?.state !== "ready") {
@@ -1430,7 +1443,7 @@ async function send(content, answer, continueTask = false, pictures = []) {
     } else if (content === null) {
         while (["assistant", "tool"].includes(chat.current.messages.at(-1)?.role)) chat.current.messages.pop();
     } else {
-        chat.current.messages.push({ role: "user", content, localImages: pictures });
+        chat.current.messages.push({ role: "user", content, localImages: imagesOf(pictures), localFiles: filesOf(pictures) });
         if (!continueTask) delete chat.current.todo;
     }
     renderMessages();
@@ -1487,7 +1500,7 @@ async function send(content, answer, continueTask = false, pictures = []) {
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
                 conversation_id: chat.current.id, content, answer, continue_task: continueTask,
-                preset_id: $("#preset-select").value, images: pictures,
+                preset_id: $("#preset-select").value, images: imagesOf(pictures), files: filesOf(pictures),
             }),
             signal: chat.controller.signal,
         });
@@ -1635,7 +1648,7 @@ $("#chat-form").addEventListener("submit", async (event) => {
     // Une question de l'agent attend : ton message est ta réponse
     const asked = chat.current && pendingQuestionIndex(chat.current.messages) >= 0;
     if (asked && pictures.length) {
-        showChatError("Réponds d'abord à la question de l'agent, puis envoie ton image.");
+        showChatError("Réponds d'abord à la question de l'agent, puis envoie ta pièce jointe.");
         return;
     }
     input.value = "";
@@ -1647,20 +1660,44 @@ $("#chat-form").addEventListener("submit", async (event) => {
     }
 });
 
-// --- Images jointes : 📎, coller (Ctrl+V) ou glisser-déposer -------------------------------
+// --- Pièces jointes : 📎, coller (Ctrl+V) ou glisser-déposer -------------------------------
+// Images (si le modèle voit), textes, code et PDF (lus par Aria et donnés au modèle comme du texte)
 
-const MAX_IMAGES = 5;
+const MAX_ATTACHMENTS = 5;
+const MAX_FILE_BYTES = 10 * 1024 * 1024;
+const TEXT_EXTENSIONS = new Set(("txt md markdown log csv tsv json jsonl yaml yml toml ini cfg conf xml html htm css js mjs ts "
+    + "tsx jsx py ps1 psm1 psd1 bat cmd sh sql java kt c h cpp hpp cs go rs rb php lua r env gitignore dockerfile "
+    + "properties reg srt vtt tex rst pdf").split(" "));
 chat.attachments = [];
+
+function imagesOf(list) {
+    return (list || []).filter((a) => a.kind === "image").map((a) => a.src);
+}
+
+function filesOf(list) {
+    return (list || []).filter((a) => a.kind === "file").map(({ name, data }) => ({ name, data }));
+}
+
+function fileExtension(name) {
+    const base = name.toLowerCase().split(/[\\/]/).pop();
+    return base.includes(".") ? base.split(".").pop() : base;
+}
 
 function setAttachments(list) {
     chat.attachments = list;
     const box = $("#attach-list");
     box.hidden = !list.length;
-    box.replaceChildren(...list.map((src, i) => {
+    box.replaceChildren(...list.map((a, i) => {
         const remove = el("button", { type: "button", className: "ghost", title: "Retirer" }, "✕");
         remove.addEventListener("click", () => setAttachments(chat.attachments.filter((_, j) => j !== i)));
-        return el("span", { className: "attach-thumb" }, el("img", { src, alt: "Image à envoyer" }), remove);
+        const body = a.kind === "image" ? el("img", { src: a.src, alt: "Image à envoyer" })
+            : el("span", { className: "file-chip" }, `📄 ${a.name}`);
+        return el("span", { className: "attach-thumb" }, body, remove);
     }));
+}
+
+function visionModels() {
+    return (state.models || []).filter((m) => m.mmproj && !/mmproj/i.test(m.file || "")).map((m) => m.name);
 }
 
 function readAsDataUrl(file) {
@@ -1672,38 +1709,50 @@ function readAsDataUrl(file) {
     });
 }
 
-async function addImages(files) {
-    const pictures = [...files].filter((f) => f.type.startsWith("image/"));
-    if (!pictures.length) return;
-    if (!state.status?.vision) {
-        showChatError("Le modèle chargé ne voit pas les images : il lui faut son projecteur vision (option « Vision » dans ses réglages).");
-        return;
+async function addFiles(files) {
+    const all = [...files];
+    if (!all.length) return;
+    const problems = [];
+    const pictures = all.filter((f) => f.type.startsWith("image/"));
+    const documents = all.filter((f) => !f.type.startsWith("image/"));
+    if (pictures.length && !state.status?.vision) {
+        const seeing = visionModels();
+        problems.push(`Le modèle chargé ne voit pas les images${seeing.length ? ` : charge plutôt ${seeing.join(" ou ")}` : " (il lui faut son projecteur vision)"}.`);
     }
-    const room = MAX_IMAGES - chat.attachments.length;
-    if (pictures.length > room) showChatError(`${MAX_IMAGES} images au plus par message.`);
-    const added = await Promise.all(pictures.slice(0, Math.max(room, 0)).map(readAsDataUrl));
-    setAttachments([...chat.attachments, ...added]);
+    const usable = state.status?.vision ? [...pictures] : [];
+    for (const f of documents) {
+        if (!TEXT_EXTENSIONS.has(fileExtension(f.name))) problems.push(`« ${f.name} » : format non pris en charge (images, textes, code et PDF).`);
+        else if (f.size > MAX_FILE_BYTES) problems.push(`« ${f.name} » : trop gros (10 Mo au plus).`);
+        else usable.push(f);
+    }
+    const room = MAX_ATTACHMENTS - chat.attachments.length;
+    if (usable.length > room) problems.push(`${MAX_ATTACHMENTS} pièces jointes au plus par message.`);
+    const added = await Promise.all(usable.slice(0, Math.max(room, 0)).map(async (f) => f.type.startsWith("image/")
+        ? { kind: "image", src: await readAsDataUrl(f) }
+        : { kind: "file", name: f.name, data: await readAsDataUrl(f) }));
+    if (added.length) setAttachments([...chat.attachments, ...added]);
+    if (problems.length) showChatError(problems.join(" "));
 }
 
 $("#btn-attach").addEventListener("click", () => $("#attach-input").click());
 $("#attach-input").addEventListener("change", (event) => {
-    addImages(event.target.files);
+    addFiles(event.target.files);
     event.target.value = "";
 });
 $("#chat-input").addEventListener("paste", (event) => {
     const files = [...(event.clipboardData?.files || [])];
-    if (files.some((f) => f.type.startsWith("image/"))) {
+    if (files.length) {  // un fichier collé (pas du texte) : pièce jointe
         event.preventDefault();
-        addImages(files);
+        addFiles(files);
     }
 });
 $("#chat-form").addEventListener("dragover", (event) => {
-    if ([...event.dataTransfer.items].some((i) => i.type.startsWith("image/"))) event.preventDefault();
+    if ([...event.dataTransfer.items].some((i) => i.kind === "file")) event.preventDefault();
 });
 $("#chat-form").addEventListener("drop", (event) => {
     if (!event.dataTransfer.files.length) return;
     event.preventDefault();
-    addImages(event.dataTransfer.files);
+    addFiles(event.dataTransfer.files);
 });
 
 $("#chat-input").addEventListener("keydown", (event) => {
@@ -1723,10 +1772,9 @@ $("#btn-regen").addEventListener("click", () => {
 
 setInterval(() => {
     const s = state.status;
-    $("#btn-attach").disabled = s?.state !== "ready" || !s.vision;
     $("#btn-attach").title = s?.state === "ready" && !s.vision
-        ? "Le modèle chargé ne voit pas les images (pas de projecteur vision)"
-        : "Joindre une image (ou colle-la, ou glisse-la ici)";
+        ? "Joindre un fichier texte, du code ou un PDF (ou glisse-le ici). Les images demandent un modèle avec vision."
+        : "Joindre une image, un fichier texte, du code ou un PDF (ou colle-le, ou glisse-le ici)";
     $("#chat-model").textContent = s?.state === "ready"
         ? `Modèle : ${s.model.name}`
         : s?.state === "loading" ? "Chargement du modèle…" : "Aucun modèle chargé (sélecteur en haut)";

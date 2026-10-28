@@ -34,7 +34,7 @@ h3 { margin: 20px 0 8px; font-size: 13px; text-transform: uppercase; letter-spac
 
 .mono { font-family: var(--mono); }
 .muted { color: var(--muted); }
-.small { font-size: 12px; word-break: break-all; }
+.small { font-size: 12px; overflow-wrap: break-word; }  /* un mot ne se coupe que s'il est plus long que la ligne (chemin, empreinte) */
 .error { color: var(--err); }
 
 button {
@@ -437,12 +437,22 @@ button.danger-text { color: var(--err); }
 .rule-box { display: grid; gap: 6px; padding: 8px 10px; border: 1px dashed var(--action); border-radius: 6px; font-size: 12px; }
 .rule-box input.mono { min-width: 260px; font-size: 12px; }
 .rule-box button { justify-self: start; padding: 4px 12px; font-size: 12px; }
-.optimize-dialog { max-width: 980px; }
+.hw-tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 10px; }
+.hw-tile { display: grid; gap: 6px; align-content: start; padding: 12px 14px; border: 1px solid var(--border); border-radius: 10px;
+    background: var(--panel-2); }
+.hw-title { font-weight: 600; }
+.hw-bar { height: 8px; border-radius: 4px; background: var(--deep); border: 1px solid var(--border); overflow: hidden; }
+.hw-bar span { display: block; height: 100%; background: var(--accent-2); }
+.hw-bar.full span { background: var(--warn); }
+.optimize-panel { display: grid; gap: 10px; border-top: 1px solid var(--border); padding-top: 12px; }
+.optimize-panel > p { margin: 0; }
+.table-wrap { overflow-x: auto; }
+.optimize-actions { position: sticky; bottom: 0; padding: 10px 0 2px; background: var(--panel); border-top: 1px solid var(--border); }
 .optimize-tip { display: flex; gap: 10px; align-items: center; padding: 8px 10px; border: 1px solid var(--border);
     border-radius: 8px; background: var(--panel-2); }
 .optimize-tip.heavy { border-color: var(--warn); }
 .optimize-tip button { flex: none; padding: 3px 10px; font-size: 12px; }
-.profile-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 10px; margin: 8px 0 12px; }
+.profile-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 10px; }
 .profile-card { display: grid; gap: 6px; text-align: left; padding: 10px 12px; border: 1px solid var(--border); border-radius: 10px;
     background: var(--panel-2); color: inherit; cursor: pointer; font: inherit; }
 .profile-card:hover { border-color: var(--accent-2); }
@@ -452,7 +462,9 @@ button.danger-text { color: var(--err); }
 .profile-card .warn-text { color: var(--warn); }
 .profile-card .profile-models { color: var(--muted); border-top: 1px solid var(--border); padding-top: 6px; }
 .optimize-table { width: 100%; border-collapse: collapse; font-size: 13px; }
-.optimize-table th, .optimize-table td { padding: 6px 8px; border-bottom: 1px solid var(--border); text-align: left; vertical-align: top; }
+.optimize-table th { white-space: nowrap; color: var(--muted); font-weight: 600; }
+.optimize-table td:first-child { width: 28px; }
+.optimize-table th, .optimize-table td { padding: 8px 10px; border-bottom: 1px solid var(--border); text-align: left; vertical-align: top; }
 .optimize-table td.changed { color: var(--accent); font-weight: 600; }
 .optimize-table td.trial.ok { color: var(--ok); }
 .optimize-table td.trial.error { color: var(--err); }
@@ -583,6 +595,10 @@ button.danger-text { color: var(--err); }
 .attach-list { display: flex; flex-wrap: wrap; gap: 8px; }
 .attach-thumb { position: relative; }
 .attach-thumb img { height: 64px; max-width: 120px; object-fit: cover; border-radius: 6px; border: 1px solid var(--border); display: block; }
+.attach-thumb .file-chip { display: inline-block; height: 32px; line-height: 30px; }
+.file-chip { padding: 0 10px; border: 1px solid var(--border); border-radius: 6px; background: var(--panel-2);
+    font-size: 12px; white-space: nowrap; }
+.msg-files { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
 .attach-thumb button { position: absolute; top: -6px; right: -6px; padding: 0 5px; border-radius: 50%; background: var(--panel); font-size: 11px; }
 .msg-images { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
 .msg-images img { max-height: 180px; max-width: 100%; border-radius: 8px; border: 1px solid var(--border); cursor: zoom-in; }

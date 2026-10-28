@@ -107,15 +107,18 @@ def delete(cid):
     shutil.rmtree(path.with_suffix(""), ignore_errors=True)  # dossier des images jointes
 
 
-def add_user_message(conv, content, skill=None, images=None):
+def add_user_message(conv, content, skill=None, images=None, files=None):
     message = {"role": "user", "content": content, "created_at": _now()}
     if skill:
         message["skill"] = skill  # « /nom » tapé dans le chat : la compétence est ajoutée à l'envoi
     if images:
         message["images"] = images  # [{"file", "w", "h"}], rangées dans data/conversations/<id>/
+    if files:
+        message["files"] = files  # [{"name", "kind", "chars", "truncated", "text"}] : texte extrait (attachments.py)
     conv["messages"].append(message)
     if conv["title"] == DEFAULT_TITLE:
-        conv["title"] = _make_title(f"/{skill} {content}" if skill else content or "🖼 Image")
+        fallback = f"📄 {files[0]['name']}" if files else "🖼 Image"
+        conv["title"] = _make_title(f"/{skill} {content}" if skill else content or fallback)
 
 
 def drop_trailing_assistant(conv):

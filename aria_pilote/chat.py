@@ -7,7 +7,7 @@ import uuid
 
 import httpx
 
-from . import config, context, conversations, images, persona, skills
+from . import attachments, config, context, conversations, images, persona, skills
 from .server import manager
 
 SAMPLING_FIELDS = ("temperature", "top_p", "top_k", "min_p", "presence_penalty", "max_tokens")
@@ -60,6 +60,8 @@ def build_messages(conv, system_prompt):
                 root = (conv.get("agent") or {}).get("workspace") if (conv.get("agent") or {}).get("enabled") else None
                 note = persona.register_note(persona.for_conversation(conv), m["skill"])
                 text = skills.expand(m["skill"], m["content"], root) + note
+            if m.get("files"):
+                text = "\n\n".join(p for p in (text, attachments.for_model(m["files"])) if p)
             messages.append({"role": "user", "content": user_content(cid, text, m.get("images"))})
         else:
             messages.append({"role": m["role"], "content": m["content"]})

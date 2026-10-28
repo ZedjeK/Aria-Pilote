@@ -218,8 +218,14 @@ function loadEnginesSection() {
 
 function loadHardwareSection() {
     renderHardware();
+}
+
+function loadModelsSection() {
+    loadModels();
     $("#set-model-dirs").value = state.config.model_dirs.join("\n");
 }
+
+$("#btn-hw-rescan").addEventListener("click", renderHardware);
 
 // Boutons « Parcourir » : la fenêtre de Windows remplit le champ, qui s'enregistre comme une saisie
 async function browseInto(field, title, append = false) {
@@ -1091,7 +1097,7 @@ $("#btn-preset-delete").addEventListener("click", async () => {
 const LOADERS = {
     general: loadGeneral,
     "modele-defaut": loadDefaultModel,
-    "mes-modeles": () => loadModels(),
+    "mes-modeles": loadModelsSection,
     persona: () => loadPersonaSection(),
     presets: () => loadPresetsSection(),
     moteurs: loadEnginesSection,
