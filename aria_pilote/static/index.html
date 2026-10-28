@@ -66,7 +66,7 @@
             </div>
             <form id="chat-form" class="composer">
                 <div id="attach-list" class="attach-list" hidden></div>
-                <input type="file" id="attach-input" accept="image/png,image/jpeg,image/webp,image/gif,image/bmp" multiple hidden>
+                <input type="file" id="attach-input" multiple hidden>
                 <textarea id="chat-input" rows="3" placeholder="Écris ton message… (Entrée pour envoyer, Maj+Entrée pour aller à la ligne)"></textarea>
                 <div id="compact-pop" class="compact-pop" hidden>
                     <span class="small">🗜 Résumer les anciens échanges pour libérer du contexte. L'historique reste affiché.</span>
@@ -414,6 +414,14 @@ py -3.11 tools/build_portable.py</pre>
 
                 </section>
                 </div>
+                <div class="set-card">
+                    <div class="set-card-title">Dossiers de modèles</div>
+                    <p class="muted small">Un par ligne. Le premier reçoit les téléchargements ; celui de LM Studio est lu s'il existe.</p>
+                    <textarea id="set-model-dirs" rows="4" class="mono" spellcheck="false"></textarea>
+                    <div class="row">
+                        <button type="button" id="btn-model-dir-add" class="ghost">+ Ajouter un dossier</button>
+                    </div>
+                </div>
             </section>
 
             <section class="settings-section" data-section="presets" data-title="Presets" hidden>
@@ -567,18 +575,41 @@ py -3.11 tools/build_portable.py</pre>
 
             <section class="settings-section" data-section="materiel" data-title="Matériel et optimisation" hidden>
                 <div class="set-card">
-                    <div class="set-card-title">Ta machine</div>
-                    <div id="hw-info" class="muted small">Scan en cours…</div>
-                    <div class="row">
-                        <button type="button" id="btn-optimize" class="primary">⚡ Optimiser mes modèles</button>
+                    <div class="set-card-head">
+                        <div class="set-card-title">Ta machine</div>
+                        <button type="button" id="btn-hw-rescan" class="ghost">↻ Rescanner</button>
                     </div>
+                    <div id="hw-info" class="hw-tiles"><p class="muted">Scan en cours…</p></div>
                 </div>
                 <div class="set-card">
-                    <div class="set-card-title">Dossiers de modèles</div>
-                    <p class="muted small">Un par ligne. Le premier reçoit les téléchargements ; celui de LM Studio est lu s'il existe.</p>
-                    <textarea id="set-model-dirs" rows="4" class="mono" spellcheck="false"></textarea>
-                    <div class="row">
-                        <button type="button" id="btn-model-dir-add" class="ghost">+ Ajouter un dossier</button>
+                    <div class="set-card-head">
+                        <div>
+                            <div class="set-card-title">Optimiser mes modèles</div>
+                            <div class="muted small">Trois choix calculés pour chacun de tes modèles, d'après sa taille et la VRAM libre.
+                                Rien n'est enregistré avant « Appliquer la sélection ».</div>
+                        </div>
+                        <button type="button" id="btn-optimize" class="primary">⚡ Calculer</button>
+                    </div>
+                    <p id="optimize-fail" class="error" hidden></p>
+                    <div id="optimize-panel" class="optimize-panel" hidden>
+                        <div id="optimize-tip" class="optimize-tip small" hidden></div>
+                        <p id="optimize-intro" class="muted small"></p>
+                        <div id="optimize-profiles" class="profile-cards"></div>
+                        <div class="table-wrap">
+                            <table class="optimize-table">
+                                <thead><tr><th></th><th>Modèle</th><th>Actuel</th><th>Proposé</th><th>VRAM estimée</th><th>Essai réel</th></tr></thead>
+                                <tbody id="optimize-rows"></tbody>
+                            </table>
+                        </div>
+                        <p class="muted small">Estimations calibrées sur des chargements réels, avec une marge de sécurité. Les réglages
+                            appliqués sont mémorisés par modèle et servent à son prochain chargement.</p>
+                        <p id="optimize-error" class="error" hidden></p>
+                        <div class="row optimize-actions">
+                            <button id="btn-optimize-test" class="ghost" title="Charge chaque modèle coché, mesure la VRAM et la vitesse, et descend d'un palier si ça ne tient pas">🔬 Vérifier par un essai réel</button>
+                            <button id="btn-optimize-stop" class="ghost danger" hidden>Arrêter l'essai</button>
+                            <button id="btn-optimize-apply" class="primary">Appliquer la sélection</button>
+                            <button id="btn-optimize-close" class="ghost">Masquer</button>
+                        </div>
                     </div>
                 </div>
             </section>
@@ -862,28 +893,6 @@ py -3.11 tools/build_portable.py</pre>
             </section>
         </div>
     </main>
-
-    <dialog id="optimize-dialog" class="skills-dialog optimize-dialog">
-        <div class="skills-head">
-            <h2>Optimiser mes modèles</h2>
-            <button id="btn-optimize-close" class="ghost">Fermer</button>
-        </div>
-        <div id="optimize-tip" class="optimize-tip small" hidden></div>
-        <p id="optimize-intro" class="muted small"></p>
-        <div id="optimize-profiles" class="profile-cards"></div>
-        <table class="optimize-table">
-            <thead><tr><th></th><th>Modèle</th><th>Actuel</th><th>Proposé</th><th>VRAM estimée</th><th>Essai réel</th></tr></thead>
-            <tbody id="optimize-rows"></tbody>
-        </table>
-        <p class="muted small">Estimations calibrées sur des chargements réels, avec une marge de sécurité. Les réglages
-            appliqués sont mémorisés par modèle et servent à son prochain chargement.</p>
-        <p id="optimize-error" class="error" hidden></p>
-        <div class="row">
-            <button id="btn-optimize-test" class="ghost" title="Charge chaque modèle coché, mesure la VRAM et la vitesse, et descend d'un palier si ça ne tient pas">🔬 Vérifier par un essai réel</button>
-            <button id="btn-optimize-stop" class="ghost danger" hidden>Arrêter l'essai</button>
-            <button id="btn-optimize-apply" class="primary">Appliquer la sélection</button>
-        </div>
-    </dialog>
 
     <dialog id="skills-dialog" class="skills-dialog">
         <div class="skills-head">

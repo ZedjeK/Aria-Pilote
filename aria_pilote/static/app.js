@@ -299,19 +299,35 @@ $("#btn-quit").addEventListener("click", async () => {
 
 const gio = (bytes) => `${(bytes / 1024 ** 3).toLocaleString("fr-FR", { maximumFractionDigits: 1 })} Go`;
 
+// Une tuile par composant : la carte graphique (et sa VRAM), le processeur, la mémoire vive
+function hwTile(icon, title, detail, used, total) {
+    const tile = el("div", { className: "hw-tile" },
+        el("div", { className: "hw-title" }, `${icon} ${title}`),
+        el("div", { className: "muted small" }, detail));
+    if (total) {
+        const share = Math.min(100, Math.round((used / total) * 100));
+        tile.append(
+            el("div", { className: `hw-bar${share > 85 ? " full" : ""}` }, el("span", { style: `width: ${share}%` })),
+            el("div", { className: "small" }, `${gio(total - used)} libres sur ${gio(total)} · ${share} % occupé`));
+    }
+    return tile;
+}
+
 async function renderHardware() {
     const box = $("#hw-info");
-    box.textContent = "Scan en cours…";
+    box.replaceChildren(el("p", { className: "muted" }, "Scan en cours…"));
     try {
         const hw = await api("/api/hardware");
-        const gpus = hw.gpus.length
-            ? hw.gpus.map((g) => `${g.name} : ${gio(g.vram_total)} de VRAM, ${gio(g.vram_free)} libres`).join(" · ")
-            : "Aucune carte NVIDIA détectée";
-        const cpu = hw.cpu.name ? `${hw.cpu.name} (${hw.cpu.cores} cœurs, ${hw.cpu.threads} threads)` : `${hw.cpu.threads} threads`;
-        const ram = hw.ram.total ? `${gio(hw.ram.total)} de RAM (${gio(hw.ram.free)} libres)` : "";
-        box.replaceChildren(el("div", {}, `🎮 ${gpus}`), el("div", {}, `🧠 ${cpu}${ram ? " · " + ram : ""}`));
+        const tiles = hw.gpus.length
+            ? hw.gpus.map((g) => hwTile("🎮", g.name, `Carte graphique${g.driver ? ` · pilote ${g.driver}` : ""} · VRAM`,
+                g.vram_total - g.vram_free, g.vram_total))
+            : [hwTile("🎮", "Aucune carte NVIDIA détectée", "Les modèles tourneront sur le processeur, beaucoup plus lentement.")];
+        tiles.push(hwTile("🧠", hw.cpu.name || "Processeur",
+            `Processeur · ${hw.cpu.cores ? `${hw.cpu.cores} cœurs, ` : ""}${hw.cpu.threads} threads`));
+        if (hw.ram.total) tiles.push(hwTile("💾", "Mémoire vive", "RAM", hw.ram.total - hw.ram.free, hw.ram.total));
+        box.replaceChildren(...tiles);
     } catch (err) {
-        box.textContent = `Scan impossible : ${err.message}`;
+        box.replaceChildren(el("p", { className: "error" }, `Scan impossible : ${err.message}`));
     }
 }
 
@@ -390,6 +406,7 @@ $("#btn-optimize").addEventListener("click", async () => {
     const button = $("#btn-optimize");
     button.disabled = true;
     $("#optimize-error").hidden = true;
+    $("#optimize-fail").hidden = true;
     try {
         const result = await api("/api/optimize", { method: "POST", body: "{}" });
         optimizeResult = result;
@@ -401,17 +418,24 @@ $("#btn-optimize").addEventListener("click", async () => {
         renderVramTip(result);
         $("#optimize-profiles").replaceChildren(...result.profiles.map(profileCard));
         selectProfile(result.default);
-        if (!$("#optimize-dialog").open) $("#optimize-dialog").showModal();
+        $("#optimize-panel").hidden = false;
+        button.textContent = "↻ Recalculer";
     } catch (err) {
-        $("#hw-info").textContent = `Optimisation impossible : ${err.message}`;
+        $("#optimize-fail").textContent = `Optimisation impossible : ${err.message}`;
+        $("#optimize-fail").hidden = false;
     } finally {
         button.disabled = false;
     }
 });
 
+function hideOptimize() {
+    $("#optimize-panel").hidden = true;
+    $("#btn-optimize").textContent = "⚡ Calculer";
+}
+
 $("#btn-optimize-close").addEventListener("click", () => {
     trialController?.abort();
-    $("#optimize-dialog").close();
+    hideOptimize();
 });
 
 // Essai réel : chaque modèle coché est chargé avec ses réglages proposés (palier inférieur si ça ne tient pas)
@@ -490,12 +514,14 @@ $("#btn-optimize-apply").addEventListener("click", async () => {
         return { model_id: p.model_id, settings: p.proposed };
     });
     if (!items.length) {
-        $("#optimize-dialog").close();
+        $("#optimize-error").textContent = "Coche au moins un modèle à régler.";
+        $("#optimize-error").hidden = false;
         return;
     }
     try {
         await api("/api/optimize/apply", { method: "POST", body: JSON.stringify({ items }) });
-        $("#optimize-dialog").close();
+        hideOptimize();
+        flashSaved();
         await loadModels();
     } catch (err) {
         $("#optimize-error").textContent = err.message;

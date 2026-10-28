@@ -12,7 +12,7 @@ from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse, Str
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from . import (VERSION, agent, background, backups, chat, config, context, conversations, downloads, engines, hardware,
+from . import (VERSION, agent, attachments, background, backups, chat, config, context, conversations, downloads, engines, hardware,
                hooks, hub, images, mcp_client, models, optimizer, permissions, persona, pick_folder, presets, screen, searxng,
                skills, subagents, tools, trial, updates, workspace)
 from .server import EngineMissing, manager
@@ -214,6 +214,11 @@ class SkillRequest(BaseModel):
     fields: dict | None = None
 
 
+class AttachedFile(BaseModel):
+    name: str
+    data: str  # data URL (base64)
+
+
 class ChatRequest(BaseModel):
     conversation_id: str
     content: str | None = None  # None = régénérer la dernière réponse
@@ -221,6 +226,7 @@ class ChatRequest(BaseModel):
     continue_task: bool = False  # bouton « Continuer » : le message prolonge la tâche en cours
     preset_id: str | None = None
     images: list[str] = []  # images collées ou jointes (data URL), avec un nouveau message seulement
+    files: list[AttachedFile] = []  # fichiers texte ou PDF joints, avec un nouveau message seulement
 
 
 class DownloadRequest(BaseModel):
@@ -557,8 +563,13 @@ async def chat_endpoint(req: ChatRequest):
         raise HTTPException(409, "Aucun modèle prêt : charge un modèle dans l'onglet Modèles.")
     conv = _conversation_or_404(req.conversation_id)
     preset = presets.resolve(req.preset_id or conv.get("preset_id") or config.get().get("default_preset"))
-    if req.content is not None and not req.content.strip() and not req.images:
+    if req.content is not None and not req.content.strip() and not req.images and not req.files:
         raise HTTPException(400, "Message vide.")
+    if req.files:
+        if req.content is None:
+            raise HTTPException(400, "Un fichier s'envoie avec un nouveau message.")
+        if len(req.files) > attachments.MAX_PER_MESSAGE:
+            raise HTTPException(400, f"{attachments.MAX_PER_MESSAGE} fichiers au plus par message.")
     if req.images:
         if req.content is None:
             raise HTTPException(400, "Une image s'envoie avec un nouveau message.")
@@ -570,8 +581,8 @@ async def chat_endpoint(req: ChatRequest):
     question = agent.pending_question(conv)
     if req.answer is not None and question is None:
         raise HTTPException(409, "Aucune question de l'agent n'attend de réponse.")
-    if question is not None and req.images:
-        raise HTTPException(409, "Réponds d'abord à la question de l'agent, puis envoie ton image.")
+    if question is not None and (req.images or req.files):
+        raise HTTPException(409, "Réponds d'abord à la question de l'agent, puis envoie ta pièce jointe.")
     if question is not None and (req.answer is not None or req.content is not None):
         # Ta réponse (bouton ou message tapé) devient le résultat d'ask_user, puis l'agent reprend
         agent.answer_question(question, req.answer if req.answer is not None else req.content)
@@ -582,10 +593,14 @@ async def chat_endpoint(req: ChatRequest):
         if match and match.group(1) in skills.discover(_agent_root(conv)):
             skill, content = match.group(1), (match.group(2) or "").strip()
         try:
+            files = [attachments.extract(f.name, f.data) for f in req.files]
+        except attachments.AttachmentError as exc:
+            raise HTTPException(400, str(exc))
+        try:
             attached = [images.save(conv["id"], url) for url in req.images]
         except images.ImageError as exc:
             raise HTTPException(400, str(exc))
-        conversations.add_user_message(conv, content, skill, attached)
+        conversations.add_user_message(conv, content, skill, attached, files)
         # Un plan attend ta décision : ton message (« modifie le plan… ») le prolonge, le verrou reste en place
         if not req.continue_task and not agent.plan_locked(conv):
             conv["task_id"] = backups.new_task_id()  # nouvelle demande, nouvelle tâche (réponses et reprises la prolongent)
