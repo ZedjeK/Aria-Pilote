@@ -3,8 +3,8 @@
 Chaque phrase part dans une conversation neuve, sans dossier et « Sans persona », sur l'appli de dev. On note la
 compétence chargée avec load_skill au premier tour (ou « aucune » s'il répond directement), puis on coupe.
 
-    py -3.11 tools/selection.py --models qwen,bonsai
-    py -3.11 tools/selection.py --models bonsai --only dev,prof
+    .venv/Scripts/python.exe tools/selection.py --models qwen,bonsai
+    .venv/Scripts/python.exe tools/selection.py --models bonsai --only dev,prof
 """
 
 import argparse
