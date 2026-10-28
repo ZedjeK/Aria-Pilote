@@ -127,7 +127,7 @@ class LiveServerTest(unittest.TestCase):
         status, names = self.run_live(scenario)
         server = status["servers"][0]
         self.assertEqual(server["state"], "pret", server["error"])
-        self.assertEqual({t["name"] for t in server["tools"]}, {"additionner", "image", "echouer"})
+        self.assertEqual({t["name"] for t in server["tools"]}, {"additionner", "image", "lire_note", "echouer"})
         self.assertTrue(next(t for t in server["tools"] if t["name"] == "additionner")["read_only"])
         self.assertGreater(server["tokens"], 0)
         self.assertIn("mcp__test__additionner", names)

@@ -11,8 +11,8 @@ Le script passe par l'API de l'appli de dev, comme l'interface (il la démarre s
 ton rôle : il valide les accords, sauf les commandes qui contiennent un mot piège, répond aux questions
 et approuve les plans proposés (sauf si la tâche dit le contraire).
 
-    py -3.11 tools/bench.py --models qwen,bonsai
-    py -3.11 tools/bench.py --models qwen --tasks 2,6 --runs 3
+    .venv/Scripts/python.exe tools/bench.py --models qwen,bonsai
+    .venv/Scripts/python.exe tools/bench.py --models qwen --tasks 2,6 --runs 3
 """
 
 import argparse
