@@ -1407,7 +1407,7 @@ async function readEvents(resp, onEvent) {
     }
 }
 
-async function send(content, answer, continueTask = false, pictures = []) {
+async function send(content, answer, continueTask = false, pictures = [], planFirst = false) {
     // answer : réponse à la question en attente de l'agent (content vaut alors null)
     // continueTask : bouton « Continuer », le message prolonge la tâche en cours
     // pictures : pièces jointes du nouveau message ({kind: "image", src} ou {kind: "file", name, data})
@@ -1499,7 +1499,7 @@ async function send(content, answer, continueTask = false, pictures = []) {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
-                conversation_id: chat.current.id, content, answer, continue_task: continueTask,
+                conversation_id: chat.current.id, content, answer, continue_task: continueTask, plan_first: planFirst,
                 preset_id: $("#preset-select").value, images: imagesOf(pictures), files: filesOf(pictures),
             }),
             signal: chat.controller.signal,
@@ -1645,19 +1645,50 @@ $("#chat-form").addEventListener("submit", async (event) => {
         await compactNow((compact[1] || "").trim());
         return;
     }
+    // « /plan ta demande » : comme la puce « 🗺 Plan d'abord », pour ce message
+    const planCommand = content.trim().match(/^\/plan(?:\s+([\s\S]*))?$/);
+    const planFirst = chat.planFirst || Boolean(planCommand);
+    const request = planCommand ? (planCommand[1] || "").trim() : content;
+    if (planCommand && !request && !pictures.length) {
+        showChatError("Écris ta demande après /plan, par exemple « /plan migre le site vers Python 3.12 ».");
+        return;
+    }
     // Une question de l'agent attend : ton message est ta réponse
     const asked = chat.current && pendingQuestionIndex(chat.current.messages) >= 0;
     if (asked && pictures.length) {
         showChatError("Réponds d'abord à la question de l'agent, puis envoie ta pièce jointe.");
         return;
     }
+    if (asked && planCommand) {
+        showChatError("Réponds d'abord à la question de l'agent, puis demande ton plan.");
+        return;
+    }
     input.value = "";
     setAttachments([]);
-    const ok = asked ? await send(null, content) : await send(content, undefined, false, pictures);
+    const ok = asked ? await send(null, content) : await send(request, undefined, false, pictures, planFirst);
     if (ok === false) {
         if (!input.value) input.value = content;
         if (!chat.attachments.length) setAttachments(pictures);
+    } else if (!asked) {
+        setPlanFirst(false);  // la puce ne vaut que pour un message
     }
+});
+
+// --- 🗺 Plan d'abord : pour le prochain message, un plan avant toute modification ---------------
+
+chat.planFirst = false;
+
+function setPlanFirst(on) {
+    chat.planFirst = on;
+    const chip = $("#btn-plan-first");
+    chip.classList.toggle("chip-on", on);
+    chip.setAttribute("aria-pressed", String(on));
+    chip.textContent = on ? "🗺 Plan d'abord ✓" : "🗺 Plan d'abord";
+}
+
+$("#btn-plan-first").addEventListener("click", () => {
+    setPlanFirst(!chat.planFirst);
+    $("#chat-input").focus();
 });
 
 // --- Pièces jointes : 📎, coller (Ctrl+V) ou glisser-déposer -------------------------------

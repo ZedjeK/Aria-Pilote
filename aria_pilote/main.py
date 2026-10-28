@@ -224,6 +224,7 @@ class ChatRequest(BaseModel):
     content: str | None = None  # None = régénérer la dernière réponse
     answer: str | None = None  # réponse à la question en attente de l'agent ("" : il décide lui-même)
     continue_task: bool = False  # bouton « Continuer » : le message prolonge la tâche en cours
+    plan_first: bool = False  # puce « 🗺 Plan d'abord » ou « /plan » : un plan avant toute modification, pour cette demande
     preset_id: str | None = None
     images: list[str] = []  # images collées ou jointes (data URL), avec un nouveau message seulement
     files: list[AttachedFile] = []  # fichiers texte ou PDF joints, avec un nouveau message seulement
@@ -604,8 +605,8 @@ async def chat_endpoint(req: ChatRequest):
         # Un plan attend ta décision : ton message (« modifie le plan… ») le prolonge, le verrou reste en place
         if not req.continue_task and not agent.plan_locked(conv):
             conv["task_id"] = backups.new_task_id()  # nouvelle demande, nouvelle tâche (réponses et reprises la prolongent)
-            if config.get().get("always_plan") and agent.attached_root(conv):
-                # « Toujours proposer un plan » : verrou dès le début de la tâche, levé par ton accord
+            if req.plan_first or (config.get().get("always_plan") and agent.attached_root(conv)):
+                # « Plan d'abord » ou « Toujours proposer un plan » : verrou dès le début de la tâche, levé par ton accord
                 conv["plan"] = {"status": "required", "task_id": conv["task_id"]}
     else:
         conversations.drop_trailing_assistant(conv)
