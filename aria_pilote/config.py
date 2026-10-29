@@ -11,9 +11,13 @@ from pathlib import Path
 ROOT = Path(os.environ.get("ARIA_PILOTE_HOME") or Path(__file__).resolve().parent.parent).resolve()
 CONFIG_PATH = ROOT / "config.json"
 
-LOAD_FIELDS = ("engine", "ctx_size", "gpu_layers", "threads", "flash_attn", "use_mmproj", "cache_type")
+LOAD_FIELDS = ("engine", "ctx_size", "gpu_layers", "threads", "flash_attn", "use_mmproj", "cache_type",
+               "cache_type_v", "batch_size", "ubatch_size", "n_cpu_moe", "load_mode", "mtp", "mtp_draft")
 # Type du cache de contexte (KV) : f16 par défaut ; q8_0 le divise par deux presque sans perte, q4_0 par quatre
 CACHE_TYPES = ("f16", "q8_0", "q4_0")
+# Chargement du fichier (--load-mode de llama.cpp) : mmap d'office, ou verrouillé en RAM (mlock)
+LOAD_MODES = ("auto", "none", "mmap", "mlock", "mmap+mlock")
+FLASH_MODES = ("auto", "on", "off")
 
 # Les chemins relatifs sont résolus par rapport au dossier de l'appli (voir path()),
 # pour que le dossier reste valable une fois copié ailleurs.
@@ -72,6 +76,13 @@ DEFAULTS = {
         "flash_attn": "auto",
         "use_mmproj": True,
         "cache_type": "f16",
+        "cache_type_v": "",  # vide : comme le cache K
+        "batch_size": 0,  # 0 : valeur du moteur (2048)
+        "ubatch_size": 0,  # 0 : valeur du moteur (512)
+        "n_cpu_moe": 0,  # modèles MoE : couches dont les experts restent en RAM
+        "load_mode": "auto",
+        "mtp": False,  # prédiction multi-tokens, si le modèle a sa couche MTP
+        "mtp_draft": 0,  # tokens devinés d'avance par la MTP (0 : valeur du moteur)
     },
     # Réglages mémorisés par modèle, indexés par chemin du fichier GGUF.
     "model_overrides": {},
@@ -132,6 +143,39 @@ def update(patch):
 
 # Les réglages par modèle sont indexés par la clé du modèle : son chemin relatif au dossier de modèles
 # (voir models.py), qui ne change pas quand le dossier de l'appli change de nom à chaque version.
+
+def check_load_settings(settings):
+    """Réglages de chargement reçus de l'interface : nettoyés, ou ValueError avec la raison."""
+    clean = {}
+    for key, value in settings.items():
+        if key not in LOAD_FIELDS:
+            continue
+        if key in ("ctx_size", "gpu_layers", "threads", "batch_size", "ubatch_size", "n_cpu_moe", "mtp_draft"):
+            try:
+                value = int(value)
+            except (TypeError, ValueError):
+                raise ValueError(f"{key} : nombre attendu.")
+            if value < 0 or (key == "ctx_size" and value < 512):
+                raise ValueError(f"{key} : valeur trop petite.")
+        elif key in ("use_mmproj", "mtp"):
+            value = bool(value)
+        elif key == "cache_type" and value not in CACHE_TYPES:
+            raise ValueError(f"Type de cache inconnu : {value}")
+        elif key == "cache_type_v" and value not in ("", *CACHE_TYPES):
+            raise ValueError(f"Type de cache V inconnu : {value}")
+        elif key == "load_mode" and value not in LOAD_MODES:
+            raise ValueError(f"Mode de chargement inconnu : {value}")
+        elif key == "flash_attn" and value not in FLASH_MODES:
+            raise ValueError(f"Flash attention : auto, on ou off.")
+        clean[key] = value
+    if clean.get("ubatch_size") and clean.get("batch_size") and clean["ubatch_size"] > clean["batch_size"]:
+        raise ValueError("Le micro-batch ne peut pas dépasser le batch.")
+    return clean
+
+
+def has_model_settings(key):
+    return key in get()["model_overrides"]
+
 
 def model_settings(key):
     cfg = get()

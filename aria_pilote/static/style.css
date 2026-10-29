@@ -114,7 +114,10 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--a
 .saved-flag { color: var(--ok); font-size: 13px; }
 .settings-section { display: grid; gap: 14px; max-width: 980px; }
 .settings-section > p { margin: 0; }
-.settings-section .settings-split { padding: 0; }
+.settings-section .settings-split { padding: 0; align-items: start; }
+/* Mes modèles : la liste en colonne étroite, la fiche (en-tête GGUF et réglages) prend la place */
+.settings-section[data-section="mes-modeles"] { max-width: 1320px; }
+.settings-section[data-section="mes-modeles"] .settings-split { grid-template-columns: minmax(230px, 300px) 1fr; }
 .set-card { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 14px 16px; display: grid; gap: 10px; }
 .set-card.focus { border-color: var(--accent); box-shadow: 0 0 12px rgba(94, 232, 255, .25); }
 .set-card-title { font-weight: 600; }
@@ -208,6 +211,19 @@ input.switch:disabled { opacity: .35; cursor: not-allowed; }
 
 /* --- Détail et formulaire --- */
 
+.model-file summary { cursor: pointer; font-weight: 600; }
+.model-file .meta dt[title]:not([title=""]) { cursor: help; }
+.load-form { display: grid; gap: 12px; margin-top: 8px; }
+.load-group { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 12px 16px;
+    border: 1px solid var(--border); border-radius: 10px; padding: 10px 14px 14px; margin: 0; }
+.load-group legend { padding: 0 6px; font-weight: 600; color: var(--accent); }
+.load-field { display: grid; gap: 4px; align-content: start; }
+.load-field > label { display: grid; gap: 4px; font-size: 13px; }
+.load-field > label.check { display: flex; align-items: center; gap: 8px; }
+.load-field > label.check input { width: auto; }
+.load-actions { margin-top: 12px; display: flex; flex-wrap: wrap; gap: 8px; }
+.defaults-item .title { color: var(--accent); }
+.warn-text { color: var(--warn); }
 .meta { display: grid; grid-template-columns: auto 1fr; gap: 2px 12px; margin: 12px 0; font-size: 13px; }
 .meta dt { color: var(--muted); }
 .meta dd { margin: 0; font-family: var(--mono); }

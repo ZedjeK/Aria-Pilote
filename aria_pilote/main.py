@@ -110,6 +110,13 @@ class LoadRequest(BaseModel):
     flash_attn: str | None = None
     use_mmproj: bool | None = None
     cache_type: str | None = None
+    cache_type_v: str | None = None
+    batch_size: int | None = None
+    ubatch_size: int | None = None
+    n_cpu_moe: int | None = None
+    load_mode: str | None = None
+    mtp: bool | None = None
+    mtp_draft: int | None = None
     remember: bool = False
 
 
@@ -275,6 +282,46 @@ def delete_model(model_id: str):
     return {"ok": True, "trashed": files}
 
 
+class ModelSettings(BaseModel):
+    settings: dict
+
+
+@app.put("/api/models/{model_id}/settings")
+def save_model_settings(model_id: str, req: ModelSettings):
+    """« 💾 Enregistrer » : les réglages de ce modèle, sans le charger (ils servent à son prochain chargement)."""
+    model = models.get(model_id)
+    if model is None:
+        raise HTTPException(404, "Modèle introuvable, relance un scan.")
+    if req.settings.get("engine", "auto") != "auto" and req.settings["engine"] not in engines.ENGINES:
+        raise HTTPException(400, f"Moteur inconnu : {req.settings['engine']}")
+    try:
+        clean = config.check_load_settings(req.settings)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc))
+    config.forget_model(model.key)  # remplace, ne complète pas : un champ revenu au défaut n'est plus forcé
+    config.save_model_settings(model.key, clean)
+    return models.to_dict(model)
+
+
+@app.delete("/api/models/{model_id}/settings")
+def reset_model_settings(model_id: str):
+    """« Revenir aux réglages par défaut » : le modèle oublie ses réglages propres."""
+    model = models.get(model_id)
+    if model is None:
+        raise HTTPException(404, "Modèle introuvable, relance un scan.")
+    config.forget_model(model.key)
+    return models.to_dict(model)
+
+
+@app.get("/api/models/{model_id}/details")
+def model_details(model_id: str):
+    """L'en-tête GGUF du modèle, en clair : ce que la fiche affiche sous « Le fichier »."""
+    model = models.get(model_id)
+    if model is None:
+        raise HTTPException(404, "Modèle introuvable, relance un scan.")
+    return {"rows": models.describe(model, _meta_of(model))}
+
+
 @app.post("/api/load")
 async def load(req: LoadRequest):
     model = models.get(req.model_id)
@@ -287,8 +334,10 @@ async def load(req: LoadRequest):
             settings[field] = value
     if settings["engine"] != "auto" and settings["engine"] not in engines.ENGINES:
         raise HTTPException(400, f"Moteur inconnu : {settings['engine']}")
-    if settings.get("cache_type", "f16") not in config.CACHE_TYPES:
-        raise HTTPException(400, f"Type de cache inconnu : {settings['cache_type']}")
+    try:
+        settings = {**settings, **config.check_load_settings(settings)}
+    except ValueError as exc:
+        raise HTTPException(400, str(exc))
     if req.remember:
         config.save_model_settings(model.key, settings)
     auto = settings["engine"] == "auto"
@@ -410,6 +459,11 @@ def put_config(patch: ConfigPatch):
             except workspace.WorkspaceError as exc:
                 raise HTTPException(400, str(exc))
         new.pop("enabled", None)  # le dossier proposé ne s'attache jamais tout seul
+    if "load_defaults" in data:
+        try:
+            data["load_defaults"] = config.check_load_settings(data["load_defaults"])
+        except ValueError as exc:
+            raise HTTPException(400, str(exc))
     cfg = config.update(data)
     if patch.model_dirs is not None:
         models.scan(force=True)

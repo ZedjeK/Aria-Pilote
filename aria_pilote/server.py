@@ -39,14 +39,30 @@ def build_args(model, settings, port, app_port):
     ]
     if settings.get("threads"):
         args += ["-t", str(settings["threads"])]
-    cache = settings.get("cache_type") or "f16"
+    if settings.get("batch_size"):
+        args += ["-b", str(settings["batch_size"])]
+    if settings.get("ubatch_size"):
+        args += ["-ub", str(settings["ubatch_size"])]
+    # Cache de contexte : K et V séparément (V suit K s'il n'est pas précisé)
+    cache_k = settings.get("cache_type") or "f16"
+    cache_v = settings.get("cache_type_v") or cache_k
     flash = settings.get("flash_attn")
-    if cache != "f16":
-        # Cache de contexte compressé ; llama.cpp exige la flash attention pour compresser la partie V
-        args += ["-ctk", cache, "-ctv", cache]
-        flash = "on"
+    if cache_k != "f16":
+        args += ["-ctk", cache_k]
+    if cache_v != "f16":
+        args += ["-ctv", cache_v]
+        flash = "on"  # llama.cpp exige la flash attention pour compresser la partie V
     if flash in ("on", "off"):
         args += ["-fa", flash]
+    if settings.get("n_cpu_moe") and getattr(model, "experts", None):
+        args += ["-ncmoe", str(settings["n_cpu_moe"])]
+    if settings.get("load_mode", "auto") != "auto":
+        args += ["-lm", settings["load_mode"]]
+    if settings.get("mtp") and getattr(model, "mtp_layers", None):
+        # Prédiction multi-tokens : la couche MTP du modèle devine les tokens suivants, vérifiés ensuite
+        args += ["--spec-type", "draft-mtp"]
+        if settings.get("mtp_draft"):
+            args += ["--spec-draft-n-max", str(settings["mtp_draft"])]
     if settings.get("use_mmproj") and model.mmproj:
         args += ["--mmproj", model.mmproj]
     return args

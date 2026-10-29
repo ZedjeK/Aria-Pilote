@@ -94,8 +94,13 @@ function renderList() {
     );
     if (!visible.length) {
         list.append(el("li", { className: "muted" }, "Aucun modèle trouvé dans les dossiers configurés."));
-        return;
     }
+    // En tête : les réglages par défaut, pour tous les modèles qui n'ont pas les leurs
+    const defaults = el("li", { className: `defaults-item${state.selectedId === DEFAULTS_ID ? " selected" : ""}` },
+        el("div", { className: "title" }, "⚙ Réglages par défaut"),
+        el("div", { className: "sub" }, "Pour les modèles sans réglage propre"));
+    defaults.addEventListener("click", () => selectModel(DEFAULTS_ID));
+    list.append(defaults);
     for (const m of visible) {
         const badges = el("div", { className: "badges" });
         if (m.quant) badges.append(el("span", { className: "badge" }, m.quant));
@@ -104,6 +109,7 @@ function renderList() {
         if (m.engine_auto === "prism") badges.append(el("span", { className: "badge prism" }, "PrismML"));
         if (m.mmproj) badges.append(el("span", { className: "badge" }, "vision"));
         if (m.error) badges.append(el("span", { className: "badge err" }, "illisible"));
+        if (m.custom) badges.append(el("span", { className: "badge", title: "Réglages propres à ce modèle" }, "réglé"));
         if (m.id === loadedId) badges.append(el("span", { className: "badge loaded" }, "chargé"));
 
         const item = el(
@@ -113,78 +119,209 @@ function renderList() {
             el("div", { className: "sub" }, `${m.publisher} / ${m.repo}`),
             badges
         );
-        item.addEventListener("click", () => {
-            state.selectedId = m.id;
-            renderList();
-            renderDetail();
-        });
+        item.addEventListener("click", () => selectModel(m.id));
         list.append(item);
     }
 }
 
-function renderDetail() {
-    const m = state.models.find((x) => x.id === state.selectedId);
-    $("#empty").hidden = Boolean(m);
-    $("#detail").hidden = !m;
-    if (!m) return;
+const DEFAULTS_ID = "__defaults__";
 
-    $("#d-name").textContent = m.name;
-    $("#d-path").textContent = m.path;
+// Les réglages de chargement, par groupe, chacun avec ce qu'il change. `when` : seulement pour les modèles concernés.
+const LOAD_GROUPS = [
+    { title: "Moteur et mémoire", fields: [
+        { key: "engine", label: "Moteur", type: "select",
+            options: [["auto", "Auto (selon le fichier)"], ["llama.cpp", "llama.cpp officiel"], ["prism", "PrismML (Bonsai)"]],
+            help: "Auto choisit PrismML pour les formats ternaires (Bonsai), llama.cpp officiel pour le reste." },
+        { key: "gpu_layers", label: "Couches sur la carte graphique", type: "number", min: 0,
+            help: "99 = tout sur la carte graphique (le plus rapide). Moins de couches : le reste tourne sur le processeur, bien plus lentement, mais la VRAM se libère." },
+        { key: "n_cpu_moe", label: "Experts gardés en RAM", type: "number", min: 0, when: (m) => !m || m.experts,
+            help: "Modèles MoE : les experts des N premières couches restent en RAM. Un gros modèle tient alors sur la carte graphique en perdant peu de vitesse. 0 = tout sur la carte." },
+        { key: "load_mode", label: "Chargement du fichier", type: "select",
+            options: [["auto", "Auto (mmap)"], ["mmap", "mmap"], ["none", "Lecture simple"], ["mlock", "Verrouillé en RAM (mlock)"], ["mmap+mlock", "mmap + verrouillé en RAM"]],
+            help: "mmap lit le fichier à la demande (démarrage rapide). « Verrouillé en RAM » empêche Windows de le décharger : utile si le modèle déborde en RAM, mais la mémoire reste prise." },
+        { key: "threads", label: "Threads du processeur", type: "number", min: 0, placeholder: "0 = auto",
+            help: "Utilisés pour ce qui tourne sur le processeur. 0 laisse le moteur choisir (en général le bon choix)." },
+    ] },
+    { title: "Contexte", fields: [
+        { key: "ctx_size", label: "Taille du contexte (tokens)", type: "number", min: 512, step: 512, max: (m) => m?.context_length,
+            help: "La mémoire de la conversation. Plus grand : de plus longues tâches, mais plus de VRAM (le cache grossit avec)." },
+        { key: "cache_type", label: "Cache K", type: "select",
+            options: [["f16", "Normal (f16)"], ["q8_0", "Compressé ×2 (q8_0)"], ["q4_0", "Compressé ×4 (q4_0, perte sensible)"]],
+            help: "Compresser le cache de contexte loge un contexte plus grand dans la même VRAM. q8_0 : quasiment sans perte." },
+        { key: "cache_type_v", label: "Cache V", type: "select",
+            options: [["", "Comme le cache K"], ["f16", "Normal (f16)"], ["q8_0", "Compressé ×2 (q8_0)"], ["q4_0", "Compressé ×4 (q4_0)"]],
+            help: "La partie V tolère souvent mieux la compression que la K. Compressée, elle active d'office la flash attention." },
+        { key: "flash_attn", label: "Flash attention", type: "select", options: [["auto", "Auto"], ["on", "Activée"], ["off", "Désactivée"]],
+            help: "Un calcul d'attention plus économe en VRAM et souvent plus rapide. Auto la laisse au moteur." },
+    ] },
+    { title: "Vitesse", fields: [
+        { key: "batch_size", label: "Batch (tokens)", type: "number", min: 0, placeholder: "0 = 2048",
+            help: "Tokens du prompt lus d'un coup. Plus grand : un long prompt est lu plus vite, au prix d'un peu de VRAM." },
+        { key: "ubatch_size", label: "Micro-batch (tokens)", type: "number", min: 0, placeholder: "0 = 512",
+            help: "Le morceau réellement envoyé à la carte graphique. 512 à 2048 accélère souvent la lecture du prompt ; ne dépasse pas le batch." },
+        { key: "mtp", label: "Prédiction multi-tokens (MTP)", type: "check", when: (m) => !m || m.mtp_layers,
+            help: "Le modèle devine les tokens suivants avec sa couche MTP, puis les vérifie : la génération peut aller nettement plus vite, sans changer le résultat. Expérimental : vérifie qu'il charge bien." },
+        { key: "mtp_draft", label: "Tokens devinés d'avance", type: "number", min: 0, placeholder: "0 = auto", when: (m) => !m || m.mtp_layers,
+            help: "Combien de tokens la MTP propose à chaque tour (0 : valeur du moteur)." },
+    ] },
+    { title: "Vision", fields: [
+        { key: "use_mmproj", label: "Vision (projecteur mmproj)", type: "check", when: (m) => m, disabled: (m) => !m.mmproj,
+            help: "Permet au modèle de voir les images jointes. Prend un peu de VRAM : décoche-le si tu n'en as pas besoin." },
+    ] },
+];
 
-    const meta = $("#d-meta");
-    meta.replaceChildren();
-    const rows = [
-        ["Fichier", m.file],
-        ["Quantification", m.quant || "inconnue"],
-        ["Architecture", m.arch || "?"],
-        ["Contexte max", m.context_length ? m.context_length.toLocaleString("fr-FR") : "?"],
-        ["Couches", m.layers ?? "?"],
-        ["Taille", formatSize(m.size_bytes)],
-        ["Moteur auto", ENGINE_LABELS[m.engine_auto]],
-        ["Projecteur vision", m.mmproj ? m.mmproj.split(/[\\/]/).pop() : "aucun"],
-    ];
-    if (m.error) rows.push(["Erreur", m.error]);
-    for (const [k, v] of rows) meta.append(el("dt", {}, k), el("dd", {}, String(v)));
+let detailInitial = null;
 
-    const form = $("#load-form");
-    const s = m.settings;
-    form.engine.value = s.engine;
-    form.ctx_size.value = s.ctx_size;
-    form.ctx_size.max = m.context_length || "";
-    form.gpu_layers.value = s.gpu_layers;
-    form.threads.value = s.threads || "";
-    form.flash_attn.value = s.flash_attn;
-    form.cache_type.value = s.cache_type || "f16";
-    form.use_mmproj.checked = s.use_mmproj;
-    form.use_mmproj.disabled = !m.mmproj;
-    form.remember.checked = false;
-    $("#form-error").hidden = true;
+function selectModel(id) {
+    state.selectedId = id;
+    renderList();
+    renderDetail();
 }
 
-$("#load-form").addEventListener("submit", async (event) => {
-    event.preventDefault();
-    const form = event.target;
-    const body = {
-        model_id: state.selectedId,
-        engine: form.engine.value,
-        ctx_size: Number(form.ctx_size.value),
-        gpu_layers: Number(form.gpu_layers.value),
-        threads: Number(form.threads.value || 0),
-        flash_attn: form.flash_attn.value,
-        cache_type: form.cache_type.value,
-        use_mmproj: form.use_mmproj.checked,
-        remember: form.remember.checked,
-    };
-    $("#form-error").hidden = true;
-    try {
-        state.status = await api("/api/load", { method: "POST", body: JSON.stringify(body) });
-        renderStatus();
-        if (body.remember) await loadModels();
-    } catch (err) {
-        $("#form-error").textContent = err.message;
-        $("#form-error").hidden = false;
+function loadFieldNode(field, model, value) {
+    let input;
+    if (field.type === "select") {
+        input = el("select", { name: field.key }, ...field.options.map(([v, label]) => el("option", { value: v }, label)));
+        input.value = value ?? field.options[0][0];
+    } else if (field.type === "check") {
+        input = el("input", { type: "checkbox", name: field.key, checked: Boolean(value) });
+    } else {
+        input = el("input", { type: "number", name: field.key, min: field.min ?? 0, step: field.step ?? 1,
+            placeholder: field.placeholder || "", value: value || (field.placeholder ? "" : value ?? "") });
+        const max = typeof field.max === "function" ? field.max(model) : field.max;
+        if (max) input.max = max;
     }
-});
+    if (field.disabled?.(model)) input.disabled = true;
+    input.addEventListener("input", syncLoadActions);
+    input.addEventListener("change", syncLoadActions);
+    const head = field.type === "check"
+        ? el("label", { className: "check" }, input, ` ${field.label}`)
+        : el("label", {}, field.label, input);
+    return el("div", { className: "load-field" }, head, el("div", { className: "muted small" }, field.help));
+}
+
+function readLoadForm() {
+    const form = $("#load-form");
+    const values = {};
+    for (const group of LOAD_GROUPS) {
+        for (const field of group.fields) {
+            const input = form.elements[field.key];
+            if (!input) continue;
+            values[field.key] = field.type === "check" ? input.checked
+                : field.type === "number" ? Number(input.value || 0) : input.value;
+        }
+    }
+    return values;
+}
+
+function syncLoadActions() {
+    const dirty = detailInitial !== null && JSON.stringify(readLoadForm()) !== detailInitial;
+    for (const b of document.querySelectorAll("#load-actions [data-dirty]")) b.disabled = !dirty;
+    const flag = $("#load-dirty");
+    if (flag) flag.hidden = !dirty;
+}
+
+function actionButton(label, className, handler, needsChange = false) {
+    const b = el("button", { type: "button", className }, label);
+    if (needsChange) b.dataset.dirty = "1";
+    b.addEventListener("click", async () => {
+        $("#form-error").hidden = true;
+        b.disabled = true;
+        try {
+            await handler();
+        } catch (err) {
+            $("#form-error").textContent = err.message;
+            $("#form-error").hidden = false;
+        } finally {
+            b.disabled = false;
+            syncLoadActions();
+        }
+    });
+    return b;
+}
+
+async function renderModelFile(m) {
+    const meta = $("#d-meta");
+    meta.replaceChildren(el("dt", {}, "Lecture…"), el("dd", {}));
+    const rows = [["Fichier", m.file, ""], ["Taille", formatSize(m.size_bytes), ""]];
+    try {
+        const details = await api(`/api/models/${m.id}/details`);
+        rows.push(...details.rows.map((r) => [r.label, r.value, r.help]));
+    } catch {
+        rows.push(["Architecture", m.arch || "?", ""], ["Couches", m.layers ?? "?", ""]);
+    }
+    if (m.error) rows.push(["Erreur", m.error, ""]);
+    if (state.selectedId !== m.id) return;  // une autre fiche a été ouverte entre-temps
+    meta.replaceChildren(...rows.flatMap(([k, v, help]) => [
+        el("dt", { title: help || "" }, help ? `${k} ⓘ` : k), el("dd", { title: help || "" }, String(v))]));
+}
+
+function renderDetail() {
+    const isDefaults = state.selectedId === DEFAULTS_ID;
+    const m = isDefaults ? null : state.models.find((x) => x.id === state.selectedId);
+    const shown = isDefaults || Boolean(m);
+    $("#empty").hidden = shown;
+    $("#detail").hidden = !shown;
+    if (!shown) return;
+    $("#form-error").hidden = true;
+    $("#btn-delete-model").hidden = isDefaults;
+    $("#d-file").hidden = isDefaults;
+
+    const values = isDefaults ? { ...state.config.load_defaults } : { ...m.settings };
+    $("#d-name").textContent = isDefaults ? "⚙ Réglages par défaut" : m.name;
+    $("#d-path").textContent = isDefaults ? "" : m.path;
+    $("#d-state").replaceChildren(isDefaults
+        ? el("p", { className: "muted small" }, "Ils valent pour chaque modèle qui n'a pas ses propres réglages (ceux d'⚡ Optimiser ou de 💾 Enregistrer dans sa fiche).")
+        : el("p", { className: "small" }, m.custom
+            ? el("span", { className: "badge" }, "Réglages propres à ce modèle")
+            : el("span", { className: "muted" }, "Ce modèle suit les réglages par défaut."),
+            el("span", { id: "load-dirty", className: "warn-text", hidden: true }, "  · modifications non enregistrées")));
+    if (!isDefaults) renderModelFile(m);
+
+    $("#load-form").replaceChildren(...LOAD_GROUPS.map((group) => {
+        const fields = group.fields.filter((f) => !f.when || f.when(m));
+        if (!fields.length) return "";
+        return el("fieldset", { className: "load-group" }, el("legend", {}, group.title),
+            ...fields.map((f) => loadFieldNode(f, m, values[f.key])));
+    }));
+    detailInitial = JSON.stringify(readLoadForm());
+
+    const actions = $("#load-actions");
+    if (isDefaults) {
+        actions.replaceChildren(actionButton("💾 Enregistrer", "primary", async () => {
+            await saveConfig({ load_defaults: readLoadForm() });
+            detailInitial = JSON.stringify(readLoadForm());
+            await loadModels();
+        }, true));
+    } else {
+        const save = async () => {
+            const updated = await api(`/api/models/${m.id}/settings`, { method: "PUT", body: JSON.stringify({ settings: readLoadForm() }) });
+            Object.assign(m, updated);
+            detailInitial = JSON.stringify(readLoadForm());
+            flashSaved();
+        };
+        const load = async (body) => {
+            state.status = await api("/api/load", { method: "POST", body: JSON.stringify({ model_id: m.id, ...body }) });
+            renderStatus();
+        };
+        const buttons = [
+            actionButton("💾 Enregistrer", "primary", async () => { await save(); await loadModels(); }, true),
+            actionButton("Enregistrer et charger", "ghost", async () => { await save(); await load({}); await loadModels(); }, true),
+            actionButton("▶ Charger", "ghost", () => load(readLoadForm())),
+        ];
+        if (m.custom) {
+            buttons.push(actionButton("↺ Revenir aux réglages par défaut", "ghost", async () => {
+                if (!confirm("Oublier les réglages propres à ce modèle ? Il suivra les réglages par défaut.")) return;
+                await api(`/api/models/${m.id}/settings`, { method: "DELETE" });
+                flashSaved();
+                await loadModels();
+            }));
+        }
+        actions.replaceChildren(...buttons);
+        actions.querySelector("button:nth-child(3)").title = "Charge avec les réglages affichés, sans les enregistrer";
+    }
+    syncLoadActions();
+}
 
 // --- Statut, moteurs et journal -------------------------------------------
 

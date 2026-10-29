@@ -211,7 +211,6 @@ function loadDefaultModel() {
 
 function loadEnginesSection() {
     loadEngines();
-    fillConfigFields($("#defaults-form"));
     const box = $("#logs");
     box.scrollTop = box.scrollHeight;
 }
@@ -226,6 +225,7 @@ function loadModelsSection() {
 }
 
 $("#btn-hw-rescan").addEventListener("click", renderHardware);
+$("#link-defaults").addEventListener("click", () => { state.selectedId = DEFAULTS_ID; });
 
 // Boutons « Parcourir » : la fenêtre de Windows remplit le champ, qui s'enregistre comme une saisie
 async function browseInto(field, title, append = false) {
