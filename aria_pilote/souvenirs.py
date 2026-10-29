@@ -190,6 +190,19 @@ def remove(sid):
         return gone
 
 
+def restore(souvenir):
+    """Remet un souvenir oublié tel qu'il était (même numéro) : la puce « Annuler » d'un « oublier »."""
+    with _lock:
+        data = _read()
+        if any(s["id"] == souvenir["id"] for s in data["souvenirs"]):
+            raise SouvenirError(f"Le souvenir n° {souvenir['id']} existe déjà.")
+        kept = {k: souvenir.get(k) for k in ("id", "texte", "categorie", "cree", "modifie", "conversation", "intime",
+                                             "persona")}
+        data["souvenirs"].append(kept)
+        _write(data)
+        return dict(kept)
+
+
 def clear():
     with _lock:
         count = len(_read()["souvenirs"])

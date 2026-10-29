@@ -329,12 +329,17 @@ def memory_active(conv):
     return souvenirs.settings()["enabled"] and not (conv or {}).get("prive")
 
 
-def memory_block(conv, root):
-    """Les souvenirs glissés dans le prompt (les plus utiles à la dernière demande), avec la règle des outils."""
+def memory_chosen(conv, root):
+    """Les souvenirs glissés dans le prompt : les plus utiles à la dernière demande, selon le persona et son registre."""
     p = persona.for_conversation(conv)
     register = persona.register_for(p, active_skill(conv)) if p else "naturel"
     query = next((m.get("content") or "" for m in reversed((conv or {}).get("messages") or []) if m["role"] == "user"), "")
-    chosen = souvenirs.for_prompt(query, p, register, folder=bool(root))
+    return souvenirs.for_prompt(query, p, register, folder=bool(root))
+
+
+def memory_block(conv, root):
+    """Les souvenirs du prompt, avec la règle des outils."""
+    chosen = memory_chosen(conv, root)
     return souvenirs.MEMORY_RULE + "\n\n" + souvenirs.render(chosen, len(souvenirs.all_souvenirs()))
 
 

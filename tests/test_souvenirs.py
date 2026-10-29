@@ -282,5 +282,55 @@ class Api(Base):
         self.assertTrue(conversations.get(cid)["prive"])
 
 
+class Annuler(Base):
+    """La puce « 🧠 Retenu » : Annuler défait l'outil et le note dans la conversation (le modèle le relit)."""
+
+    def setUp(self):
+        super().setUp()
+        self.api = client()
+        self.cid = new_conversation()
+
+    def undo(self, call_id="c1"):
+        return self.api.post("/api/souvenirs/annuler", json={"conversation_id": self.cid, "tool_call_id": call_id},
+                             headers=ORIGIN)
+
+    def test_annuler_un_ajout(self):
+        asyncio.run(execute(self.cid, "retenir", {"texte": "Il aime le thé vert", "categorie": "preferences"}))
+        self.assertEqual(self.undo().status_code, 200)
+        self.assertEqual(souvenirs.all_souvenirs(), [])
+        message = next(m for m in conversations.get(self.cid)["messages"] if m.get("souvenir"))
+        self.assertTrue(message["souvenir"]["annule"])
+        self.assertIn("Annulé ensuite", message["content"])
+        self.assertEqual(self.undo().status_code, 409)  # pas deux fois
+        self.assertEqual(self.undo("inconnu").status_code, 404)
+
+    def test_annuler_une_mise_a_jour(self):
+        souvenirs.add("Il a une Captur hybride", "toi")
+        asyncio.run(execute(self.cid, "retenir", {"texte": "Il a une Captur hybride grise", "categorie": "toi"}))
+        self.assertEqual(self.undo().status_code, 200)
+        self.assertEqual([s["texte"] for s in souvenirs.all_souvenirs()], ["Il a une Captur hybride"])
+
+    def test_annuler_un_oubli(self):
+        saved, _ = souvenirs.add("Il joue à Stellar Blade", "preferences")
+        asyncio.run(execute(self.cid, "oublier", {"id": saved["id"]}))
+        self.assertEqual(souvenirs.all_souvenirs(), [])
+        self.assertEqual(self.undo().status_code, 200)
+        back = souvenirs.all_souvenirs()
+        self.assertEqual([(s["id"], s["texte"], s["categorie"]) for s in back],
+                         [(saved["id"], "Il joue à Stellar Blade", "preferences")])
+
+    def test_privee_des_la_creation_et_contexte(self):
+        souvenirs.add("Il adore Interstellar", "preferences")
+        conv = self.api.post("/api/conversations", json={"prive": True}, headers=ORIGIN).json()
+        self.assertTrue(conv["prive"])
+        listed = next(c for c in self.api.get("/api/conversations").json() if c["id"] == conv["id"])
+        self.assertTrue(listed["prive"])
+        ctx = self.api.get(f"/api/agent/context?conversation_id={conv['id']}").json()
+        self.assertEqual((ctx["souvenirs"]["prive"], ctx["souvenirs"]["injected"], ctx["layers"]["souvenirs"]), (True, 0, 0))
+        ctx = self.api.get(f"/api/agent/context?conversation_id={self.cid}").json()
+        self.assertEqual((ctx["souvenirs"]["injected"], ctx["souvenirs"]["total"]), (1, 1))
+        self.assertGreater(ctx["layers"]["souvenirs"], 0)
+
+
 if __name__ == "__main__":
     unittest.main()
