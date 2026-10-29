@@ -542,12 +542,20 @@ def prepare_load_skill(root, args):
 # Observer : lire_fenetre (texte) et voir_ecran (capture). Agir : agir_ecran, toujours sur la dernière fenêtre
 # observée, avec ton accord à chaque action, puis une nouvelle observation renvoyée au modèle.
 
-SCREEN_ACTIONS = ("cliquer", "double_clic", "clic_droit", "taper", "touches", "defiler", "glisser")
+SCREEN_ACTIONS = ("cliquer", "double_clic", "clic_droit", "taper", "touches", "defiler", "glisser", "restaurer")
+MAX_ZOOM = 3  # une petite zone est agrandie jusqu'à 3 fois pour que le texte se lise
 SCROLL_DIRECTIONS = ("haut", "bas", "gauche", "droite")
 
 
 def prepare_screen(root, args):
-    return {"fenetre": str(args.get("fenetre") or "").strip()}
+    zone = args.get("zone")
+    if zone is not None:
+        if not isinstance(zone, list) or len(zone) != 4:
+            raise ToolError("« zone » : quatre nombres [x0, y0, x1, y1], pris sur la dernière capture.")
+        zone = [_number(v, "zone") for v in zone]
+        if zone[2] - zone[0] < 8 or zone[3] - zone[1] < 8:
+            raise ToolError("« zone » trop petite : au moins 8 pixels de côté sur la dernière capture.")
+    return {"fenetre": str(args.get("fenetre") or "").strip(), "zone": zone}
 
 
 def _screen_allow(cid):
@@ -565,27 +573,47 @@ def _screen_action_count(cid):
                if m.get("name") == "agir_ecran" and m.get("status") == "ok" and m.get("task_id") == conv.get("task_id"))
 
 
-def _remember_screen(cid, window, elements, capture=None):
-    """Ce que le modèle a vu en dernier : agir_ecran ne vise que cette fenêtre, ses numéros et sa capture."""
+def _remember_screen(cid, window, elements, capture=None, zone=None):
+    """Ce que le modèle a vu en dernier : agir_ecran ne vise que cette fenêtre (et ce qui est ouvert par-dessus : la
+    `zone`), ses numéros et sa capture."""
     state = {"window": window["id"] if window else None, "title": window["titre"] if window else None,
              "rect": list(window["rect"]) if window else None,
+             "zone": list(zone) if zone else (list(window["rect"]) if window else None),
              "elements": {str(e["n"]): {k: e[k] for k in ("type", "nom", "rect", "mot_de_passe")} for e in elements},
              "capture": capture}
     conversations.update(cid, lambda conv: conv.__setitem__("screen_state", state))
 
 
+def _popups(window):
+    """Menus et boîtes de dialogue ouverts par-dessus la fenêtre (même appli) ; aucun si Windows ne répond pas."""
+    try:
+        return screen.popups(window)
+    except screen.ScreenError:
+        return []
+
+
 def _observe(cid, window, capture):
-    """Éléments (et capture si demandée) d'une fenêtre : texte pour le modèle, images à joindre, état retenu."""
-    elements, texts, truncated = screen.read_elements(window)
-    text = screen.describe_elements(window, elements, texts, truncated)
+    """Éléments (et capture si demandée) d'une fenêtre et de ce qui est ouvert par-dessus : texte pour le modèle,
+    images à joindre, état retenu."""
+    extra = _popups(window)
+    if extra:
+        elements, texts, truncated = screen.read_elements(window, extra=extra)
+        text = screen.describe_elements(window, elements, texts, truncated, extra)
+    else:
+        elements, texts, truncated = screen.read_elements(window)
+        text = screen.describe_elements(window, elements, texts, truncated)
+    area = screen.zone(window, extra)
     if not capture:
-        _remember_screen(cid, window, elements)
+        _remember_screen(cid, window, elements, zone=area)
         return text, []
-    image, origin = screen.capture_window(window)
+    if extra:
+        image, origin = screen.capture_region(area), area[:2]  # un menu n'apparaît pas dans la capture de la fenêtre seule
+    else:
+        image, origin = screen.capture_window(window)
     small, scale = screen.fit(image, images.MAX_SIDE)
     if elements:
         small = screen.draw_marks(small, elements, origin, scale)
-    _remember_screen(cid, window, elements, {"origin": list(origin), "scale": scale, "size": list(small.size)})
+    _remember_screen(cid, window, elements, {"origin": list(origin), "scale": scale, "size": list(small.size)}, area)
     if not manager.vision:
         return text + "\n\nLe modèle chargé ne voit pas les images : seule la liste ci-dessus est disponible.", []
     note = "les cadres numérotés correspondent à la liste" if elements else "image réduite"
@@ -605,7 +633,45 @@ def _read_window(spec, cid):
     return _ok(_truncate(text))
 
 
-def _see_screen(spec, cid):
+def _zoom(zone, cid):
+    """Une zone de la dernière capture, recapturée en pleine résolution et agrandie si elle est petite : pour lire un
+    petit texte. Les numéros d'éléments restent valables, et les x, y se lisent désormais sur ce zoom."""
+    state = (conversations.get(cid) or {}).get("screen_state") or {}
+    capture = state.get("capture")
+    if not capture:
+        raise ToolError("Le zoom part d'une capture : appelle d'abord voir_ecran sur la fenêtre.")
+    ox, oy, scale = capture["origin"][0], capture["origin"][1], capture["scale"]
+    rect = [ox + zone[0] / scale, oy + zone[1] / scale, ox + zone[2] / scale, oy + zone[3] / scale]
+    bounds = state.get("zone")
+    if bounds:  # jamais au-delà de ce qui a été observé
+        rect = [max(rect[0], bounds[0]), max(rect[1], bounds[1]), min(rect[2], bounds[2]), min(rect[3], bounds[3])]
+    if rect[2] - rect[0] < 4 or rect[3] - rect[1] < 4:
+        raise ToolError("Cette zone tombe hors de ce qui a été observé.")
+    try:
+        image = screen.capture_region(rect)
+    except screen.ScreenError as exc:
+        raise ToolError(str(exc))
+    factor = min(MAX_ZOOM, images.MAX_SIDE / max(image.size))
+    if factor > 1:
+        image = image.resize((round(image.width * factor), round(image.height * factor)))
+    else:
+        image, factor = screen.fit(image, images.MAX_SIDE)
+    inside = [{**e, "n": int(n), "rect": tuple(e["rect"])} for n, e in state.get("elements", {}).items()
+              if e["rect"][0] < rect[2] and e["rect"][2] > rect[0] and e["rect"][1] < rect[3] and e["rect"][3] > rect[1]]
+    if inside:
+        image = screen.draw_marks(image, inside, rect[:2], factor)
+    new_capture = {"origin": rect[:2], "scale": factor, "size": list(image.size)}
+    conversations.update(cid, lambda conv: conv.setdefault("screen_state", {}).__setitem__("capture", new_capture))
+    text = (f"Zoom sur la zone ({zone[0]:.0f}, {zone[1]:.0f}) – ({zone[2]:.0f}, {zone[3]:.0f}) de la capture précédente, "
+            f"agrandie ×{factor:.1f}. Les x, y d'agir_ecran se lisent maintenant sur ce zoom ; les numéros restent valables.")
+    if not manager.vision:
+        return _ok(text + "\n\nLe modèle chargé ne voit pas les images : le zoom ne lui sert à rien.")
+    return _ok(text + "\n\nLe zoom est joint juste après ce résultat.", images=[images.store(cid, image, "png")])
+
+
+def _see_screen(spec, cid, zone=None):
+    if zone:
+        return _zoom(zone, cid)
     try:
         listed = screen.allowed_windows(screen.windows(), _screen_allow(cid))
         if spec:
@@ -636,7 +702,7 @@ async def run_read_window(prepared, cid):
 
 
 async def run_see_screen(prepared, cid):
-    return await asyncio.to_thread(_see_screen, prepared["fenetre"], cid)
+    return await asyncio.to_thread(_see_screen, prepared["fenetre"], cid, prepared.get("zone"))
 
 
 def _number(value, name):
@@ -667,6 +733,9 @@ def prepare_screen_action(root, args):
         raise ToolError("Indique la cible : « element » (son numéro) ou « x » et « y » (sur la dernière capture).")
     if action == "glisser" and p["vers_element"] is None and (p["vers_x"] is None or p["vers_y"] is None):
         raise ToolError("Indique où lâcher : « vers_element », ou « vers_x » et « vers_y ».")
+    p["fenetre"] = str(args.get("fenetre") or "").strip()
+    if action == "restaurer" and not p["fenetre"]:
+        raise ToolError("Indique la « fenetre » à rouvrir (id, morceau du titre ou programme).")
     if action == "taper" and not (isinstance(p["texte"], str) and p["texte"]):
         raise ToolError("Indique le « texte » à taper.")
     if action == "touches":
@@ -695,7 +764,7 @@ def _target_window(state, _allow=None):
     except screen.ScreenError as exc:
         raise ToolError(str(exc))
     if window["reduite"]:
-        raise ToolError(f"La fenêtre « {window['titre']} » est réduite : demande à l'utilisateur de la rouvrir.")
+        raise ToolError(f"La fenêtre « {window['titre']} » est réduite : rouvre-la avec agir_ecran, action « restaurer ».")
     if list(window["rect"]) != list(state["rect"]):
         raise ToolError("La fenêtre a bougé ou changé de taille depuis ta dernière observation : relis-la avant d'agir.")
     return window
@@ -714,7 +783,7 @@ def _point(state, window, element, x, y):
         raise ToolError("Des coordonnées se lisent sur une capture : appelle d'abord voir_ecran sur cette fenêtre, "
                         "ou désigne un élément par son numéro.")
     sx, sy = capture["origin"][0] + x / capture["scale"], capture["origin"][1] + y / capture["scale"]
-    left, top, right, bottom = window["rect"]
+    left, top, right, bottom = state.get("zone") or window["rect"]  # la fenêtre et ce qui est ouvert par-dessus
     if not (left <= sx < right and top <= sy < bottom):
         raise ToolError(f"Le point ({x:.0f}, {y:.0f}) tombe hors de la fenêtre « {window['titre']} ».")
     return sx, sy, None
@@ -750,6 +819,8 @@ def bind_screen_action(prepared, cid):
     if _screen_action_count(cid) >= MAX_SCREEN_ACTIONS:
         raise ToolError(f"J'ai déjà fait {MAX_SCREEN_ACTIONS} actions à l'écran dans cette tâche : je m'arrête et je "
                         "te rends compte. Relance-moi si tu veux que je continue.")
+    if prepared["action"] == "restaurer":
+        return _bind_restore(prepared, cid)
     state = (conversations.get(cid) or {}).get("screen_state")
     window = _target_window(state, _screen_allow(cid))
     p = dict(prepared)
@@ -792,13 +863,42 @@ def bind_screen_action(prepared, cid):
     return p
 
 
+def _bind_restore(prepared, cid):
+    """Rouvrir une fenêtre réduite (ou la remettre au premier plan) : une fenêtre autorisée, désignée par son nom."""
+    allow = _screen_allow(cid)
+    try:
+        window = screen.find(prepared["fenetre"], screen.allowed_windows(screen.windows(), allow))
+        screen.ensure_allowed(window, allow)
+    except screen.ScreenError as exc:
+        raise ToolError(str(exc))
+    what = "Rouvrir" if window["reduite"] else "Mettre au premier plan"
+    return {**prepared, "window": window,
+            "preview": f"{what} la fenêtre « {window['titre']} »\nFenêtre : « {window['titre']} » ({window['processus']})"}
+
+
+def _restore(p, cid):
+    window = p["window"]
+    screen.restore(window["id"])
+    time.sleep(screen.SETTLE_S + p["attente"])
+    still = next((w for w in screen.windows() if w["id"] == window["id"]), None)
+    if still is None:
+        raise ToolError(f"La fenêtre « {window['titre']} » n'existe plus.")
+    text, shots = _observe(cid, still, capture=False)
+    return _ok(_truncate(f"Fait : {p['preview'].split(chr(10))[0]}.\n\nAprès l'action :\n{text}"))
+
+
 def _act(p, cid):
+    if p["action"] == "restaurer":
+        return _restore(p, cid)
     state = (conversations.get(cid) or {}).get("screen_state")
     window = _target_window(state, _screen_allow(cid))  # de nouveau : du temps a passé pendant ta décision
     hwnd = window["id"]
-    screen.bring_to_front(hwnd)
+    # La fenêtre et ce qui est ouvert par-dessus (menu, boîte de dialogue) : la cible peut être dans l'un ou l'autre
+    owners = {hwnd, *(pop["id"] for pop in _popups(window))}
+    if screen.foreground() not in owners:  # remettre la fenêtre devant refermerait le menu ouvert
+        screen.bring_to_front(hwnd)
     for point in [pt for pt in (p.get("point"), p.get("to")) if pt]:
-        if screen.owner_at(*point) != hwnd:
+        if screen.owner_at(*point) not in owners:
             raise ToolError("Une autre fenêtre recouvre la cible : je n'ai rien fait. Observe à nouveau.")
     action = p["action"]
     if action in ("cliquer", "double_clic", "clic_droit"):
@@ -1033,9 +1133,13 @@ TOOLS = {t.name: t for t in [
     ),
     Tool(
         "voir_ecran", "screen",
-        "Capture d'une fenêtre, avec ses éléments encadrés et numérotés comme dans lire_fenetre, ou de tous les "
-        "écrans sans argument. Coûte environ 1 000 tokens : seulement quand le texte ne suffit pas.",
-        _schema({"fenetre": {"type": "string", "description": "Id, morceau du titre ou programme (facultatif)."}}, []),
+        "Capture d'une fenêtre (et de ses menus ou boîtes de dialogue ouverts), avec ses éléments encadrés et "
+        "numérotés comme dans lire_fenetre, ou de tous les écrans sans argument. Avec « zone » : recapture une partie "
+        "de la dernière capture en pleine résolution, agrandie, pour lire un petit texte. Coûte environ 1 000 tokens : "
+        "seulement quand le texte ne suffit pas.",
+        _schema({"fenetre": {"type": "string", "description": "Id, morceau du titre ou programme (facultatif)."},
+                 "zone": {"type": "array", "items": {"type": "number"}, "minItems": 4, "maxItems": 4,
+                          "description": "[x0, y0, x1, y1] sur la dernière capture : la partie à agrandir."}}, []),
         prepare_screen, run_see_screen,
     ),
     Tool(
@@ -1044,7 +1148,9 @@ TOOLS = {t.name: t for t in [
         "fois : cliquer, double_clic ou clic_droit sur un élément (son numéro) ou un point (x, y de la dernière "
         "capture) ; taper un texte (dans un élément : il clique d'abord dedans, ce qui défait une sélection ; "
         "remplacer=true pour remplacer tout son contenu ; ou là où est le curseur) ; touches (« ctrl+s », « entree », "
-        "« alt+tab ») ; defiler (haut, bas, gauche, droite) ; glisser d'un élément ou point vers un autre. "
+        "« alt+tab ») ; defiler (haut, bas, gauche, droite) ; glisser d'un élément ou point vers un autre ; "
+        "restaurer une fenêtre réduite (« fenetre » : son nom, sans observation préalable). Les menus et boîtes de "
+        "dialogue ouverts par la fenêtre font partie de l'observation : leurs éléments sont numérotés en tête. "
         "Renvoie ensuite la fenêtre telle qu'elle est devenue. Une action à la fois.",
         _schema({
             "action": {"type": "string", "enum": list(SCREEN_ACTIONS)},
@@ -1059,6 +1165,7 @@ TOOLS = {t.name: t for t in [
             "vers_element": {"type": "integer", "description": "Élément où lâcher (action glisser)."},
             "vers_x": {"type": "number"}, "vers_y": {"type": "number"},
             "attente": {"type": "number", "description": "Secondes à attendre avant d'observer le résultat (10 au plus)."},
+            "fenetre": {"type": "string", "description": "Fenêtre à rouvrir (action restaurer) : id, titre ou programme."},
         }, ["action"]),
         prepare_screen_action, run_screen_action, bind_screen_action,
     ),
