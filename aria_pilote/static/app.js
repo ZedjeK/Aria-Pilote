@@ -160,7 +160,7 @@ const LOAD_GROUPS = [
         { key: "ubatch_size", label: "Micro-batch (tokens)", type: "number", min: 0, placeholder: "0 = 512",
             help: "Le morceau réellement envoyé à la carte graphique. 512 à 2048 accélère souvent la lecture du prompt ; ne dépasse pas le batch." },
         { key: "mtp", label: "Prédiction multi-tokens (MTP)", type: "check", when: (m) => !m || m.mtp_layers,
-            help: "Le modèle devine les tokens suivants avec sa couche MTP, puis les vérifie : la génération peut aller nettement plus vite, sans changer le résultat. Expérimental : vérifie qu'il charge bien." },
+            help: "Le modèle devine les tokens suivants avec sa couche MTP, puis les vérifie, sans changer le résultat. Mesuré sur ta machine : Bonsai MTP avec PrismML, de 66 à environ 120 tok/s ; Qwen avec llama.cpp officiel, instable et souvent plus lent. À essayer modèle par modèle." },
         { key: "mtp_draft", label: "Tokens devinés d'avance", type: "number", min: 0, placeholder: "0 = auto", when: (m) => !m || m.mtp_layers,
             help: "Combien de tokens la MTP propose à chaque tour (0 : valeur du moteur)." },
     ] },
