@@ -25,6 +25,10 @@ INTIMATE_REGISTERS = {"naturel"}
 # Goûts précis, au-delà des thèmes : là où vit vraiment la personnalité
 TASTE_LISTS = {"favorites": "Tes coups de cœur", "dislikes": "Ce que tu n'aimes pas", "opinions": "Tes avis tranchés"}
 MAX_TASTES, MAX_TASTE_CHARS = 30, 150
+# Chaque thème coché a son intensité (1 aime bien, 2 adore, 3 passion) et une précision libre (« NieR, Horizon »)
+THEME_LEVELS = {1: "ce que tu aimes bien", 2: "ce que tu adores", 3: "ce qui te passionne"}
+DEFAULT_THEME_LEVEL = 3  # un thème d'avant la 0.20 (sans intensité) restait « ce qui te passionne »
+MAX_THEME_NOTE = 150
 REGISTERS = {r["id"]: r["label"] for r in CATALOGUE["registers"]}
 INTENSITIES = {1: "légère", 2: "marquée", 3: "très marquée"}
 GENDERS = {"feminin": "au féminin", "masculin": "au masculin", "neutre": "sans marque de genre (tournures neutres)"}
@@ -56,6 +60,7 @@ DEFAULT_PERSONA = {
         "concision": {"naturel": 2, "sobre": 1, "professionnel": 0},
     },
     "themes": [],
+    "theme_details": {},
     "favorites": [],
     "dislikes": [],
     "opinions": [],
@@ -113,6 +118,15 @@ def clean(data, warnings=None):
             themes.append(theme) if theme not in themes else None
         else:
             warnings.append(f"Thème inconnu ignoré : {theme}")
+    theme_details = {}
+    for theme in themes:
+        detail = (data.get("theme_details") or {}).get(theme) or {}
+        try:
+            level = int(detail.get("level", DEFAULT_THEME_LEVEL))
+        except (TypeError, ValueError):
+            level = DEFAULT_THEME_LEVEL
+        theme_details[theme] = {"level": min(3, max(1, level)),
+                                "note": _text(detail.get("note"), MAX_THEME_NOTE, "Précision du thème")}
     tastes = {}
     for key, label in TASTE_LISTS.items():
         items = [_text(item, MAX_TASTE_CHARS, label) for item in (data.get(key) or [])]
@@ -133,6 +147,7 @@ def clean(data, warnings=None):
         "presentation": _text(data.get("presentation"), MAX_PRESENTATION, "Présentation"),
         "traits": traits,
         "themes": themes,
+        "theme_details": theme_details,
         **tastes,
         "rules": rules,
         "intimate": bool(data.get("intimate")),
@@ -322,12 +337,19 @@ def personality(persona, register):
         if items:
             lines += [f"{label} :", *items]
     level = _expressed(persona, "gouts", register)
-    themes = [THEMES[t] for t in persona.get("themes") or [] if t in THEMES]
+    themes = [t for t in persona.get("themes") or [] if t in THEMES]
     tastes = [(TASTE_LISTS[key], persona.get(key) or []) for key in TASTE_LISTS]
     if level and (themes or any(items for _, items in tastes)):
         lines.append(f"Tes goûts (à évoquer de façon {INTENSITIES[level]}, sans les réciter) :")
-        if themes:
-            lines.append(f"- Ce qui te passionne : {', '.join(themes)}.")
+        details = persona.get("theme_details") or {}
+        for rank in (3, 2, 1):  # le plus fort d'abord
+            named = []
+            for t in themes:
+                detail = details.get(t) or {}
+                if detail.get("level", DEFAULT_THEME_LEVEL) == rank:
+                    named.append(f"{THEMES[t]} ({detail['note']})" if detail.get("note") else THEMES[t])
+            if named:
+                lines.append(f"- {THEME_LEVELS[rank][0].upper()}{THEME_LEVELS[rank][1:]} : {', '.join(named)}.")
         lines += [f"- {label} : {' ; '.join(items)}." for label, items in tastes if items]
     return lines
 

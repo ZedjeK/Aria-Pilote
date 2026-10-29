@@ -103,12 +103,25 @@ class Personnalite(unittest.TestCase):
         self.assertIn("gouts", p["traits"])  # des goûts saisis : l'intensité suggérée est ajoutée
         self.assertEqual(p["favorites"], ["Blade Runner 1982"])  # doublons et vides retirés
         text = persona.render(p, "naturel")
-        self.assertIn("- Ce qui te passionne : Cyberpunk, Japon.", text)
+        self.assertIn("- Ce qui te passionne : Cyberpunk, Japon.", text)  # sans intensité : comme avant, la passion
         self.assertIn("- Tes coups de cœur : Blade Runner 1982.", text)
         self.assertIn("- Ce que tu n'aimes pas : le Comic Sans.", text)
         self.assertIn("- Tes avis tranchés : quatre espaces, pas deux.", text)
         p["traits"]["gouts"]["professionnel"] = 0
         self.assertNotIn("coups de cœur", persona.render(p, "professionnel"))
+
+    def test_intensite_et_precision_par_theme(self):
+        p = persona.clean({**self.BASE, "themes": ["jeux-video", "japon", "espace"],
+                           "theme_details": {"jeux-video": {"level": 3, "note": "NieR, Horizon"}, "japon": {"level": 1},
+                                             "espace": {"level": 9}, "inconnu": {"level": 2}}})
+        self.assertEqual(p["theme_details"]["espace"]["level"], 3)  # borné
+        self.assertNotIn("inconnu", p["theme_details"])
+        text = persona.render(p, "naturel")
+        self.assertIn("- Ce qui te passionne : Jeux vidéo (NieR, Horizon), Espace et astronomie.", text)
+        self.assertIn("- Ce que tu aimes bien : Japon.", text)
+        self.assertLess(text.index("passionne"), text.index("aimes bien"))  # le plus fort d'abord
+        with self.assertRaises(persona.PersonaError):
+            persona.clean({**self.BASE, "themes": ["japon"], "theme_details": {"japon": {"note": "x" * 151}}})
 
     def test_liste_trop_longue_refusee(self):
         with self.assertRaises(persona.PersonaError):
