@@ -77,12 +77,16 @@ function renderPersonaPage() {
 
 // Enregistrement : tout le persona d'un coup, un court instant après la dernière modification
 function savePersona() {
+    personaUi.version = (personaUi.version || 0) + 1;
     clearTimeout(personaUi.saveTimer);
     personaUi.saveTimer = setTimeout(async () => {
         const p = personaUi.current;
+        const version = personaUi.version;
         try {
             const saved = await api(`/api/personas/${p.id}`, { method: "PUT", body: JSON.stringify(p) });
-            personaUi.current = { ...saved, rules: p.rules };  // les règles en cours de saisie restent affichées
+            // Le même objet est mis à jour, pas remplacé : les boutons déjà affichés le modifient (avant, leur clic
+            // suivant partait sur l'ancien objet et se perdait). Une modif faite pendant l'envoi n'est pas écrasée.
+            if (personaUi.current === p && version === personaUi.version) Object.assign(p, saved, { rules: p.rules });
             const index = personaUi.list.findIndex((x) => x.id === saved.id);
             personaUi.list[index] = saved;
             flashSaved();
@@ -113,6 +117,8 @@ $("#persona-pick").addEventListener("change", () => loadPersonaSection($("#perso
 // Chaque trait a une intensité par registre : trois crans (léger, marqué, très marqué).
 const LEVEL_LABELS = ["absent", "léger", "marqué", "très marqué"];
 const INTIMATE_FAMILY = "intimite";
+// Intensité propre à chaque thème coché, et ce qu'elle veut dire pour le modèle
+const THEME_LEVELS = [[1, "♡ Aime bien"], [2, "♥ Adore"], [3, "🔥 Passion"]];
 const TASTE_LISTS = [
     { key: "favorites", label: "❤ Coups de cœur", hint: "Ex. Mirror's Edge et Faith, Blade Runner 1982, Kraftwerk" },
     { key: "dislikes", label: "💢 N'aime pas", hint: "Ex. le Comic Sans, admin/admin, le câblage spaghetti" },
@@ -235,9 +241,16 @@ function renderTastes() {
                 const chip = el("button", { type: "button", className: `chip${chosen.has(theme.id) ? " on" : ""}` }, theme.label);
                 chip.addEventListener("click", () => {
                     const set = new Set(p.themes || []);
-                    if (set.has(theme.id)) set.delete(theme.id);
-                    else set.add(theme.id);
-                    p.themes = personaUi.catalogue.themes.map((t) => t.id).filter((id) => set.has(id));
+                    p.theme_details ||= {};
+                    if (set.has(theme.id)) {
+                        set.delete(theme.id);
+                        delete p.theme_details[theme.id];
+                    } else {
+                        set.add(theme.id);
+                        p.theme_details[theme.id] = { level: 2, note: "" };  // un nouveau thème démarre à « adore »
+                    }
+                    // L'ordre de tes clics est gardé : le dernier thème coché arrive en bas de ta liste
+                    p.themes = [...(p.themes || []).filter((id) => set.has(id)), ...[...set].filter((id) => !(p.themes || []).includes(id))];
                     if (set.size && !p.traits.gouts) p.traits.gouts = { ...personaUi.catalogue.traits.find((t) => t.id === "gouts").suggested };
                     renderTastes();
                     savePersona();
@@ -246,6 +259,7 @@ function renderTastes() {
             })));
         return box;
     }));
+    renderThemeRows();
     $("#taste-lists").replaceChildren(...TASTE_LISTS.map(({ key, label, hint }) => {
         const items = p[key] || [];
         const list = el("ul", { className: "rules-list" }, ...items.map((text, i) => {
@@ -269,6 +283,54 @@ function renderTastes() {
         input.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); commit(); } });
         return el("div", { className: "taste-list" }, el("div", { className: "set-label" }, label), list,
             el("div", { className: "taste-add" }, input, add));
+    }));
+}
+
+// Le détail d'un thème, lu au moment du clic : l'enregistrement remplace les objets internes du persona
+function currentDetail(themeId) {
+    const details = personaUi.current.theme_details ||= {};
+    return details[themeId] ||= { level: 3, note: "" };
+}
+
+// Les thèmes cochés, un par ligne : leur intensité (aime bien, adore, passion) et ce qu'elle en aime précisément
+function renderThemeRows() {
+    const p = personaUi.current;
+    const box = $("#theme-rows");
+    const themes = (p.themes || []).map((id) => personaUi.catalogue.themes.find((t) => t.id === id)).filter(Boolean);
+    if (!themes.length) {
+        box.replaceChildren(el("p", { className: "muted small" }, "Coche des thèmes ci-dessus : chacun aura ici son intensité et tes précisions."));
+        return;
+    }
+    p.theme_details ||= {};
+    const categories = Object.fromEntries(personaUi.catalogue.theme_categories.map((c) => [c.id, c.label]));
+    box.replaceChildren(el("div", { className: "set-label" }, `Ses thèmes · ${themes.length}`), ...themes.map((theme) => {
+        const detail = p.theme_details[theme.id] ||= { level: 3, note: "" };  // thème coché avant : il restait « passion »
+        const levels = el("div", { className: "theme-levels", role: "group", ariaLabel: `Intensité pour ${theme.label}` },
+            ...THEME_LEVELS.map(([value, label]) => {
+                const b = el("button", { type: "button", className: `chip${detail.level === value ? " on" : ""}` }, label);
+                b.addEventListener("click", () => {
+                    currentDetail(theme.id).level = value;
+                    renderThemeRows();
+                    savePersona();
+                });
+                return b;
+            }));
+        const note = el("input", { value: detail.note || "", maxLength: 150,
+            placeholder: `Précise : ${theme.example || "lesquels, ce qu'elle en aime"}` });
+        note.addEventListener("change", () => {
+            currentDetail(theme.id).note = note.value.trim();
+            savePersona();
+        });
+        const remove = el("button", { type: "button", className: "ghost danger-text", title: "Retirer ce thème" }, "✕");
+        remove.addEventListener("click", () => {
+            p.themes = p.themes.filter((id) => id !== theme.id);
+            delete p.theme_details[theme.id];
+            renderTastes();
+            savePersona();
+        });
+        return el("div", { className: "theme-row" },
+            el("div", {}, el("div", {}, theme.label), el("div", { className: "muted small" }, categories[theme.category] || "")),
+            levels, note, remove);
     }));
 }
 

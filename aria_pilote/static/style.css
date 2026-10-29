@@ -646,6 +646,12 @@ button.danger-text { color: var(--err); }
 .dots.locked { color: var(--muted); text-align: center; }
 .themes-list { display: grid; gap: 6px; }
 .theme-category > summary { cursor: pointer; font-size: 13px; }
+.theme-rows { display: grid; gap: 6px; margin: 10px 0 4px; }
+.theme-row { display: grid; grid-template-columns: minmax(140px, 200px) auto minmax(160px, 1fr) 30px; gap: 8px 12px;
+    align-items: center; padding: 6px 10px; border: 1px solid var(--border); border-radius: 8px; }
+.theme-levels { display: flex; gap: 4px; flex-wrap: wrap; }
+.theme-row .remove, .theme-row > button { padding: 2px 6px; font-size: 12px; }
+@media (max-width: 900px) { .theme-row { grid-template-columns: 1fr auto; } .theme-row input { grid-column: 1 / -1; } }
 .theme-chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 6px 0 4px; }
 .mcp-form label.wide { grid-column: 1 / -1; }
 .mcp-list { display: grid; gap: 14px; }
