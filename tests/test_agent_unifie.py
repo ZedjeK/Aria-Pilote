@@ -38,7 +38,8 @@ def keep_config(test):
 
 class Capabilities(unittest.TestCase):
     def test_sans_dossier_aucun_outil_de_fichiers(self):
-        self.assertEqual(set(agent.allowed_tools(folder=False)), {"load_skill", "web_search", "web_fetch", "update_todo"})
+        self.assertEqual(set(agent.allowed_tools(folder=False)), {"load_skill", "web_search", "web_fetch", "update_todo",
+                                                                  "retenir", "oublier", "chercher_souvenirs"})
         # avec un dossier : tous, sauf ceux de l'écran tant que le contrôle du PC n'est pas activé
         self.assertEqual(set(agent.allowed_tools(folder=True)),
                          {n for n, t in agent.tools.TOOLS.items() if not t.kind.startswith("screen")})

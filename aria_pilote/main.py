@@ -14,7 +14,7 @@ from pydantic import BaseModel, Field
 
 from . import (VERSION, agent, attachments, background, backups, chat, config, context, conversations, downloads, engines, hardware,
                hooks, hub, images, mcp_client, models, optimizer, permissions, persona, pick_folder, presets, screen, searxng,
-               skills, subagents, tools, trial, updates, workspace)
+               skills, souvenirs, subagents, tools, trial, updates, workspace)
 from .server import EngineMissing, manager
 
 STATIC_DIR = Path(__file__).parent / "static"
@@ -126,6 +126,12 @@ class NewAgentSettings(BaseModel):
     auto_web: bool | None = None
 
 
+class MemorySettings(BaseModel):
+    enabled: bool | None = None
+    ask_before: bool | None = None
+    max_injected: int | None = Field(None, ge=0, le=200)
+
+
 class WebSettings(BaseModel):
     enabled: bool | None = None
     results: int | None = Field(None, ge=3, le=20)
@@ -156,6 +162,7 @@ class ConfigPatch(BaseModel):
     auto_check: bool | None = None
     screen_control: bool | None = None
     web: WebSettings | None = None
+    memory: MemorySettings | None = None
     searxng_idle_minutes: int | None = Field(None, ge=0, le=1440)
     backup_retention_days: int | None = Field(None, ge=0, le=3650)
     conversation_retention_days: int | None = Field(None, ge=0, le=3650)
@@ -195,6 +202,7 @@ class ConversationPatch(BaseModel):
     screen_allow: list[str] | None = None  # programmes autorisés pour cette conversation ([] = aucun ; absent = tous)
     screen_mode: str | None = None  # « fenetres » (celles cochées) ou « pc » (tout le PC, sauf les applis interdites)
     mcp: list[str] | None = None  # serveurs MCP proposés dans cette conversation
+    prive: bool | None = None  # 🕶 conversation privée : rien n'y est retenu, aucun souvenir n'y sert
     mcp_default: bool = False  # revenir aux serveurs actifs d'office
 
 
@@ -600,6 +608,8 @@ def patch_conversation(cid: str, patch: ConversationPatch):
     if patch.screen_allow is not None:
         conv["screen_allow"] = [p.strip().lower() for p in patch.screen_allow if p.strip()]
         conv["screen_mode"] = "fenetres"
+    if patch.prive is not None:
+        conv["prive"] = patch.prive
     if patch.mcp_default:
         conv.pop("mcp", None)
     elif patch.mcp is not None:
@@ -801,6 +811,51 @@ def get_skill(name: str, conversation_id: str | None = None):
         return skills.to_dict(skills.get(name, _skills_root(conversation_id)), with_body=True)
     except skills.SkillError as exc:
         raise HTTPException(404, str(exc))
+
+
+class SouvenirBody(BaseModel):
+    texte: str | None = None
+    categorie: str | None = None
+
+
+@app.get("/api/souvenirs")
+def list_souvenirs():
+    items = sorted(souvenirs.all_souvenirs(), key=lambda s: s.get("modifie", 0), reverse=True)
+    return {"souvenirs": items, "categories": souvenirs.CATEGORIES, "settings": souvenirs.settings()}
+
+
+@app.post("/api/souvenirs")
+def add_souvenir(req: SouvenirBody):
+    """Un souvenir ajouté à la main (Réglages › Toi)."""
+    try:
+        saved, _ = souvenirs.add(req.texte or "", req.categorie or "toi")
+    except souvenirs.SouvenirError as exc:
+        raise HTTPException(400, str(exc))
+    return saved
+
+
+@app.put("/api/souvenirs/{sid}")
+def edit_souvenir(sid: str, req: SouvenirBody):
+    try:
+        return souvenirs.update(sid, req.texte, req.categorie)
+    except souvenirs.SouvenirError as exc:
+        raise HTTPException(404 if "Pas de souvenir" in str(exc) else 400, str(exc))
+
+
+@app.delete("/api/souvenirs/{sid}")
+def delete_souvenir(sid: str):
+    try:
+        return souvenirs.remove(sid)
+    except souvenirs.SouvenirError as exc:
+        raise HTTPException(404, str(exc))
+
+
+@app.delete("/api/souvenirs")
+def clear_souvenirs(confirm: bool = False):
+    """« Tout oublier » : seulement avec confirm=true (la page le demande d'abord)."""
+    if not confirm:
+        raise HTTPException(400, "Confirme avec confirm=true : tous les souvenirs seront effacés.")
+    return {"oublies": souvenirs.clear()}
 
 
 class MCPServerPatch(BaseModel):

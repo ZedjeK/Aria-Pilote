@@ -6,8 +6,8 @@ from pathlib import Path
 
 import httpx
 
-from . import (background, backups, chat, config, context, conversations, hooks, mcp_client, persona, skills, subagents,
-               toolrun, tools, workspace)
+from . import (background, backups, chat, config, context, conversations, hooks, mcp_client, persona, skills, souvenirs,
+               subagents, toolrun, tools, workspace)
 
 MAX_TOOL_CALLS = 25  # par défaut ; réglable dans Réglages › Comportement (max_tool_calls)
 # Une étape d'agent qui réfléchit puis écrit un fichier entier a besoin de place
@@ -111,7 +111,8 @@ QUESTION_DECIDE = "L'utilisateur te laisse décider : choisis l'option la plus r
 QUESTION_SKIPPED = "Non exécuté : attends d'abord la réponse de l'utilisateur à ta question."
 
 # Sans dossier attaché, seuls ces outils existent : ils ne touchent jamais aux fichiers de l'utilisateur
-NO_FOLDER_TOOLS = {"load_skill", "web_search", "web_fetch", "update_todo"}
+NO_FOLDER_TOOLS = {"load_skill", "web_search", "web_fetch", "update_todo", "retenir", "oublier", "chercher_souvenirs"}
+MEMORY_TOOLS = {"retenir", "oublier", "chercher_souvenirs"}
 SCREEN_RULE = """Écran du PC : l'utilisateur t'a ouvert son écran. C'est le dernier recours : si une commande, un
 fichier ou le web suffit, passe par eux. lire_fenetre sans argument liste les fenêtres ouvertes ; avec une fenêtre, il
 donne ses éléments numérotés et ses textes, sans image. voir_ecran ajoute la capture, aux mêmes numéros : plus
@@ -323,10 +324,26 @@ def mcp_servers(conv):
     return mcp_client.registry.active_servers(conv)
 
 
+def memory_active(conv):
+    """Souvenirs en service : activés dans les Réglages, et pas dans une conversation privée (🕶)."""
+    return souvenirs.settings()["enabled"] and not (conv or {}).get("prive")
+
+
+def memory_block(conv, root):
+    """Les souvenirs glissés dans le prompt (les plus utiles à la dernière demande), avec la règle des outils."""
+    p = persona.for_conversation(conv)
+    register = persona.register_for(p, active_skill(conv)) if p else "naturel"
+    query = next((m.get("content") or "" for m in reversed((conv or {}).get("messages") or []) if m["role"] == "user"), "")
+    chosen = souvenirs.for_prompt(query, p, register, folder=bool(root))
+    return souvenirs.MEMORY_RULE + "\n\n" + souvenirs.render(chosen, len(souvenirs.all_souvenirs()))
+
+
 def task_tools(conv, root):
     """Outils permis et schémas d'une tâche : ceux d'Aria, puis ceux des serveurs MCP actifs de la conversation.
     Avec des outils MCP, la liste des permis est toujours explicite : un nom mcp__… hors de la liste est refusé."""
     allowed = allowed_tools(folder=bool(root), screen=screen_enabled(conv))
+    if not memory_active(conv):  # souvenirs coupés ou conversation privée : ni retenir, ni chercher
+        allowed = [n for n in (allowed if allowed is not None else tools.TOOLS) if n not in MEMORY_TOOLS]
     schemas = [s for s in tools.SCHEMAS if allowed is None or s["function"]["name"] in allowed]
     servers = mcp_servers(conv)
     mcp_names = mcp_client.registry.names(servers)
@@ -380,6 +397,7 @@ def _system_prompt(conv, root, memory, plan_required=False):
     parts = [persona_text, profile_text, main, PRIORITY_RULE, PLAN_REQUIRED if plan_required else PLAN_RULE,
              SCREEN_RULE if screen_enabled(conv) else "",
              mcp_client.MCP_RULE if mcp_client.registry.names(mcp_servers(conv)) else "",
+             memory_block(conv, root) if memory_active(conv) else "",
              skills.prompt_section(root), subagents.prompt_section(root)]
     if memory:
         parts.append(MEMORY_PROMPT.format(name=memory_file(root) or MEMORY_FILE, memory=memory))
@@ -475,6 +493,8 @@ async def _execute(cid, root, call, run_ctx):
         message["rule"] = result["rule"]  # commande autorisée par une règle du projet
     if result.get("images"):
         message["images"] = result["images"]  # capture d'écran : envoyée au modèle juste après ce résultat
+    if result.get("souvenir"):
+        message["souvenir"] = result["souvenir"]  # la puce « 🧠 Retenu » sous la réponse
     conversations.append_message(cid, message)
     yield chat.event({
         "type": "tool_result",
@@ -485,6 +505,7 @@ async def _execute(cid, root, call, run_ctx):
         "syntax": result.get("syntax"),
         "rule": result.get("rule"),
         "todo": result.get("todo"),
+        "souvenir": result.get("souvenir"),
     })
 
 

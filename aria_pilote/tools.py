@@ -17,7 +17,7 @@ import time
 from dataclasses import dataclass
 from typing import Awaitable, Callable
 
-from . import background, backups, checks, config, conversations, images, jobs, screen, skills, web, workspace
+from . import background, backups, checks, config, conversations, images, jobs, screen, skills, souvenirs, web, workspace
 from .server import manager
 
 SKIP_DIRS = {".git", ".hg", ".svn", "node_modules", ".venv", "venv", "__pycache__", ".mypy_cache", ".idea"}
@@ -1136,6 +1136,96 @@ async def run_screen_action(prepared, cid):
         raise ToolError(str(exc))
 
 
+# --- Souvenirs (outil « retenir ») -------------------------------------------------------------
+
+def _memory_conv(cid):
+    from . import persona as personas
+    conv = conversations.get(cid) or {}
+    return conv, personas.for_conversation(conv)
+
+
+def prepare_remember(root, args):
+    texte = " ".join(str(args.get("texte") or "").split())
+    categorie = str(args.get("categorie") or "toi").strip().lower()
+    if categorie not in souvenirs.CATEGORIES:
+        raise ToolError(f"« categorie » : {', '.join(souvenirs.CATEGORIES)}.")
+    try:
+        souvenirs._clean_text(texte)  # vide, trop long ou secret : refusé avant même de te demander
+    except souvenirs.SouvenirError as exc:
+        raise ToolError(str(exc))
+    remplace = str(args.get("remplace") or "").strip() or None
+    what = "Mettre à jour le souvenir" if remplace else "Retenir"
+    return {"texte": texte, "categorie": categorie, "intime": bool(args.get("intime")), "remplace": remplace,
+            "preview": f"{what} : « {texte} » ({souvenirs.CATEGORIES[categorie]})",
+            "auto_allowed": not souvenirs.settings()["ask_before"]}
+
+
+async def run_remember(prepared, cid):
+    conv, persona = _memory_conv(cid)
+    if conv.get("prive"):
+        raise ToolError("Conversation privée : je ne retiens rien ici.")
+    if prepared["intime"] and not (persona and persona.get("intimate")):
+        raise ToolError("Ce persona n'autorise pas le contenu intime : je ne retiens pas ce souvenir.")
+    try:
+        saved, old = souvenirs.add(prepared["texte"], prepared["categorie"], cid,
+                                   persona.get("id") if persona else None, prepared["intime"], prepared["remplace"])
+    except souvenirs.SouvenirError as exc:
+        raise ToolError(str(exc))
+    action = "mis à jour" if old else "ajouté"
+    note = f" (remplace « {old} »)" if old and old != saved["texte"] else ""
+    return _ok(f"Souvenir {action} [{saved['id']}] : « {saved['texte']} »{note}.",
+               souvenir={**saved, "action": action, "ancien": old})
+
+
+def prepare_forget(root, args):
+    sid = str(args.get("id") or "").strip()
+    texte = " ".join(str(args.get("texte") or "").split())
+    if not sid and not texte:
+        raise ToolError("Indique le souvenir à oublier : son « id » (le numéro entre crochets), ou un « texte ».")
+    target = None
+    if sid:
+        target = next((s for s in souvenirs.all_souvenirs() if s["id"] == sid), None)
+        if target is None:
+            raise ToolError(f"Pas de souvenir n° {sid}.")
+    else:
+        found = souvenirs.search(texte, limit=3)
+        if not found:
+            raise ToolError("Aucun souvenir ne correspond : rien à oublier.")
+        best = [s for s in found if souvenirs._similar(s["texte"], texte) >= 0.5]
+        if len(best) != 1:
+            listed = " ; ".join(f"[{s['id']}] {s['texte']}" for s in found)
+            raise ToolError(f"Plusieurs souvenirs possibles, redemande avec son « id » : {listed}")
+        target = best[0]
+    return {"id": target["id"], "preview": f"Oublier : « {target['texte']} »",
+            "auto_allowed": not souvenirs.settings()["ask_before"]}
+
+
+async def run_forget(prepared, cid):
+    try:
+        gone = souvenirs.remove(prepared["id"])
+    except souvenirs.SouvenirError as exc:
+        raise ToolError(str(exc))
+    return _ok(f"Souvenir oublié [{gone['id']}] : « {gone['texte']} ».", souvenir={**gone, "action": "oublié"})
+
+
+def prepare_recall(root, args):
+    query = " ".join(str(args.get("recherche") or "").split())
+    if not query:
+        raise ToolError("Indique la « recherche » (quelques mots).")
+    return {"recherche": query}
+
+
+async def run_recall(prepared, cid):
+    from . import persona as personas
+    conv, persona = _memory_conv(cid)
+    found = souvenirs.search(prepared["recherche"], persona, personas.register_for(persona) if persona else "naturel",
+                             limit=10)
+    if not found:
+        return _ok("Aucun souvenir ne correspond.")
+    return _ok("\n".join(f"- [{s['id']}] ({souvenirs.CATEGORIES.get(s['categorie'], s['categorie'])}) {s['texte']}"
+                         for s in found))
+
+
 def prepare_web_fetch(root, args):
     url = (args.get("url") or "").strip()
     if not url.startswith(("http://", "https://")):
@@ -1356,6 +1446,32 @@ TOOLS = {t.name: t for t in [
             "appli": {"type": "string", "description": "Appli à ouvrir (action ouvrir, mode PC entier) : son nom."},
         }, ["action"]),
         prepare_screen_action, run_screen_action, bind_screen_action,
+    ),
+    Tool(
+        "retenir", "memory",
+        "Retient un souvenir sur l'utilisateur pour les conversations suivantes : une phrase courte et autonome, "
+        "à la troisième personne (ce qu'il t'a dit lui-même, qui compte durablement). Un souvenir proche existant est "
+        "mis à jour au lieu d'être doublé ; « remplace » pour corriger un souvenir précis.",
+        _schema({
+            "texte": {"type": "string", "description": "Le souvenir, en une phrase (300 caractères au plus)."},
+            "categorie": {"type": "string", "enum": list(souvenirs.CATEGORIES)},
+            "intime": {"type": "boolean", "description": "Souvenir intime (seulement si le persona l'autorise)."},
+            "remplace": {"type": "string", "description": "Id du souvenir que celui-ci corrige (facultatif)."},
+        }, ["texte", "categorie"]),
+        prepare_remember, run_remember,
+    ),
+    Tool(
+        "oublier", "memory",
+        "Oublie un souvenir : quand l'utilisateur le demande ou que ce n'est plus vrai. Par son id (entre crochets), "
+        "sinon par quelques mots.",
+        _schema({"id": {"type": "string"}, "texte": {"type": "string"}}, []),
+        prepare_forget, run_forget,
+    ),
+    Tool(
+        "chercher_souvenirs", "state",
+        "Cherche dans les souvenirs sur l'utilisateur ceux qui ne sont pas déjà dans ta liste.",
+        _schema({"recherche": {"type": "string", "description": "Quelques mots."}}, ["recherche"]),
+        prepare_recall, run_recall,
     ),
     Tool(
         "web_search", "web",
