@@ -850,8 +850,15 @@ py -3.11 tools/build_portable.py</pre>
             <h2>🖱 Prendre la main</h2>
             <button id="btn-screen-close" class="ghost">Fermer</button>
         </div>
-        <p class="muted small">Coche les fenêtres où l'agent pourra voir et agir, avec ton accord à chaque action. Les
-            autres restent hors de sa portée. Les réglages système, la sécurité et les terminaux sont toujours exclus.</p>
+        <div class="screen-modes">
+            <label class="check-line"><input type="radio" name="screen-mode" value="fenetres" checked>
+                <span><strong>Fenêtres choisies</strong> · l'agent ne voit et ne touche que celles que tu coches</span></label>
+            <label class="check-line"><input type="radio" name="screen-mode" value="pc">
+                <span><strong>🖥 PC entier</strong> · bureau, barre des tâches, menu Démarrer, toutes les fenêtres ; il peut
+                    aussi ouvrir une appli</span></label>
+        </div>
+        <p class="muted small">Dans les deux cas : ton accord à chaque action, jamais de mot de passe, et les réglages
+            système, la sécurité, les terminaux et la fenêtre d'Aria restent toujours hors de sa portée.</p>
         <ul id="screen-windows" class="skills-list"></ul>
         <p id="screen-dialog-error" class="error" hidden></p>
         <div class="row">

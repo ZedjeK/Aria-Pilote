@@ -609,6 +609,45 @@ def foreground():
     return int(user32.GetForegroundWindow() or 0)
 
 
+def info(hwnd):
+    """Titre, programme et cadre d'une fenêtre quelconque (barre des tâches, bureau, menu Démarrer compris)."""
+    _require_windows()
+    hwnd = int(hwnd or 0)
+    return {"id": hwnd, "titre": _title(hwnd) or _class(hwnd), "processus": _process(hwnd), "rect": _rect(hwnd),
+            "reduite": bool(user32.IsIconic(wt.HWND(hwnd))), "proprietaire": None} if hwnd else None
+
+
+def window_at(x, y):
+    """La fenêtre (principale) sous ce point de l'écran, décrite comme les autres."""
+    return info(owner_at(x, y))
+
+
+def taskbar():
+    """La barre des tâches principale (bouton Démarrer, applis épinglées, zone de notification)."""
+    _require_windows()
+    hwnd = user32.FindWindowW("Shell_TrayWnd", None)
+    found = info(hwnd)
+    if found:
+        found["titre"] = "Barre des tâches"
+    return found
+
+
+def desktop_rect():
+    """Le bureau virtuel : tous les écrans côte à côte."""
+    _require_windows()
+    left, top = user32.GetSystemMetrics(76), user32.GetSystemMetrics(77)
+    return left, top, left + user32.GetSystemMetrics(78), top + user32.GetSystemMetrics(79)
+
+
+def open_app(name):
+    """Ouvre une appli par le menu Démarrer : Windows, son nom, Entrée (comme toi au clavier)."""
+    press("win")
+    time.sleep(0.9)
+    type_text(name)
+    time.sleep(1.2)
+    press("entree")
+
+
 def owner_at(x, y):
     """Fenêtre principale sous ce point de l'écran."""
     hwnd = user32.WindowFromPoint(wt.POINT(int(x), int(y)))

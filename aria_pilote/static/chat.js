@@ -162,11 +162,20 @@ function syncAgentBar() {
 function syncScreenBar() {
     const on = Boolean(state.config?.screen_control);
     const active = on && chat.current?.screen_control;
+    const pc = active && chat.current.screen_mode === "pc";
     $("#btn-screen").hidden = !(on && chat.current);
     $("#btn-screen").classList.toggle("attached", Boolean(active));
     const banner = $("#screen-banner");
     banner.hidden = !active;
+    banner.classList.toggle("pc", Boolean(pc));
     if (!active) return;
+    if (pc) {
+        const hand = el("button", { className: "ghost", title: "Rendre la main : l'agent ne voit plus l'écran" }, "Rendre la main");
+        hand.addEventListener("click", releaseScreen);
+        banner.replaceChildren(el("span", {}, "🖥 L'agent a la main sur tout ton PC (sauf réglages, sécurité, terminaux et "
+            + "Aria). Il demande ton accord à chaque action."), hand);
+        return;
+    }
     const allow = chat.current.screen_allow;
     const apps = Array.isArray(allow)
         ? (allow.length ? allow.join(", ") : "aucune fenêtre pour l'instant — clique sur « Prendre la main »")
@@ -200,6 +209,9 @@ async function openScreenPicker() {
         list.replaceChildren();
         return;
     }
+    const mode = chat.current.screen_control && chat.current.screen_mode === "pc" ? "pc" : "fenetres";
+    for (const radio of dialog.querySelectorAll('input[name="screen-mode"]')) radio.checked = radio.value === mode;
+    syncScreenMode();
     const already = new Set(Array.isArray(chat.current.screen_allow) ? chat.current.screen_allow : []);
     list.replaceChildren(...windows.map((w) => {
         const box = el("input", { type: "checkbox", checked: already.has(w.processus) });
@@ -213,13 +225,25 @@ async function openScreenPicker() {
     if (!windows.length) list.replaceChildren(el("li", { className: "muted" }, "Aucune fenêtre éligible n'est ouverte."));
 }
 
+function syncScreenMode() {
+    const pc = $('#screen-dialog input[name="screen-mode"]:checked')?.value === "pc";
+    $("#screen-windows").hidden = pc;
+    $("#btn-screen-confirm").textContent = pc ? "Lui donner la main sur tout le PC" : "Autoriser ces fenêtres";
+}
+
+for (const radio of document.querySelectorAll('#screen-dialog input[name="screen-mode"]')) {
+    radio.addEventListener("change", syncScreenMode);
+}
+
 $("#btn-screen").addEventListener("click", openScreenPicker);
 $("#btn-screen-close").addEventListener("click", () => $("#screen-dialog").close());
 $("#btn-screen-confirm").addEventListener("click", async () => {
+    const pc = $('#screen-dialog input[name="screen-mode"]:checked')?.value === "pc";
     const allow = [...$("#screen-windows").querySelectorAll("input:checked")].map((b) => b.dataset.processus);
     try {
         chat.current = await api(`/api/conversations/${chat.current.id}`, {
-            method: "PATCH", body: JSON.stringify({ screen_control: true, screen_allow: allow }),
+            method: "PATCH",
+            body: JSON.stringify(pc ? { screen_control: true, screen_mode: "pc" } : { screen_control: true, screen_allow: allow }),
         });
         $("#screen-dialog").close();
         syncAgentBar();
