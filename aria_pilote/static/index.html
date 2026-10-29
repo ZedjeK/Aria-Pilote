@@ -587,6 +587,10 @@ py -3.11 tools/build_portable.py</pre>
                         <div><div class="set-label">Contrôle du PC (expérimental)</div><div class="muted small">Autorise l'agent à voir l'écran et à cliquer ou taper dans les fenêtres que tu choisis, avec ton accord à chaque action. Reste à activer conversation par conversation avec « Prendre la main ». Réglages système, sécurité et terminaux sont toujours exclus.</div></div>
                         <input type="checkbox" class="switch" data-config="screen_control">
                     </label>
+                    <label class="set-row">
+                        <div><div class="set-label">Actions à l'écran par tâche</div><div class="muted small">Au-delà, l'agent s'arrête et te rend compte (20 à 200). Même avec les actions ordinaires autorisées pour une tâche, cette limite reste.</div></div>
+                        <input type="number" class="set-num" min="20" max="200" step="10" data-config="screen_max_actions">
+                    </label>
                 </div>
             </section>
 

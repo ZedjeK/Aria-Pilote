@@ -152,6 +152,7 @@ class ConfigPatch(BaseModel):
     new_conversation: NewAgentSettings | None = None
     always_plan: bool | None = None
     max_tool_calls: int | None = Field(None, ge=10, le=100)
+    screen_max_actions: int | None = Field(None, ge=20, le=200)
     auto_check: bool | None = None
     screen_control: bool | None = None
     web: WebSettings | None = None
@@ -199,7 +200,7 @@ class ConversationPatch(BaseModel):
 
 class ApprovalRequest(BaseModel):
     approval_id: str
-    decision: str  # allow | deny | allow_session | allow_rule
+    decision: str  # allow | deny | allow_session | allow_rule | allow_task (actions ordinaires à l'écran)
     rule: str | None = None  # allow_rule : la commande exacte, ou un début de commande terminé par *
 
 
