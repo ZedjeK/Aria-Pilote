@@ -34,6 +34,8 @@ class ModelInfo:
     mmproj: str | None
     engine_auto: str
     error: str | None = None
+    experts: int | None = None  # modèle MoE : nombre d'experts
+    mtp_layers: int | None = None  # couches de prédiction multi-tokens (MTP)
 
 
 # Cache : chemin -> (mtime, taille, métadonnées ou erreur)
@@ -113,6 +115,8 @@ def _describe(path, root, meta, mmproj, key):
         mmproj=str(mmproj) if mmproj else None,
         engine_auto=engines.auto_engine(quant),
         error=error,
+        experts=meta.get(f"{arch}.expert_count") if arch else None,
+        mtp_layers=meta.get(f"{arch}.nextn_predict_layers") if arch else None,
     )
 
 
@@ -191,4 +195,59 @@ def delete(model_id):
 def to_dict(model):
     data = asdict(model)
     data["settings"] = config.model_settings(model.key)
+    data["custom"] = config.has_model_settings(model.key)  # réglages propres à ce modèle
     return data
+
+
+def _number(value):
+    return f"{value:,}".replace(",", " ") if isinstance(value, int) else str(value)
+
+
+def describe(model, meta):
+    """L'en-tête GGUF en clair, pour la fiche du modèle : [{"label", "value", "help"}]."""
+    arch = model.arch or ""
+    get = lambda key: meta.get(f"{arch}.{key}") if arch else None  # noqa: E731
+    rows = []
+
+    def add(label, value, help_text=""):
+        if value is not None and value != "":
+            rows.append({"label": label, "value": value if isinstance(value, str) else _number(value), "help": help_text})
+
+    add("Nom dans le fichier", meta.get("general.name"))
+    add("Architecture", arch, "La famille du modèle : elle décide quel moteur sait le lire.")
+    add("Taille annoncée", model.size_label, "Nombre de paramètres (27B = 27 milliards).")
+    add("Quantification", model.quant, "Précision des poids : plus le chiffre est bas, plus le fichier est léger et la qualité réduite.")
+    add("Contexte maximal", get("context_length"), "Longueur de conversation la plus grande prévue par le modèle, en tokens.")
+    add("Couches", get("block_count"), "Chaque couche peut aller sur la carte graphique ou rester en RAM (« Couches GPU »).")
+    add("Dimension interne", get("embedding_length"))
+    add("Têtes d'attention", get("attention.head_count"))
+    kv = get("attention.head_count_kv")
+    if kv and kv != get("attention.head_count"):
+        add("Têtes clé/valeur", kv, "Moins de têtes K/V que d'attention (GQA) : un cache de contexte plus petit.")
+    interval = get("full_attention_interval")
+    if get("ssm.state_size") and interval:
+        add("Attention hybride", f"attention complète une couche sur {interval}, les autres en mémoire d'état",
+            "Ces couches à état ne grossissent pas avec le contexte : un long contexte coûte moins de VRAM.")
+    experts = get("expert_count")
+    if experts:
+        used = get("expert_used_count")
+        add("Experts (MoE)", f"{experts}{f', {used} actifs par token' if used else ''}",
+            "Seule une partie des experts travaille à chaque token : « Experts gardés en RAM » libère de la VRAM.")
+    mtp = get("nextn_predict_layers")
+    if mtp:
+        add("Prédiction multi-tokens", f"{mtp} couche{'s' if mtp > 1 else ''} MTP",
+            "Le modèle sait deviner les tokens suivants : l'option « Prédiction multi-tokens » peut accélérer la génération.")
+    add("Projecteur vision", Path(model.mmproj).name if model.mmproj else "aucun",
+        "Le fichier mmproj qui permet au modèle de voir les images.")
+    sampling = [f"{name} {meta[key]:.2g}" if isinstance(meta.get(key), float) else f"{name} {meta[key]}"
+                for name, key in (("température", "general.sampling.temp"), ("top-p", "general.sampling.top_p"),
+                                  ("top-k", "general.sampling.top_k")) if key in meta]
+    if sampling:
+        add("Tirage conseillé", " · ".join(sampling), "Ce que l'auteur recommande : à reporter dans un preset si besoin.")
+    template = meta.get("tokenizer.chat_template")
+    add("Modèle de conversation", "intégré" if template else "absent",
+        "Le format des échanges (chat template), lu par le moteur ; sans lui, un format générique est utilisé.")
+    if meta.get("quantize.imatrix.file"):
+        add("Matrice d'importance", "oui", "Quantification guidée par des exemples (imatrix) : meilleure qualité à taille égale.")
+    add("Licence", meta.get("general.license"))
+    return rows

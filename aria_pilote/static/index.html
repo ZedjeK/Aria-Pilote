@@ -374,42 +374,13 @@ py -3.11 tools/build_portable.py</pre>
                     <div id="detail" hidden>
                         <h2 id="d-name"></h2>
                         <p id="d-path" class="mono muted small"></p>
-                        <dl id="d-meta" class="meta"></dl>
-                        <form id="load-form" class="form">
-                            <label>Moteur
-                                <select name="engine">
-                                    <option value="auto">Auto</option>
-                                    <option value="llama.cpp">llama.cpp officiel</option>
-                                    <option value="prism">PrismML (Bonsai)</option>
-                                </select>
-                            </label>
-                            <label>Contexte (tokens)
-                                <input name="ctx_size" type="number" min="512" step="512" required>
-                            </label>
-                            <label>Couches GPU
-                                <input name="gpu_layers" type="number" min="0" required>
-                            </label>
-                            <label>Threads CPU
-                                <input name="threads" type="number" min="0" placeholder="0 = auto">
-                            </label>
-                            <label>Flash attention
-                                <select name="flash_attn">
-                                    <option value="auto">Auto</option>
-                                    <option value="on">On</option>
-                                    <option value="off">Off</option>
-                                </select>
-                            </label>
-                            <label title="Compresser le cache de contexte permet un contexte plus grand dans la même VRAM">Cache de contexte
-                                <select name="cache_type">
-                                    <option value="f16">Normal (f16)</option>
-                                    <option value="q8_0">Compressé ×2 (q8_0)</option>
-                                    <option value="q4_0">Compressé ×4 (q4_0, perte sensible)</option>
-                                </select>
-                            </label>
-                            <label class="check"><input name="use_mmproj" type="checkbox"> Vision (mmproj)</label>
-                            <label class="check"><input name="remember" type="checkbox"> Mémoriser pour ce modèle</label>
-                            <button type="submit" class="primary">Charger</button>
-                        </form>
+                        <div id="d-state" class="model-state"></div>
+                        <details id="d-file" class="model-file" open>
+                            <summary>📄 Le fichier</summary>
+                            <dl id="d-meta" class="meta"></dl>
+                        </details>
+                        <form id="load-form" class="load-form"></form>
+                        <div id="load-actions" class="row load-actions"></div>
                         <p id="form-error" class="error" hidden></p>
                         <button id="btn-delete-model" class="ghost danger-text">🗑 Envoyer ce modèle à la corbeille</button>
                     </div>
@@ -533,42 +504,8 @@ py -3.11 tools/build_portable.py</pre>
                     <ul id="engines" class="engines"></ul>
                     <p class="muted small">llama.cpp officiel pour la plupart des modèles, le fork PrismML pour les modèles ternaires comme Bonsai. « Auto » choisit selon le modèle.</p>
                 </div>
-                <div class="set-card">
-                    <div class="set-card-title">Réglages de chargement par défaut</div>
-                    <p class="muted small">Pour les modèles sans réglage mémorisé : ceux d'⚡ Optimiser ou de « Mémoriser pour ce modèle » passent avant.</p>
-                    <form id="defaults-form" class="form">
-                        <label>Moteur
-                            <select name="engine" data-config="load_defaults.engine">
-                                <option value="auto">Auto</option>
-                                <option value="llama.cpp">llama.cpp officiel</option>
-                                <option value="prism">PrismML (Bonsai)</option>
-                            </select>
-                        </label>
-                        <label>Contexte (tokens)
-                            <input name="ctx_size" type="number" min="512" step="512" data-config="load_defaults.ctx_size">
-                        </label>
-                        <label>Couches GPU
-                            <input name="gpu_layers" type="number" min="0" data-config="load_defaults.gpu_layers">
-                        </label>
-                        <label>Threads CPU
-                            <input name="threads" type="number" min="0" placeholder="0 = auto" data-config="load_defaults.threads">
-                        </label>
-                        <label>Flash attention
-                            <select name="flash_attn" data-config="load_defaults.flash_attn">
-                                <option value="auto">Auto</option>
-                                <option value="on">On</option>
-                                <option value="off">Off</option>
-                            </select>
-                        </label>
-                        <label>Cache de contexte
-                            <select name="cache_type" data-config="load_defaults.cache_type">
-                                <option value="f16">Normal (f16)</option>
-                                <option value="q8_0">Compressé ×2 (q8_0)</option>
-                                <option value="q4_0">Compressé ×4 (q4_0, perte sensible)</option>
-                            </select>
-                        </label>
-                    </form>
-                </div>
+                <p class="muted small">Les réglages de chargement (par défaut et par modèle) sont dans
+                    <a href="#/reglages/mes-modeles" id="link-defaults">Mes modèles › ⚙ Réglages par défaut</a>.</p>
                 <div class="set-card">
                     <div class="set-card-title">Journal du moteur</div>
                     <pre id="logs" class="logs"></pre>
