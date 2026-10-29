@@ -8,7 +8,8 @@ from . import chat, conversations, hooks, mcp_client, permissions, tools
 
 # Types d'outils soumis à accord, et le drapeau qui les autorise pour toute la conversation
 # (None : jamais d'autorisation globale)
-APPROVAL_FLAGS = {"write": "auto_write", "web": "auto_web", "command": None, "screen_action": None, "mcp": None}
+APPROVAL_FLAGS = {"write": "auto_write", "web": "auto_web", "command": None, "screen_action": None, "mcp": None,
+                  "memory": None}  # souvenirs : demandés seulement avec « Me demander avant de retenir »
 
 # Accords en attente : approval_id -> (future, conversation_id, type d'outil, dossier de travail, commande)
 _approvals = {}
@@ -141,8 +142,8 @@ async def run_tool(cid, root, name, args, call_id, out, allowed=None, parent_id=
     elif screen_auto:
         out["result"]["rule"] = ("action ordinaire, autorisée d'office en mode PC entier" if pc_mode
                                  else "action ordinaire autorisée pour cette tâche")
-    elif auto:
-        out["result"]["rule"] = "outil MCP autorisé d'office (Réglages)"
+    elif auto and prepared.get("auto_reason"):
+        out["result"]["rule"] = prepared["auto_reason"]
 
     # Hooks « apres_outil » : leur sortie complète le résultat que voit le modèle (linter, tests…)
     after = await hooks.run("apres_outil", root, name, args, out["result"]) if root else []

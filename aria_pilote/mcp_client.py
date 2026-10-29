@@ -491,7 +491,8 @@ def prepare(server, mcp_tool, args):
     note = f" ({', '.join(hints)})" if hints else ""
     return {"server": server, "tool": mcp_tool.name, "arguments": args,
             "preview": f"Serveur {server} › outil {mcp_tool.name}{note}\n{shown}",
-            "auto_allowed": tool_mode(server, mcp_tool.name) == "allow"}
+            "auto_allowed": tool_mode(server, mcp_tool.name) == "allow",
+            "auto_reason": "outil MCP autorisé d'office (Réglages)"}
 
 
 async def run_call(prepared, cid):
