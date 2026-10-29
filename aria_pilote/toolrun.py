@@ -19,7 +19,7 @@ class ApprovalError(Exception):
 
 
 def resolve_approval(approval_id, decision, rule=None):
-    if decision not in ("allow", "deny", "allow_session", "allow_rule"):
+    if decision not in ("allow", "deny", "allow_session", "allow_rule", "allow_task"):
         raise ApprovalError("Décision inconnue.")
     pending = _approvals.get(approval_id)
     if pending is None:
@@ -33,6 +33,11 @@ def resolve_approval(approval_id, decision, rule=None):
             permissions.add(root, rule or command, command)
         except permissions.RuleError as exc:
             raise ApprovalError(str(exc))
+    if decision == "allow_task":
+        # « Autoriser les actions ordinaires pour cette tâche » : à l'écran seulement, et la tâche suivante redemande
+        if kind != "screen_action":
+            raise ApprovalError("Seules les actions à l'écran s'autorisent pour toute une tâche.")
+        conversations.update(cid, lambda c: c.__setitem__("screen_auto_task", c.get("task_id")))
     if decision == "allow_session":
         flag = APPROVAL_FLAGS[kind]
         if flag is None:
@@ -96,6 +101,10 @@ async def run_tool(cid, root, name, args, call_id, out, allowed=None, parent_id=
     command = prepared.get("command") if tool.kind == "command" else None
     rule = permissions.find(root, command) if command and root else None  # « toujours autoriser » dans ce projet
     auto = prepared.get("auto_allowed")  # outil MCP réglé sur « Toujours autoriser »
+    conv_now = conversations.get(cid) or {}
+    screen_auto = (tool.kind == "screen_action" and prepared.get("ordinary") and conv_now.get("task_id")
+                   and conv_now.get("screen_auto_task") == conv_now.get("task_id"))
+    auto = auto or screen_auto
     if tool.kind in APPROVAL_FLAGS and rule is None and not auto and not settings.get(APPROVAL_FLAGS[tool.kind] or "", False):
         approval_id = uuid.uuid4().hex[:12]
         future = asyncio.get_running_loop().create_future()
@@ -110,6 +119,7 @@ async def run_tool(cid, root, name, args, call_id, out, allowed=None, parent_id=
             "preview": prepared["preview"],
             "command": command,
             "rule_prefix": permissions.suggest_prefix(command) if command else None,
+            "ordinary": bool(prepared.get("ordinary")) if tool.kind == "screen_action" else None,
         })
         try:
             decision = await future
@@ -126,6 +136,8 @@ async def run_tool(cid, root, name, args, call_id, out, allowed=None, parent_id=
         out["result"] = {"status": "error", "output": f"Erreur système : {exc}"}
     if rule:
         out["result"]["rule"] = rule  # affiché sur la carte : autorisée sans te demander, par cette règle
+    elif screen_auto:
+        out["result"]["rule"] = "action ordinaire autorisée pour cette tâche"
     elif auto:
         out["result"]["rule"] = "outil MCP autorisé d'office (Réglages)"
 

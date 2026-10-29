@@ -48,6 +48,8 @@ DEFAULTS = {
     "always_plan": False,
     # Contrôle du PC (chantier 4) : coupé tant que tu ne l'actives pas ici, puis conversation par conversation
     "screen_control": False,
+    # Actions à l'écran au plus par tâche : au-delà, l'agent s'arrête et rend compte (20 à 200)
+    "screen_max_actions": 40,
     # Preset des nouvelles conversations (et de celles dont le preset a été supprimé)
     "default_preset": "default",
     # Persona des nouvelles conversations (et de celles dont le persona a été supprimé)

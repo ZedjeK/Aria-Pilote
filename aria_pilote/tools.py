@@ -17,7 +17,7 @@ import time
 from dataclasses import dataclass
 from typing import Awaitable, Callable
 
-from . import background, backups, checks, conversations, images, jobs, screen, skills, web, workspace
+from . import background, backups, checks, config, conversations, images, jobs, screen, skills, web, workspace
 from .server import manager
 
 SKIP_DIRS = {".git", ".hg", ".svn", "node_modules", ".venv", "venv", "__pycache__", ".mypy_cache", ".idea"}
@@ -575,7 +575,26 @@ def _pc_mode(cid):
     return (conversations.get(cid) or {}).get("screen_mode") == "pc"
 
 
-MAX_SCREEN_ACTIONS = 40  # actions à l'écran au plus par tâche : au-delà, l'agent s'arrête et rend compte
+MAX_SCREEN_ACTIONS = 40  # par défaut ; réglable de 20 à 200 (Réglages › Comportement, screen_max_actions)
+
+
+def _max_screen_actions():
+    return int(config.get().get("screen_max_actions") or MAX_SCREEN_ACTIONS)
+
+
+def _risky_keys(spec):
+    """Raccourcis qui ferment, suppriment ou ouvrent un accès à tout le système : toujours soumis à ton accord."""
+    keys = {k.strip() for k in str(spec).lower().replace(" ", "").split("+")}
+    return bool(keys & {"win", "windows", "suppr", "delete", "del"}) or any(
+        combo <= keys for combo in ({"alt", "f4"}, {"ctrl", "w"}, {"ctrl", "q"}, {"ctrl", "alt"},
+                                    {"ctrl", "maj", "echap"}, {"ctrl", "shift", "esc"}, {"ctrl", "shift", "escape"}))
+
+
+def _mark_ordinary(p, warnings=()):
+    """Une action « ordinaire » peut passer sans accord si tu l'as permis pour la tâche : pas un bouton sensible, pas
+    une répétition, pas un raccourci à risque, pas l'ouverture d'une appli."""
+    p["ordinary"] = not warnings and p["action"] != "ouvrir" and not (p["action"] == "touches" and _risky_keys(p["touches"]))
+    return p
 
 
 def _screen_action_count(cid):
@@ -879,15 +898,16 @@ def _last_screen_preview(cid):
 
 def bind_screen_action(prepared, cid):
     """Cible résolue sur la dernière observation de la conversation, et l'aperçu montré dans la demande d'accord."""
-    if _screen_action_count(cid) >= MAX_SCREEN_ACTIONS:
-        raise ToolError(f"J'ai déjà fait {MAX_SCREEN_ACTIONS} actions à l'écran dans cette tâche : je m'arrête et je "
+    limit = _max_screen_actions()
+    if _screen_action_count(cid) >= limit:
+        raise ToolError(f"J'ai déjà fait {limit} actions à l'écran dans cette tâche : je m'arrête et je "
                         "te rends compte. Relance-moi si tu veux que je continue.")
     if prepared["action"] == "restaurer":
         return _bind_restore(prepared, cid)
     if prepared["action"] == "ouvrir":
         if not _pc_mode(cid):
             raise ToolError("Ouvrir une appli demande le mode « PC entier » (bouton « Prendre la main »).")
-        return {**prepared, "preview": f"Ouvrir l'appli « {prepared['appli']} » (menu Démarrer : Windows, son nom, Entrée)"}
+        return _mark_ordinary({**prepared, "preview": f"Ouvrir l'appli « {prepared['appli']} » (menu Démarrer : Windows, son nom, Entrée)"})
     state = (conversations.get(cid) or {}).get("screen_state")
     if state and state.get("desktop"):
         if not _pc_mode(cid):
@@ -931,7 +951,7 @@ def bind_screen_action(prepared, cid):
     if first == _last_screen_preview(cid):
         warnings.append("⚠ Même action que la précédente : la fenêtre n'a peut-être pas réagi comme prévu.")
     p["preview"] = "\n".join([first, *warnings, f"Fenêtre : « {window['titre']} » ({window['processus']})"])
-    return p
+    return _mark_ordinary(p, warnings)
 
 
 def _bind_restore(prepared, cid):
@@ -943,8 +963,8 @@ def _bind_restore(prepared, cid):
     except screen.ScreenError as exc:
         raise ToolError(str(exc))
     what = "Rouvrir" if window["reduite"] else "Mettre au premier plan"
-    return {**prepared, "window": window,
-            "preview": f"{what} la fenêtre « {window['titre']} »\nFenêtre : « {window['titre']} » ({window['processus']})"}
+    return _mark_ordinary({**prepared, "window": window,
+                           "preview": f"{what} la fenêtre « {window['titre']} »\nFenêtre : « {window['titre']} » ({window['processus']})"})
 
 
 def _restore(p, cid):
@@ -1005,7 +1025,7 @@ def _bind_desktop(prepared, cid, state):
     if first == _last_screen_preview(cid):
         warnings.append("⚠ Même action que la précédente : l'écran n'a peut-être pas réagi comme prévu.")
     p["preview"] = "\n".join([first, *warnings, f"Fenêtre visée : « {target['titre']} » ({target['processus']})"])
-    return p
+    return _mark_ordinary(p, warnings)
 
 
 def _act_desktop(p, cid):

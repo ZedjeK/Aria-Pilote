@@ -1143,7 +1143,9 @@ function toolNode(m, pendingPlan = false, activeQuestion = false) {
     const bg = m.args?.background ? (m.args.keep ? "⚙ arrière-plan, gardée · " : "⚙ arrière-plan · ") : "";
     const syntax = m.syntax === false ? " · ⚠ syntaxe" : m.syntax === true ? " · ✓ syntaxe" : "";
     const mcp = m.name?.startsWith("mcp__") ? m.name.slice(5).split("__") : null;
-    const rule = mcp && m.rule ? " · ✓ autorisé d'office" : m.rule ? ` · ✓ autorisée par la règle « ${m.rule} »` : "";
+    const rule = mcp && m.rule ? " · ✓ autorisé d'office"
+        : m.name === "agir_ecran" && m.rule ? " · ✓ autorisée d'office (actions ordinaires de cette tâche)"
+            : m.rule ? ` · ✓ autorisée par la règle « ${m.rule} »` : "";
     const label = mcp ? `🔌 ${mcp[0]} › ${mcp.slice(1).join("__")}` : `🔧 ${m.name}`;
     // Un outil MCP a ses propres arguments : les deux premiers, en bref
     const brief = mcp ? shortText(Object.entries(m.args || {}).slice(0, 2)
@@ -1217,6 +1219,14 @@ function approvalNode(ev) {
         const session = el("button", { className: "ghost" }, label);
         session.addEventListener("click", () => decide("allow_session", "Autorisé pour cette conversation ✓"));
         buttons.append(session);
+    }
+    if (ev.kind === "screen_action" && ev.ordinary) {
+        // Clics, frappe, défilement : sans redemander jusqu'à la fin de la tâche (jamais les boutons sensibles,
+        // raccourcis à risque ou ouvertures d'appli, qui redemandent toujours)
+        const task = el("button", { className: "ghost", title: "Les boutons sensibles, raccourcis à risque et ouvertures d'appli te seront toujours demandés" },
+            "Autoriser les actions ordinaires pour cette tâche");
+        task.addEventListener("click", () => decide("allow_task", "Autorisé, ainsi que les actions ordinaires de cette tâche ✓"));
+        buttons.append(task);
     }
     if (ev.kind === "command" && ev.command) {
         // « Toujours autoriser dans ce projet » : la commande exacte, ou un début de commande (modifiable)
