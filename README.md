@@ -71,16 +71,16 @@ Les tests et les outils de développement tournent avec le Python du projet (`.v
 .\.venv\Scripts\python.exe -m unittest discover tests
 ```
 
-299 tests, environ 70 secondes, sans modèle ni carte graphique : ask_user, multi_edit, annulation de tâche, historique des modifications, sauvegardes, commandes en arrière-plan (vrais processus), vérification de syntaxe, règles d'autorisation (dont 14 tentatives d'enchaînement), identifiants de modèles, ports de la version de dev, optimiseur (en-têtes réels de Qwen 3.8, Bonsai 2 et SmolLM2 dans `tests\donnees\`), essai réel avec un faux moteur, démarrage avec la sortie redirigée, client MCP face à un vrai serveur stdio (accords, refus, erreurs, images, chute et relance). Les tests tournent dans un dossier temporaire (`ARIA_PILOTE_HOME`) avec une fausse corbeille et le port 8799 : ils ne touchent jamais ta config, tes conversations ni ta corbeille. Ceux qui demandent Windows ou PowerShell sont sautés ailleurs. Ils vérifient le code ; le banc d'essai ci-dessous vérifie l'agent avec les vrais modèles.
+303 tests, environ 70 secondes, sans modèle ni carte graphique : ask_user, multi_edit, annulation de tâche, historique des modifications, sauvegardes, commandes en arrière-plan (vrais processus), vérification de syntaxe, règles d'autorisation (dont 14 tentatives d'enchaînement), identifiants de modèles, ports de la version de dev, optimiseur (en-têtes réels de Qwen 3.8, Bonsai 2 et SmolLM2 dans `tests\donnees\`), essai réel avec un faux moteur, démarrage avec la sortie redirigée, client MCP face à un vrai serveur stdio (accords, refus, erreurs, images, chute et relance). Les tests tournent dans un dossier temporaire (`ARIA_PILOTE_HOME`) avec une fausse corbeille et le port 8799 : ils ne touchent jamais ta config, tes conversations ni ta corbeille. Ceux qui demandent Windows ou PowerShell sont sautés ailleurs. Ils vérifient le code ; le banc d'essai ci-dessous vérifie l'agent avec les vrais modèles.
 
 ### Banc d'essai de l'agent
 
 `tools/bench.py` rejoue 15 tâches types sur un ou plusieurs modèles et mesure la fiabilité de l'agent : trouver une définition, corriger un bug, renommer dans plusieurs fichiers, écrire un script PowerShell, lancer des tests, poser une question quand il le faut (et pas sinon), explorer une grande arborescence, résister à une instruction cachée dans un fichier, proposer un plan sans rien toucher quand on le lui demande, lancer un serveur en arrière-plan puis l'arrêter, écrire un fichier de configuration valide, et trois discussions où il ne doit dégainer aucun outil.
 
 ```powershell
-.\.venv\Scripts\python.exe tools/bench.py --models qwen,bonsai
+.\.venv\Scripts\python.exe tools/bench.py --models qwen,bonsai-2-27b-pq2
 .\.venv\Scripts\python.exe tools/bench.py --models qwen --tasks 2,6 --runs 3
-.\.venv\Scripts\python.exe tools/bench.py --models qwen,bonsai --ctx 0   # avec les réglages mémorisés de chaque modèle
+.\.venv\Scripts\python.exe tools/bench.py --models qwen,bonsai-2-27b-pq2 --ctx 0   # avec les réglages mémorisés de chaque modèle
 ```
 
 Chaque tâche part d'une copie neuve de ses fichiers dans un dossier temporaire, et son vérificateur contrôle le résultat réel (fichiers, tests, réponse). Le script démarre l'appli de dev si besoin, valide les accords à ta place (sauf les commandes piégées, refusées), refuse le web par défaut (`--web` pour l'autoriser) et compare chaque run au précédent. Les rapports détaillés vont dans `bench\results\`. Pour ajouter une tâche : un dossier `bench\tasks\NN-nom\` avec `task.json`, `fixture\` et `check.py`.
@@ -88,13 +88,13 @@ Chaque tâche part d'une copie neuve de ses fichiers dans un dossier temporaire,
 `tools/essai_mcp.py` met les modèles face à de vrais serveurs MCP : le serveur officiel `mcp-server-time` (à installer d'abord dans le `.venv` avec `pip install mcp-server-time`) et le serveur de test du dépôt. Cinq scénarios : l'heure à Tokyo, une conversion Paris → New York, une addition, une note qui cache un ordre (à signaler sans obéir) et un appel refusé (à signaler sans insister). Ton `mcp.json` est remis tel quel à la fin, et le rapport va dans `bench\results\mcp\`.
 
 ```powershell
-.\.venv\Scripts\python.exe tools/essai_mcp.py --models qwen,bonsai
+.\.venv\Scripts\python.exe tools/essai_mcp.py --models qwen,bonsai-2-27b-pq2
 ```
 
 `tools/essai_ecran.py` met les modèles aux commandes de ton vrai PC, en mode PC entier : ouvrir la Calculatrice par le menu Démarrer et calculer 12 × 34, écrire dans le Bloc-notes puis passer par « Enregistrer sous », un clic droit dans l'Explorateur (« Copier en tant que chemin d'accès »), rouvrir une fenêtre réduite. **Ta souris et ton clavier sont pilotés pendant l'essai** (environ 4 minutes par modèle) : ne touche à rien. Tout se passe dans un dossier temporaire, les applis ouvertes sont refermées et le contrôle du PC est remis comme avant ; le rapport va dans `bench\results\ecran\`.
 
 ```powershell
-.\.venv\Scripts\python.exe tools/essai_ecran.py --models qwen38,27b-pq2_0
+.\.venv\Scripts\python.exe tools/essai_ecran.py --models qwen,bonsai-2-27b-pq2
 ```
 
 ## Premiers pas
