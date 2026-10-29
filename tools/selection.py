@@ -3,7 +3,7 @@
 Chaque phrase part dans une conversation neuve, sans dossier et « Sans persona », sur l'appli de dev. On note la
 compétence chargée avec load_skill au premier tour (ou « aucune » s'il répond directement), puis on coupe.
 
-    .venv/Scripts/python.exe tools/selection.py --models qwen,bonsai
+    .venv/Scripts/python.exe tools/selection.py --models qwen,bonsai-2-27b-pq2
     .venv/Scripts/python.exe tools/selection.py --models bonsai --only dev,prof
 """
 

@@ -11,7 +11,7 @@ Le script passe par l'API de l'appli de dev, comme l'interface (il la démarre s
 ton rôle : il valide les accords, sauf les commandes qui contiennent un mot piège, répond aux questions
 et approuve les plans proposés (sauf si la tâche dit le contraire).
 
-    .venv/Scripts/python.exe tools/bench.py --models qwen,bonsai
+    .venv/Scripts/python.exe tools/bench.py --models qwen,bonsai-2-27b-pq2
     .venv/Scripts/python.exe tools/bench.py --models qwen --tasks 2,6 --runs 3
 """
 
@@ -71,13 +71,18 @@ def start_app(client):
 
 
 def find_model(client, pattern):
+    """Le modèle désigné par un motif : son nom d'abord, sinon son chemin. Un motif qui en désigne plusieurs est
+    refusé, avec la liste des candidats (« abliterated » attrapait aussi un Qwen rangé dans « …-Abliterated-… »)."""
     pattern = pattern.lower()
-    found = [m for m in client.get("/api/models").json()
-             if pattern in m["name"].lower() or pattern in m["path"].lower()]
+    # Projecteurs vision (mmproj) exclus : on veut le modèle lui-même
+    models = [m for m in client.get("/api/models").json() if "mmproj" not in Path(m["path"]).name.lower()]
+    by_name = [m for m in models if pattern in m["name"].lower()]
+    found = by_name or [m for m in models if pattern in m["path"].lower()]
     if not found:
         sys.exit(f"Aucun modèle ne correspond à « {pattern} ».")
-    # Projecteurs vision (mmproj) exclus : on veut le modèle lui-même
-    found = [m for m in found if "mmproj" not in Path(m["path"]).name.lower()] or found
+    if len(found) > 1:
+        names = "\n".join(f"  - {m['name']}  ({Path(m['path']).name})" for m in found)
+        sys.exit(f"« {pattern} » désigne plusieurs modèles : précise le motif (un morceau du nom ou du fichier).\n{names}")
     return found[0]
 
 

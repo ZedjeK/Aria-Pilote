@@ -6,7 +6,7 @@ Deux serveurs sont branchés le temps de l'essai (ton mcp.json est remis tel que
 Le script joue ton rôle : il accepte chaque appel, sauf dans le scénario du refus. Sans dossier attaché :
 une simple discussion où seuls les outils MCP (et le web, refusé ici) sont disponibles.
 
-    .venv/Scripts/python.exe tools/essai_mcp.py --models qwen,bonsai
+    .venv/Scripts/python.exe tools/essai_mcp.py --models qwen,bonsai-2-27b-pq2
 """
 
 import argparse
@@ -153,7 +153,7 @@ def play(client, scenario, timeout):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--models", default="qwen,bonsai")
+    parser.add_argument("--models", default="qwen,bonsai-2-27b-pq2")
     parser.add_argument("--timeout", type=int, default=240, help="secondes au plus par scénario")
     args = parser.parse_args()
     client = httpx.Client(base_url=bench.BASE, timeout=60)

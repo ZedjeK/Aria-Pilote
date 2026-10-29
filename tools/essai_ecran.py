@@ -9,7 +9,7 @@
 joue ton rôle : il accepte les actions à l'écran, refuse le reste. Le contrôle du PC est activé le temps de l'essai puis
 remis comme avant ; les applis ouvertes par l'essai sont refermées, le dossier d'essai est temporaire.
 
-    .venv/Scripts/python.exe tools/essai_ecran.py --models qwen38,27b-pq2_0
+    .venv/Scripts/python.exe tools/essai_ecran.py --models qwen,bonsai-2-27b-pq2
 """
 import argparse
 import ctypes
@@ -121,7 +121,7 @@ def scenario(name, client, prompt, check, setup=None):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--models", default="qwen38,27b-pq2_0", help="motifs des modèles, séparés par des virgules")
+    parser.add_argument("--models", default="qwen,bonsai-2-27b-pq2", help="motifs des modèles, séparés par des virgules")
     args = parser.parse_args()
     work = Path(tempfile.mkdtemp(prefix="aria-essai-ecran-"))
     out = ROOT / "bench" / "results" / "ecran" / f"{time.strftime('%Y%m%d-%H%M')}.json"
