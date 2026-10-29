@@ -59,6 +59,7 @@ async function saveConfig(patch) {
     flashSaved();
     renderPicker();
     if (patch.new_conversation) resetPendingAgent();  // une conversation pas encore créée prend les nouveaux réglages
+    if (patch.memory) syncPrivateChip();  // souvenirs coupés : la puce 🕶 n'a plus de sens
 }
 
 // data-config="load_defaults.ctx_size" → {load_defaults: {ctx_size: valeur}}
@@ -107,6 +108,7 @@ for (const field of document.querySelectorAll("#view-settings [data-config]")) {
 function loadGeneral() {
     $("#set-version").textContent = state.status?.version ? `v${state.status.version}` : "?";
     loadProfileCard();
+    loadSouvenirsCard();
     fillConfigFields($('.settings-section[data-section="general"]'));
     renderNotifications();
     loadUpdate(false);

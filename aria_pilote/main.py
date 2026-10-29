@@ -186,6 +186,7 @@ class ConversationCreate(BaseModel):
     preset_id: str | None = None
     persona_id: str | None = None  # absent : le persona par défaut ; « none » : sans persona
     agent: NewAgentSettings | None = None  # absent : les réglages de départ (Réglages › Comportement)
+    prive: bool = False  # 🕶 conversation privée dès le premier message
 
 
 class AgentSettings(BaseModel):
@@ -553,7 +554,9 @@ def create_conversation(req: ConversationCreate):
         conv["persona_id"] = req.persona_id
     if agent_settings:
         conv["agent"] = agent_settings
-    if req.persona_id or agent_settings:
+    if req.prive:
+        conv["prive"] = True
+    if req.persona_id or agent_settings or req.prive:
         conv = conversations.save(conv)
     return conv
 
@@ -816,6 +819,41 @@ def get_skill(name: str, conversation_id: str | None = None):
 class SouvenirBody(BaseModel):
     texte: str | None = None
     categorie: str | None = None
+
+
+class SouvenirUndo(BaseModel):
+    conversation_id: str
+    tool_call_id: str
+
+
+@app.post("/api/souvenirs/annuler")
+def undo_souvenir(req: SouvenirUndo):
+    """La puce « Annuler » sous une réponse : défait ce que l'outil a retenu, mis à jour ou oublié."""
+    conv = _conversation_or_404(req.conversation_id)
+    message = next((m for m in conv.get("messages") or []
+                    if m.get("tool_call_id") == req.tool_call_id and m.get("souvenir")), None)
+    if message is None:
+        raise HTTPException(404, "Pas de souvenir à annuler pour cet appel.")
+    done = message["souvenir"]
+    if done.get("annule"):
+        raise HTTPException(409, "Déjà annulé.")
+    try:
+        if done["action"] == "ajouté":
+            souvenirs.remove(done["id"])
+        elif done["action"] == "mis à jour":
+            souvenirs.update(done["id"], texte=done["ancien"])
+        else:
+            souvenirs.restore(done)
+    except souvenirs.SouvenirError as exc:
+        raise HTTPException(409, f"Impossible d'annuler : {exc}")
+
+    def mark(c):
+        for m in c.get("messages") or []:
+            if m.get("tool_call_id") == req.tool_call_id and m.get("souvenir"):
+                m["souvenir"]["annule"] = True
+                m["content"] = (m.get("content") or "") + " (Annulé ensuite par l'utilisateur.)"  # le modèle le relit
+    conversations.update(req.conversation_id, mark)
+    return {**done, "annule": True}
 
 
 @app.get("/api/souvenirs")
@@ -1327,7 +1365,9 @@ def agent_context(conversation_id: str):
     persona_text, profile_text = persona.prompt_blocks(conv, folder=bool(root))
     preset_for_conv = presets.resolve(conv.get("preset_id") or config.get().get("default_preset"))
     full_prompt = agent.context_inputs(conv, preset_for_conv)[0]
-    layers = {"persona": len(persona_text), "profil": len(profile_text), "memoire": memory["chars"] if memory else 0}
+    remembered = agent.memory_chosen(conv, root) if agent.memory_active(conv) else []
+    layers = {"persona": len(persona_text), "profil": len(profile_text), "memoire": memory["chars"] if memory else 0,
+              "souvenirs": len(agent.memory_block(conv, root)) if agent.memory_active(conv) else 0}
     layers["aria"] = max(0, len(full_prompt) - sum(layers.values()))
     try:
         global_hooks = hooks._read(hooks.GLOBAL_PATH)[1] if hooks.GLOBAL_PATH.is_file() else {}
@@ -1346,6 +1386,8 @@ def agent_context(conversation_id: str):
                   "auto_write": bool(settings.get("auto_write")), "auto_web": bool(settings.get("auto_web")),
                   "tools": tool_count},
         "memory": memory,
+        "souvenirs": {"enabled": souvenirs.settings()["enabled"], "prive": bool(conv.get("prive")),
+                      "injected": len(remembered), "total": len(souvenirs.all_souvenirs())},
         "persona": {"id": current["id"], "name": current["name"], "avatar": current.get("avatar", ""),
                     "register": persona.register_for(current)} if current else None,
         "layers": layers,

@@ -80,6 +80,7 @@ def list_all():
             "title": conv["title"],
             "updated_at": conv["updated_at"],
             "message_count": len(conv["messages"]),
+            "prive": bool(conv.get("prive")),
         })
     return sorted(items, key=lambda c: c["updated_at"], reverse=True)
 

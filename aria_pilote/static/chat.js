@@ -559,7 +559,7 @@ async function loadConversations() {
         const item = el(
             "li",
             { className: c.id === chat.current?.id ? "selected" : "", title: c.title },
-            el("span", { className: "conv-title" }, c.title),
+            el("span", { className: "conv-title" }, `${c.prive ? "🕶 " : ""}${c.title}`),
             del
         );
         item.addEventListener("click", () => openConversation(c.id));
@@ -571,7 +571,10 @@ async function openConversation(id) {
     if (chat.controller) return;
     if (id !== chat.current?.id) chat.memoryLoaded = false;
     chat.current = id ? await api(`/api/conversations/${id}`) : null;
-    if (!id) resetPendingAgent();
+    if (!id) {
+        resetPendingAgent();
+        chat.pendingPrivate = false;
+    }
     $("#conv-title").textContent = chat.current?.title || "Nouvelle conversation";
     $("#btn-rename").hidden = !chat.current;
     if (chat.personas) {
@@ -585,6 +588,7 @@ async function openConversation(id) {
     }
     $("#chat-error").hidden = true;
     syncAgentBar();
+    syncPrivateChip();
     renderGauge(chat.current?.context);
     renderMessages();
     loadConversations();
@@ -792,7 +796,13 @@ async function refreshContext() {
     const approx = (chars) => `≈ ${Math.round(chars / 4).toLocaleString("fr-FR")} tokens`;
     parts.push(section(titled("Ce que lit le modèle, par couche"),
         row("Persona", approx(c.layers.persona)), row("Fiche Toi", approx(c.layers.profil)),
-        row("Aria Pilote (règles, outils, compétences)", approx(c.layers.aria)), row("Mémoire du projet", approx(c.layers.memoire))));
+        row("Aria Pilote (règles, outils, compétences)", approx(c.layers.aria)), row("Mémoire du projet", approx(c.layers.memoire)),
+        row("Souvenirs", approx(c.layers.souvenirs))));
+    const sv = c.souvenirs;
+    parts.push(section(titled("Souvenirs", () => { location.hash = "#/reglages/general"; }),
+        !sv.enabled ? el("span", { className: "muted small" }, "Coupés dans les Réglages : rien n'est retenu ni utilisé.")
+            : sv.prive ? el("span", { className: "muted small" }, "🕶 Conversation privée : rien n'y est retenu, aucun souvenir n'y sert.")
+                : row("Glissés dans le prompt", `${sv.injected} sur ${sv.total}`)));
     const memoryParts = [];
     if (c.memory) {
         memoryParts.push(row(c.memory.file, `${c.memory.chars.toLocaleString("fr-FR")} caractères, lus à chaque tâche`));
@@ -1139,6 +1149,7 @@ function toolNode(m, pendingPlan = false, activeQuestion = false) {
     if (m.name === "propose_plan") return planNode(m, pendingPlan);
     if (m.name === "ask_user" && m.status !== "running" && m.status !== "error") return questionNode(m, activeQuestion);
     if (m.name === "delegate") return subagentNode(m);
+    if (m.souvenir && m.status === "ok") return souvenirNode(m);
     const node = el("details", { className: `tool ${m.status}` });
     node.dataset.callId = m.tool_call_id || "";
     const bg = m.args?.background ? (m.args.keep ? "⚙ arrière-plan, gardée · " : "⚙ arrière-plan · ") : "";
@@ -1173,7 +1184,7 @@ function toolNode(m, pendingPlan = false, activeQuestion = false) {
 
 function diffNode(text, kind) {
     const pre = el("pre", { className: "diff" });
-    if (kind === "command" || kind === "screen_action" || kind === "mcp") {
+    if (kind === "command" || kind === "screen_action" || kind === "mcp" || kind === "memory") {
         pre.textContent = text;
         return pre;
     }
@@ -1195,6 +1206,7 @@ function approvalNode(ev) {
         write: `L'agent veut modifier ${ev.path} :`,
         screen_action: "🖱 L'agent veut agir sur ton écran (une action à l'écran ne s'annule pas) :",
         mcp: "🔌 L'agent veut utiliser un outil MCP :",
+        memory: "🧠 L'agent veut toucher à ses souvenirs :",
     }[ev.kind];
     const buttons = el("div", { className: "row" });
     const decide = async (decision, label, rule = null) => {
@@ -1460,6 +1472,7 @@ async function send(content, answer, continueTask = false, pictures = [], planFi
                 body: JSON.stringify({
                     preset_id: $("#preset-select").value,
                     persona_id: $("#persona-select").value || undefined,
+                    prive: Boolean(chat.pendingPrivate),
                     agent: { enabled: Boolean(pending.enabled), workspace: pending.enabled ? pending.workspace : null,
                         auto_web: Boolean(pending.auto_web) },
                 }),
@@ -1620,7 +1633,8 @@ async function send(content, answer, continueTask = false, pictures = [], planFi
                 if ((card?.data.name === "run_command" && card.data.args?.background) || card?.data.name === "stop_command") {
                     refreshBackground();
                 }
-                Object.assign(card.data, { status: ev.status, content: ev.output, backup_id: ev.backup_id, syntax: ev.syntax, rule: ev.rule });
+                Object.assign(card.data, { status: ev.status, content: ev.output, backup_id: ev.backup_id, syntax: ev.syntax, rule: ev.rule,
+                    souvenir: ev.souvenir });
                 const fresh = toolNode(card.data);
                 card.node.replaceWith(fresh);
                 card.node = fresh;

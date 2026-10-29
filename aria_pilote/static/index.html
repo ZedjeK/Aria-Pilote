@@ -45,6 +45,7 @@
                 <button id="btn-rules" class="ghost" title="Commandes toujours autorisées dans ce projet" hidden>Règles</button>
                 <button id="btn-screen" class="ghost" title="Laisser l'agent voir l'écran et agir dans les fenêtres que tu choisis" hidden>🖱 Prendre la main</button>
                 <button id="btn-mcp" class="ghost" hidden>🔌 MCP</button>
+                <button id="btn-private" class="ghost" aria-pressed="false">🕶 Privée</button>
                 <span id="agent-info" class="muted small"></span>
             </div>
             <div id="screen-banner" class="screen-banner" hidden></div>
@@ -200,6 +201,34 @@
                         <summary>👁 Voir ce que lit le modèle</summary>
                         <pre id="profile-preview" class="preview-text"></pre>
                     </details>
+                </div>
+                <div class="set-card" id="souvenirs-card">
+                    <div class="set-card-head">
+                        <div><div class="set-card-title">🧠 Souvenirs</div><div class="muted small">Ce que ton IA retient de vos conversations, pour tous les personas (un souvenir intime reste à son persona). Reste sur ton PC.</div></div>
+                        <span id="souvenirs-count" class="muted small"></span>
+                    </div>
+                    <label class="set-row">
+                        <div><div class="set-label">Souvenirs activés</div><div class="muted small">Ton IA retient ce que tu lui dis de durable et s'en sert dans les conversations suivantes. Coupé : elle ne retient ni n'utilise rien</div></div>
+                        <input type="checkbox" class="switch" data-config="memory.enabled">
+                    </label>
+                    <label class="set-row">
+                        <div><div class="set-label">Me demander avant de retenir</div><div class="muted small">Sinon elle retient d'office, et la puce « 🧠 Retenu » sous sa réponse te laisse annuler</div></div>
+                        <input type="checkbox" class="switch" data-config="memory.ask_before">
+                    </label>
+                    <label class="set-row">
+                        <div><div class="set-label">Souvenirs glissés à chaque message, au plus</div><div class="muted small">Les plus utiles à ta demande, puis les plus récents ; jamais plus d'environ 1 500 tokens. Les autres, elle peut les chercher</div></div>
+                        <input type="number" class="set-num" min="0" max="200" step="5" data-config="memory.max_injected">
+                    </label>
+                    <div class="souvenir-add">
+                        <input id="souvenir-new" maxlength="300" placeholder="Ajouter un souvenir, ex. Il préfère les réponses courtes">
+                        <select id="souvenir-new-cat"></select>
+                        <button id="btn-souvenir-add" class="ghost">Ajouter</button>
+                    </div>
+                    <input id="souvenir-filter" placeholder="🔍 Chercher dans les souvenirs">
+                    <div id="souvenirs-list" class="souvenirs-list"></div>
+                    <div class="row">
+                        <button id="btn-souvenirs-clear" class="ghost danger-text" hidden>Tout oublier</button>
+                    </div>
                 </div>
                 <div class="set-card">
                     <div class="set-row">
@@ -891,6 +920,7 @@ py -3.11 tools/build_portable.py</pre>
     <script src="markdown.js"></script>
     <script src="app.js"></script>
     <script src="notify.js"></script>
+    <script src="souvenirs.js"></script>
     <script src="chat.js"></script>
     <script src="discover.js"></script>
     <script src="settings.js"></script>
