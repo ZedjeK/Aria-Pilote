@@ -118,14 +118,83 @@ def windows():
 
     @ctypes.WINFUNCTYPE(wt.BOOL, wt.HWND, wt.LPARAM)
     def collect(hwnd, _):
-        if user32.IsWindowVisible(hwnd) and not user32.GetWindow(hwnd, 4) and _title(hwnd) and not _cloaked(hwnd) \
-                and not user32.GetWindowLongW(hwnd, -20) & 0x80:  # ni fenêtre possédée, ni WS_EX_TOOLWINDOW
+        # Boîtes de dialogue comprises (Enregistrer sous, Ouvrir…, fenêtres « possédées ») ; pas les WS_EX_TOOLWINDOW
+        if user32.IsWindowVisible(hwnd) and _title(hwnd) and not _cloaked(hwnd) \
+                and not user32.GetWindowLongW(hwnd, -20) & 0x80:
             found.append(hwnd)
         return True
 
     user32.EnumWindows(collect, 0)
     return [{"id": int(h), "titre": _title(h), "processus": _process(h), "rect": _rect(h),
-             "reduite": bool(user32.IsIconic(wt.HWND(h)))} for h in found]
+             "reduite": bool(user32.IsIconic(wt.HWND(h))),
+             "proprietaire": int(user32.GetWindow(wt.HWND(h), 4) or 0) or None} for h in found]
+
+
+def _pid(hwnd):
+    pid = wt.DWORD()
+    user32.GetWindowThreadProcessId(wt.HWND(hwnd), ctypes.byref(pid))
+    return pid.value
+
+
+def _class(hwnd):
+    buffer = ctypes.create_unicode_buffer(256)
+    user32.GetClassNameW(wt.HWND(hwnd), buffer, 256)
+    return buffer.value
+
+
+MAX_POPUPS = 6
+SHELL_CLASSES = {"Shell_TrayWnd", "Shell_SecondaryTrayWnd", "Progman", "WorkerW"}  # barre des tâches, bureau
+
+
+def popups(window):
+    """Ce qui s'est ouvert par-dessus la fenêtre, dans la même appli : menus, listes déroulantes, boîtes de
+    dialogue. Ils font partie de ce que l'agent observe et peut toucher (un menu est une fenêtre à part)."""
+    _require_windows()
+    pid = _pid(window["id"])
+    if not pid:
+        return []
+    found = []
+
+    @ctypes.WINFUNCTYPE(wt.BOOL, wt.HWND, wt.LPARAM)
+    def collect(hwnd, _):
+        h = int(hwnd or 0)
+        if h == window["id"] or not user32.IsWindowVisible(hwnd) or user32.IsIconic(hwnd) or _cloaked(h):
+            return True
+        if _pid(h) != pid:
+            return True
+        cls = _class(h)
+        if cls in SHELL_CLASSES:
+            return True
+        owner = int(user32.GetWindow(hwnd, 4) or 0)
+        style = user32.GetWindowLongW(hwnd, -16) & 0xFFFFFFFF
+        if cls == "#32768" or owner == window["id"] or (style & 0x80000000 and not _title(h)):  # menu, possédée, WS_POPUP
+            rect = _rect(h)
+            if rect[2] - rect[0] > 4 and rect[3] - rect[1] > 4:
+                found.append({"id": h, "titre": _title(h), "classe": cls, "rect": rect})
+        return True
+
+    user32.EnumWindows(collect, 0)
+    return found[:MAX_POPUPS]
+
+
+def zone(window, extra=()):
+    """Cadre qui englobe la fenêtre et ce qui s'est ouvert par-dessus."""
+    rects = [window["rect"], *(p["rect"] for p in extra)]
+    return (min(r[0] for r in rects), min(r[1] for r in rects), max(r[2] for r in rects), max(r[3] for r in rects))
+
+
+def restore(hwnd):
+    """Rouvre une fenêtre réduite dans la barre des tâches et la met au premier plan."""
+    _require_windows()
+    user32.ShowWindow(wt.HWND(hwnd), 9)  # SW_RESTORE
+    time.sleep(0.3)
+    return bring_to_front(hwnd)
+
+
+def capture_region(rect):
+    """Ce qui est affiché dans ce rectangle de l'écran, en pleine résolution (zoom, menus ouverts)."""
+    _require_windows()
+    return ImageGrab.grab(bbox=tuple(int(v) for v in rect), all_screens=True)
 
 
 def find(spec, listed=None):
@@ -243,53 +312,68 @@ def _value(ctrl, kind):
     return None
 
 
-def read_elements(window, limit=MAX_ELEMENTS):
-    """Éléments utilisables (numérotés) et textes visibles de la fenêtre, lus par UI Automation."""
+def read_elements(window, limit=MAX_ELEMENTS, extra=()):
+    """Éléments utilisables (numérotés) et textes visibles de la fenêtre, lus par UI Automation ; `extra` : les menus
+    et boîtes de dialogue ouverts par-dessus (popups), lus ensuite, à la suite des numéros."""
     _require_windows()
     import uiautomation as auto  # chargé à la demande : quelques secondes au premier appel
 
-    left, top, right, bottom = window["rect"]
     elements, texts, truncated = [], [], False
     with auto.UIAutomationInitializerInThread():
-        root = auto.ControlFromHandle(window["id"])
-        if root is None:
-            raise ScreenError(f"La fenêtre « {window['titre']} » ne répond pas à l'accessibilité de Windows.")
         started = time.monotonic()
-        for ctrl, _depth in auto.WalkControl(root, includeTop=False, maxDepth=30):
-            if time.monotonic() - started > WALK_BUDGET_S or len(elements) >= limit:
+        # Ce qui est ouvert par-dessus d'abord : un menu ou une boîte de dialogue est ce qui attend une action
+        for source in [*extra, window]:
+            root = auto.ControlFromHandle(source["id"])
+            if root is None:
+                if source is window:
+                    raise ScreenError(f"La fenêtre « {window['titre']} » ne répond pas à l'accessibilité de Windows.")
+                continue
+            if _walk(auto, root, source, elements, texts, limit, started):
                 truncated = True
                 break
-            try:
-                kind = ctrl.ControlTypeName
-                if kind not in TYPES and kind != "TextControl":
-                    continue
-                if ctrl.IsOffscreen:
-                    continue
-                r = ctrl.BoundingRectangle
-                box = (max(r.left, left), max(r.top, top), min(r.right, right), min(r.bottom, bottom))
-                if box[2] - box[0] < 2 or box[3] - box[1] < 2:
-                    continue  # hors de la fenêtre ou invisible
-                name = " ".join((ctrl.Name or "").split())[:80]
-                if kind == "TextControl":
-                    if name and len(texts) < MAX_TEXTS and name not in texts:
-                        texts.append(name)
-                    continue
-                value = _value(ctrl, kind)
-                elements.append({
-                    "n": len(elements) + 1, "type": kind, "nom": name, "rect": box,
-                    "valeur": " ".join(value.split())[:VALUE_CHARS] if isinstance(value, str) else None,
-                    "mot_de_passe": bool(getattr(ctrl, "IsPassword", False)),
-                    "actif": bool(ctrl.IsEnabled),
-                })
-            except Exception:  # élément disparu pendant la lecture (menu refermé…)
-                continue
     return elements, texts, truncated
 
 
-def describe_elements(window, elements, texts, truncated):
+def _walk(auto, root, source, elements, texts, limit, started):
+    """Parcourt une fenêtre ; True si la liste est coupée (trop d'éléments ou trop long)."""
+    left, top, right, bottom = source["rect"]
+    for ctrl, _depth in auto.WalkControl(root, includeTop=False, maxDepth=30):
+        if time.monotonic() - started > WALK_BUDGET_S or len(elements) >= limit:
+            return True
+        try:
+            kind = ctrl.ControlTypeName
+            if kind not in TYPES and kind != "TextControl":
+                continue
+            if ctrl.IsOffscreen:
+                continue
+            r = ctrl.BoundingRectangle
+            box = (max(r.left, left), max(r.top, top), min(r.right, right), min(r.bottom, bottom))
+            if box[2] - box[0] < 2 or box[3] - box[1] < 2:
+                continue  # hors de la fenêtre ou invisible
+            name = " ".join((ctrl.Name or "").split())[:80]
+            if kind == "TextControl":
+                if name and len(texts) < MAX_TEXTS and name not in texts:
+                    texts.append(name)
+                continue
+            value = _value(ctrl, kind)
+            elements.append({
+                "n": len(elements) + 1, "type": kind, "nom": name, "rect": box,
+                "valeur": " ".join(value.split())[:VALUE_CHARS] if isinstance(value, str) else None,
+                "mot_de_passe": bool(getattr(ctrl, "IsPassword", False)),
+                "actif": bool(ctrl.IsEnabled),
+            })
+        except Exception:  # élément disparu pendant la lecture (menu refermé…)
+            continue
+    return False
+
+
+def describe_elements(window, elements, texts, truncated, extra=()):
     w = window["rect"][2] - window["rect"][0]
     h = window["rect"][3] - window["rect"][1]
     lines = [f"Fenêtre « {window['titre']} » ({window['processus'] or '?'}), {w}x{h} à l'écran, id {window['id']}"]
+    for p in extra:
+        what = "menu" if p["classe"] == "#32768" or not p["titre"] else f"boîte de dialogue « {p['titre']} »"
+        lines.append(f"Ouvert par-dessus : {what} (ses éléments sont en tête de liste)")
     if elements:
         lines.append("Éléments (désigne-les par leur numéro) :")
         for e in elements:
@@ -519,6 +603,10 @@ def ensure_allowed(window, allow):
     if allow is not None and window["processus"].lower() not in {p.lower() for p in allow}:
         raise ScreenError(f"La fenêtre « {window['titre']} » n'est pas dans celles que tu m'as autorisées. "
                           "Ajoute-la avec « Prendre la main » si tu veux que j'y agisse.")
+
+
+def foreground():
+    return int(user32.GetForegroundWindow() or 0)
 
 
 def owner_at(x, y):
