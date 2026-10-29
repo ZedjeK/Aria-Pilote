@@ -91,6 +91,12 @@ Chaque tâche part d'une copie neuve de ses fichiers dans un dossier temporaire,
 .\.venv\Scripts\python.exe tools/essai_mcp.py --models qwen,bonsai
 ```
 
+`tools/essai_ecran.py` met les modèles aux commandes de ton vrai PC, en mode PC entier : ouvrir la Calculatrice par le menu Démarrer et calculer 12 × 34, écrire dans le Bloc-notes puis passer par « Enregistrer sous », un clic droit dans l'Explorateur (« Copier en tant que chemin d'accès »), rouvrir une fenêtre réduite. **Ta souris et ton clavier sont pilotés pendant l'essai** (environ 4 minutes par modèle) : ne touche à rien. Tout se passe dans un dossier temporaire, les applis ouvertes sont refermées et le contrôle du PC est remis comme avant ; le rapport va dans `bench\results\ecran\`.
+
+```powershell
+.\.venv\Scripts\python.exe tools/essai_ecran.py --models qwen38,27b-pq2_0
+```
+
 ## Premiers pas
 
 1. **⚙ Réglages › Découvrir** : cherche un modèle (par exemple `bonsai-2`), puis télécharge le fichier conseillé. La case « avec la vision » ajoute son projecteur.
