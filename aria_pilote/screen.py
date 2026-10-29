@@ -438,6 +438,7 @@ def draw_marks(image, elements, origin, scale):
 ARIA_INPUT = 0xA51A
 SETTLE_S = 0.6  # le temps que la fenêtre réagisse avant la nouvelle observation
 MAX_TEXT = 2000
+TYPE_DELAY_S = 0.02  # entre deux lettres tapées (voir type_text)
 MAX_WAIT_S = 10
 OWN_WINDOW = "aria pilote"  # l'agent n'agit jamais sur la fenêtre qui affiche ses propres accords
 # Applis jamais observables ni actionnables, quoi que l'utilisateur autorise : réglages et sécurité du système,
@@ -536,7 +537,9 @@ def type_text(text):
             _send(_key(0x0D), _key(0x0D, up=True))
         else:
             _send(_char(ch), _char(ch, up=True))
-        time.sleep(0.004)  # certaines applis perdent des lettres tapées trop vite
+        # Le Bloc-notes de Windows 11 perd ou mélange des lettres à 4 ms (« Essai rria DD » pour « Essai Aria 5D »),
+        # pas à 15 ms (mesuré) : 20 ms, avec de la marge
+        time.sleep(TYPE_DELAY_S)
 
 
 def _move(x, y):
