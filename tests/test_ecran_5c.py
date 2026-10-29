@@ -98,6 +98,38 @@ class TaskTest(Base):
         asyncio.run(scenario())
 
 
+class PcModeTest(Base):
+    """Mode PC entier : les actions ordinaires passent d'office, tant que l'agent a la main."""
+
+    def setUp(self):
+        super().setUp()
+        conversations.update(self.cid, lambda c: c.__setitem__("screen_mode", "pc"))
+        tools._remember_screen(self.cid, WINDOW, ELEMENTS)  # une fenêtre observée par son nom, comme en mode fenêtres
+
+    def test_ordinaire_sans_carte_sensible_toujours_demande(self):
+        asked, result = self.run_action(action="cliquer", element=3)
+        self.assertEqual(asked, [])
+        self.assertEqual(result["rule"], "action ordinaire, autorisée d'office en mode PC entier")
+        asked, _ = self.run_action(action="taper", element=1, texte="Réunion")
+        self.assertEqual(asked, [])
+        asked, _ = self.run_action("deny", action="cliquer", element=2)  # « Envoyer »
+        self.assertEqual(len(asked), 1)
+        asked, _ = self.run_action("deny", action="touches", touches="alt+f4")
+        self.assertEqual(len(asked), 1)
+        # Nouvelle tâche : toujours d'office (valable tant que l'agent a la main, pas seulement pour une tâche)
+        conversations.update(self.cid, lambda c: c.__setitem__("task_id", "tache-2"))
+        asked, _ = self.run_action(action="defiler", direction="bas")
+        self.assertEqual(asked, [])
+
+    def test_repetition_toujours_demandee(self):
+        self.run_action(action="cliquer", element=3)
+        asked, _ = self.run_action("deny", action="cliquer", element=3)  # la même action que la précédente
+        self.assertEqual(len(asked), 1)
+
+    def test_ouvrir_une_appli_d_office(self):
+        self.assertTrue(self.bind(action="ouvrir", appli="Calculatrice")["ordinary"])
+
+
 class LimitTest(Base):
     def test_limite_reglable(self):
         saved = config.get().get("screen_max_actions")

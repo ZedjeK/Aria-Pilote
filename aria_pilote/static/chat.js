@@ -173,7 +173,8 @@ function syncScreenBar() {
         const hand = el("button", { className: "ghost", title: "Rendre la main : l'agent ne voit plus l'écran" }, "Rendre la main");
         hand.addEventListener("click", releaseScreen);
         banner.replaceChildren(el("span", {}, "🖥 L'agent a la main sur tout ton PC (sauf réglages, sécurité, terminaux et "
-            + "Aria). Il demande ton accord à chaque action."), hand);
+            + "Aria). Il agit sans te demander, sauf pour les actions sensibles (envoyer, payer, supprimer…), les "
+            + "raccourcis à risque et les répétitions."), hand);
         return;
     }
     const allow = chat.current.screen_allow;
@@ -1144,7 +1145,7 @@ function toolNode(m, pendingPlan = false, activeQuestion = false) {
     const syntax = m.syntax === false ? " · ⚠ syntaxe" : m.syntax === true ? " · ✓ syntaxe" : "";
     const mcp = m.name?.startsWith("mcp__") ? m.name.slice(5).split("__") : null;
     const rule = mcp && m.rule ? " · ✓ autorisé d'office"
-        : m.name === "agir_ecran" && m.rule ? " · ✓ autorisée d'office (actions ordinaires de cette tâche)"
+        : m.name === "agir_ecran" && m.rule ? ` · ✓ ${m.rule}`
             : m.rule ? ` · ✓ autorisée par la règle « ${m.rule} »` : "";
     const label = mcp ? `🔌 ${mcp[0]} › ${mcp.slice(1).join("__")}` : `🔧 ${m.name}`;
     // Un outil MCP a ses propres arguments : les deux premiers, en bref
