@@ -542,7 +542,11 @@ def prepare_load_skill(root, args):
 # Observer : lire_fenetre (texte) et voir_ecran (capture). Agir : agir_ecran, toujours sur la dernière fenêtre
 # observée, avec ton accord à chaque action, puis une nouvelle observation renvoyée au modèle.
 
-SCREEN_ACTIONS = ("cliquer", "double_clic", "clic_droit", "taper", "touches", "defiler", "glisser", "restaurer")
+SCREEN_ACTIONS = ("cliquer", "double_clic", "clic_droit", "taper", "touches", "defiler", "glisser", "restaurer", "ouvrir")
+# Ce qu'« ouvrir » refuse de lancer : les applis interdites d'office (l'agent ne pourrait de toute façon pas y agir)
+DENIED_APP_WORDS = ("cmd", "invite de commande", "powershell", "pwsh", "terminal", "regedit", "registre", "taskmgr",
+                    "gestionnaire des tâches", "task manager", "paramètres", "settings", "sécurité", "security",
+                    "panneau de configuration", "control panel", "mmc", "services.msc", "gpedit", "uac", "aria pilote")
 MAX_ZOOM = 3  # une petite zone est agrandie jusqu'à 3 fois pour que le texte se lise
 SCROLL_DIRECTIONS = ("haut", "bas", "gauche", "droite")
 
@@ -560,8 +564,15 @@ def prepare_screen(root, args):
 
 def _screen_allow(cid):
     """Programmes que l'utilisateur a autorisés pour cette conversation (« Prendre la main »), ou None = tous."""
-    allow = (conversations.get(cid) or {}).get("screen_allow")
+    conv = conversations.get(cid) or {}
+    if conv.get("screen_mode") == "pc":
+        return None  # tout le PC (les applis interdites restent interdites)
+    allow = conv.get("screen_allow")
     return allow if isinstance(allow, list) else None
+
+
+def _pc_mode(cid):
+    return (conversations.get(cid) or {}).get("screen_mode") == "pc"
 
 
 MAX_SCREEN_ACTIONS = 40  # actions à l'écran au plus par tâche : au-delà, l'agent s'arrête et rend compte
@@ -573,14 +584,14 @@ def _screen_action_count(cid):
                if m.get("name") == "agir_ecran" and m.get("status") == "ok" and m.get("task_id") == conv.get("task_id"))
 
 
-def _remember_screen(cid, window, elements, capture=None, zone=None):
+def _remember_screen(cid, window, elements, capture=None, zone=None, desktop=False):
     """Ce que le modèle a vu en dernier : agir_ecran ne vise que cette fenêtre (et ce qui est ouvert par-dessus : la
     `zone`), ses numéros et sa capture."""
     state = {"window": window["id"] if window else None, "title": window["titre"] if window else None,
              "rect": list(window["rect"]) if window else None,
              "zone": list(zone) if zone else (list(window["rect"]) if window else None),
              "elements": {str(e["n"]): {k: e[k] for k in ("type", "nom", "rect", "mot_de_passe")} for e in elements},
-             "capture": capture}
+             "capture": capture, "desktop": desktop}
     conversations.update(cid, lambda conv: conv.__setitem__("screen_state", state))
 
 
@@ -623,6 +634,9 @@ def _observe(cid, window, capture):
 def _read_window(spec, cid):
     try:
         listed = screen.allowed_windows(screen.windows(), _screen_allow(cid))
+        if not spec and _pc_mode(cid):
+            text, _ = _observe_desktop(cid, capture=False)
+            return _ok(_truncate(text))
         if not spec:
             return _ok(screen.describe_windows(listed))
         window = screen.find(spec, listed)
@@ -631,6 +645,47 @@ def _read_window(spec, cid):
     except screen.ScreenError as exc:
         raise ToolError(str(exc))
     return _ok(_truncate(text))
+
+
+def _usable(window):
+    """Une fenêtre que l'agent peut voir et toucher en mode PC entier : ni interdite, ni celle d'Aria."""
+    return bool(window) and not screen.is_denied(window)
+
+
+def _observe_desktop(cid, capture):
+    """Mode PC entier : tous les écrans, avec les éléments numérotés de la fenêtre au premier plan (et de ce qu'elle
+    a ouvert par-dessus) et de la barre des tâches. Une appli interdite au premier plan n'est ni lue ni numérotée."""
+    listed = screen.allowed_windows(screen.windows(), None)
+    front = screen.info(screen.foreground())
+    sources = []
+    if _usable(front) and front["id"] in {w["id"] for w in listed}:
+        sources += [*_popups(front), front]
+    bar = screen.taskbar()
+    if bar:
+        sources.append(bar)
+    elements, texts, truncated = (screen.read_elements(sources[-1], extra=sources[:-1]) if sources else ([], [], False))
+    lines = ["Tout le PC (mode PC entier) : bureau, barre des tâches et fenêtres, sauf les applis interdites."]
+    if front and not _usable(front):
+        lines.append("Au premier plan : une appli que je ne touche jamais (réglages, sécurité, terminal ou Aria).")
+    elif front:
+        lines.append(f"Au premier plan : « {front['titre']} » ({front['processus']}).")
+    lines.append(screen.describe_elements(bar or front, elements, texts, truncated).split("\n", 1)[-1] if elements
+                 else "Aucun élément numéroté : vise un point de la capture, ou observe une fenêtre par son nom.")
+    lines.append(screen.describe_windows(listed))
+    text = "\n".join(lines)
+    area = screen.desktop_rect()
+    if not capture:
+        _remember_screen(cid, None, elements, zone=area, desktop=True)
+        return text, []
+    image, origin = screen.capture_screen()
+    small, scale = screen.fit(image, images.MAX_SIDE)
+    if elements:
+        small = screen.draw_marks(small, elements, origin, scale)
+    _remember_screen(cid, None, elements, {"origin": list(origin), "scale": scale, "size": list(small.size)}, area, True)
+    if not manager.vision:
+        return text + "\n\nLe modèle chargé ne voit pas les images : seule la liste ci-dessus est disponible.", []
+    return text + "\n\nLa capture de tous les écrans est jointe juste après ce résultat (cadres numérotés).", \
+        [images.store(cid, small, "png")]
 
 
 def _zoom(zone, cid):
@@ -678,6 +733,8 @@ def _see_screen(spec, cid, zone=None):
             window = screen.find(spec, listed)
             screen.ensure_allowed(window, _screen_allow(cid))
             text, shots = _observe(cid, window, capture=True)
+        elif _pc_mode(cid):
+            text, shots = _observe_desktop(cid, capture=True)
         elif _screen_allow(cid) is not None:
             raise ToolError("Tu m'as limité à certaines fenêtres : donne le nom d'une de ces fenêtres à voir_ecran, "
                             "je ne capture pas tout l'écran dans ce cas.")
@@ -734,6 +791,12 @@ def prepare_screen_action(root, args):
     if action == "glisser" and p["vers_element"] is None and (p["vers_x"] is None or p["vers_y"] is None):
         raise ToolError("Indique où lâcher : « vers_element », ou « vers_x » et « vers_y ».")
     p["fenetre"] = str(args.get("fenetre") or "").strip()
+    p["appli"] = " ".join(str(args.get("appli") or "").split())[:80]
+    if action == "ouvrir":
+        if not p["appli"]:
+            raise ToolError("Indique l'« appli » à ouvrir (son nom, comme dans le menu Démarrer).")
+        if any(word in p["appli"].lower() for word in DENIED_APP_WORDS):
+            raise ToolError(f"« {p['appli']} » fait partie des applis que je n'ouvre pas (réglages, sécurité, terminal).")
     if action == "restaurer" and not p["fenetre"]:
         raise ToolError("Indique la « fenetre » à rouvrir (id, morceau du titre ou programme).")
     if action == "taper" and not (isinstance(p["texte"], str) and p["texte"]):
@@ -821,7 +884,15 @@ def bind_screen_action(prepared, cid):
                         "te rends compte. Relance-moi si tu veux que je continue.")
     if prepared["action"] == "restaurer":
         return _bind_restore(prepared, cid)
+    if prepared["action"] == "ouvrir":
+        if not _pc_mode(cid):
+            raise ToolError("Ouvrir une appli demande le mode « PC entier » (bouton « Prendre la main »).")
+        return {**prepared, "preview": f"Ouvrir l'appli « {prepared['appli']} » (menu Démarrer : Windows, son nom, Entrée)"}
     state = (conversations.get(cid) or {}).get("screen_state")
+    if state and state.get("desktop"):
+        if not _pc_mode(cid):
+            raise ToolError("Observe d'abord la fenêtre où agir (lire_fenetre ou voir_ecran avec son nom).")
+        return _bind_desktop(prepared, cid, state)
     window = _target_window(state, _screen_allow(cid))
     p = dict(prepared)
     action = p["action"]
@@ -887,9 +958,103 @@ def _restore(p, cid):
     return _ok(_truncate(f"Fait : {p['preview'].split(chr(10))[0]}.\n\nAprès l'action :\n{text}"))
 
 
+def _desktop_target(p, state):
+    """Où va l'action sur le bureau : la fenêtre sous le point visé, ou celle au premier plan (touches, frappe)."""
+    if p.get("point"):
+        return screen.window_at(*p["point"])
+    return screen.info(screen.foreground())
+
+
+def _bind_desktop(prepared, cid, state):
+    """Mode PC entier, après une observation de tout l'écran : la cible est un élément numéroté ou un point de la
+    capture, n'importe où sauf dans une appli interdite (vérifié ici, puis de nouveau au moment d'agir)."""
+    p = dict(prepared)
+    action = p["action"]
+    found = to_found = None
+    fake = {"titre": "le bureau", "rect": state["zone"]}  # pour _point : les limites sont celles de tous les écrans
+    if p["element"] is not None or p["x"] is not None:
+        sx, sy, found = _point(state, fake, p["element"], p["x"], p["y"])
+        if found:
+            found = {**found, "n": int(p["element"])}
+        p["point"] = (sx, sy)
+    if action == "glisser":
+        tx, ty, to_found = _point(state, fake, p["vers_element"], p["vers_x"], p["vers_y"])
+        p["to"] = (tx, ty)
+    if action == "defiler" and not p.get("point"):
+        raise ToolError("Sur tout l'écran, indique où faire défiler : un « element » ou un point « x », « y ».")
+    target = _desktop_target(p, state)
+    if not _usable(target):
+        raise ToolError("La cible est dans une appli que je ne touche jamais (réglages, sécurité, terminal ou Aria).")
+    if action == "taper" and found and found.get("mot_de_passe"):
+        raise ToolError("C'est un champ mot de passe : c'est à l'utilisateur de le remplir lui-même.")
+    label = _label(found, p["x"] or 0, p["y"] or 0) if p.get("point") else None
+    text = p["texte"] or ""
+    shown = text if len(text) <= 200 else text[:200] + "…"
+    first = {
+        "cliquer": f"Cliquer sur {label}", "double_clic": f"Double-cliquer sur {label}", "clic_droit": f"Clic droit sur {label}",
+        "taper": (f"Remplacer le contenu par « {shown} »" if p["remplacer"] else f"Taper « {shown} »")
+                 + (f" dans {label}" if label else " là où est le curseur"),
+        "touches": f"Appuyer sur {p['touches']}",
+        "defiler": f"Faire défiler vers le {p['direction']} ({p['quantite']} crans) sur {label}",
+        "glisser": f"Glisser de {label} vers " + (_label({**to_found, 'n': int(p['vers_element'])}, 0, 0) if to_found
+                                                  else f"le point ({p['vers_x'] or 0:.0f}, {p['vers_y'] or 0:.0f})"),
+    }[action]
+    warnings = []
+    if action in ("cliquer", "double_clic") and found and _is_sensitive(found.get("nom")):
+        warnings.append("⚠ Ce bouton déclenche une action difficile à défaire (envoi, paiement, suppression…).")
+    if first == _last_screen_preview(cid):
+        warnings.append("⚠ Même action que la précédente : l'écran n'a peut-être pas réagi comme prévu.")
+    p["preview"] = "\n".join([first, *warnings, f"Fenêtre visée : « {target['titre']} » ({target['processus']})"])
+    return p
+
+
+def _act_desktop(p, cid):
+    state = (conversations.get(cid) or {}).get("screen_state") or {}
+    target = _desktop_target(p, state)  # de nouveau : du temps a passé pendant ta décision
+    if not _usable(target):
+        raise ToolError("La cible est maintenant une appli que je ne touche jamais : je n'ai rien fait. Observe à nouveau.")
+    action = p["action"]
+    if action in ("cliquer", "double_clic", "clic_droit"):
+        screen.click(*p["point"], button="droit" if action == "clic_droit" else "gauche", double=action == "double_clic")
+    elif action == "taper":
+        if p.get("point"):
+            screen.click(*p["point"])
+            time.sleep(0.15)
+        if screen.focused_is_password():
+            raise ToolError("Le curseur est dans un champ mot de passe : c'est à l'utilisateur de le remplir.")
+        if p["remplacer"]:
+            screen.press("ctrl+fin")
+            screen.press("ctrl+maj+debut")
+        screen.type_text(p["texte"])
+    elif action == "touches":
+        screen.press(p["touches"])
+    elif action == "defiler":
+        screen.scroll(*p["point"], p["direction"], p["quantite"])
+    elif action == "glisser":
+        screen.drag(*p["point"], *p["to"])
+    time.sleep(screen.SETTLE_S + p["attente"])
+    text, shots = _observe_desktop(cid, capture=bool(state.get("capture")))
+    done = p["preview"].split("\n")[0]
+    text = _truncate(f"Fait : {done}.\n\nAprès l'action :\n{text}")
+    text += "\n\nSi la demande est remplie, rends compte à l'utilisateur sans autre action."
+    return _ok(text, **({"images": shots} if shots else {}))
+
+
+def _open_app(p, cid):
+    screen.open_app(p["appli"])
+    time.sleep(2 + p["attente"])
+    text, _ = _observe_desktop(cid, capture=False)
+    return _ok(_truncate(f"Fait : {p['preview']}.\n\nAprès l'action :\n{text}\n\n"
+                         "Vérifie que c'est bien la bonne appli au premier plan avant d'y agir."))
+
+
 def _act(p, cid):
     if p["action"] == "restaurer":
         return _restore(p, cid)
+    if p["action"] == "ouvrir":
+        return _open_app(p, cid)
+    if ((conversations.get(cid) or {}).get("screen_state") or {}).get("desktop"):
+        return _act_desktop(p, cid)
     state = (conversations.get(cid) or {}).get("screen_state")
     window = _target_window(state, _screen_allow(cid))  # de nouveau : du temps a passé pendant ta décision
     hwnd = window["id"]
@@ -1149,7 +1314,8 @@ TOOLS = {t.name: t for t in [
         "capture) ; taper un texte (dans un élément : il clique d'abord dedans, ce qui défait une sélection ; "
         "remplacer=true pour remplacer tout son contenu ; ou là où est le curseur) ; touches (« ctrl+s », « entree », "
         "« alt+tab ») ; defiler (haut, bas, gauche, droite) ; glisser d'un élément ou point vers un autre ; "
-        "restaurer une fenêtre réduite (« fenetre » : son nom, sans observation préalable). Les menus et boîtes de "
+        "restaurer une fenêtre réduite (« fenetre » : son nom, sans observation préalable) ; en mode PC entier, "
+        "ouvrir une appli (« appli » : son nom) et agir n'importe où après voir_ecran sans argument. Les menus et boîtes de "
         "dialogue ouverts par la fenêtre font partie de l'observation : leurs éléments sont numérotés en tête. "
         "Renvoie ensuite la fenêtre telle qu'elle est devenue. Une action à la fois.",
         _schema({
@@ -1166,6 +1332,7 @@ TOOLS = {t.name: t for t in [
             "vers_x": {"type": "number"}, "vers_y": {"type": "number"},
             "attente": {"type": "number", "description": "Secondes à attendre avant d'observer le résultat (10 au plus)."},
             "fenetre": {"type": "string", "description": "Fenêtre à rouvrir (action restaurer) : id, titre ou programme."},
+            "appli": {"type": "string", "description": "Appli à ouvrir (action ouvrir, mode PC entier) : son nom."},
         }, ["action"]),
         prepare_screen_action, run_screen_action, bind_screen_action,
     ),

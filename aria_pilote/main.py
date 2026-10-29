@@ -192,6 +192,7 @@ class ConversationPatch(BaseModel):
     agent: AgentSettings | None = None
     screen_control: bool | None = None  # contrôle du PC dans cette conversation (s'il est activé dans les Réglages)
     screen_allow: list[str] | None = None  # programmes autorisés pour cette conversation ([] = aucun ; absent = tous)
+    screen_mode: str | None = None  # « fenetres » (celles cochées) ou « pc » (tout le PC, sauf les applis interdites)
     mcp: list[str] | None = None  # serveurs MCP proposés dans cette conversation
     mcp_default: bool = False  # revenir aux serveurs actifs d'office
 
@@ -587,9 +588,17 @@ def patch_conversation(cid: str, patch: ConversationPatch):
             raise HTTPException(409, "Le contrôle du PC est coupé dans les Réglages (Agents).")
         conv["screen_control"] = patch.screen_control
         if not patch.screen_control:
-            conv.pop("screen_allow", None)  # la main rendue : la liste autorisée tombe
+            conv.pop("screen_allow", None)  # la main rendue : la liste autorisée et le mode tombent
+            conv.pop("screen_mode", None)
+    if patch.screen_mode is not None:
+        if patch.screen_mode not in ("fenetres", "pc"):
+            raise HTTPException(400, "Mode inconnu : fenetres ou pc.")
+        conv["screen_mode"] = patch.screen_mode
+        if patch.screen_mode == "pc":
+            conv.pop("screen_allow", None)  # tout le PC : plus de liste (les applis interdites le restent)
     if patch.screen_allow is not None:
         conv["screen_allow"] = [p.strip().lower() for p in patch.screen_allow if p.strip()]
+        conv["screen_mode"] = "fenetres"
     if patch.mcp_default:
         conv.pop("mcp", None)
     elif patch.mcp is not None:
