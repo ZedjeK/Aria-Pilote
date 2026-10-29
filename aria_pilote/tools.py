@@ -591,9 +591,10 @@ def _risky_keys(spec):
 
 
 def _mark_ordinary(p, warnings=()):
-    """Une action « ordinaire » peut passer sans accord si tu l'as permis pour la tâche : pas un bouton sensible, pas
-    une répétition, pas un raccourci à risque, pas l'ouverture d'une appli."""
-    p["ordinary"] = not warnings and p["action"] != "ouvrir" and not (p["action"] == "touches" and _risky_keys(p["touches"]))
+    """Une action « ordinaire » passe sans accord en mode PC entier (ou pour la tâche, si tu l'as permis) : pas un
+    bouton sensible, pas une répétition, pas un raccourci à risque. Ouvrir une appli n'existe qu'en PC entier : elle y
+    est ordinaire (les applis interdites sont refusées avant même la demande)."""
+    p["ordinary"] = not warnings and not (p["action"] == "touches" and _risky_keys(p["touches"]))
     return p
 
 

@@ -102,8 +102,10 @@ async def run_tool(cid, root, name, args, call_id, out, allowed=None, parent_id=
     rule = permissions.find(root, command) if command and root else None  # « toujours autoriser » dans ce projet
     auto = prepared.get("auto_allowed")  # outil MCP réglé sur « Toujours autoriser »
     conv_now = conversations.get(cid) or {}
-    screen_auto = (tool.kind == "screen_action" and prepared.get("ordinary") and conv_now.get("task_id")
-                   and conv_now.get("screen_auto_task") == conv_now.get("task_id"))
+    # Action ordinaire à l'écran : d'office en mode PC entier, ou si tu l'as permis pour cette tâche
+    pc_mode = conv_now.get("screen_mode") == "pc"
+    screen_auto = (tool.kind == "screen_action" and prepared.get("ordinary")
+                   and (pc_mode or (conv_now.get("task_id") and conv_now.get("screen_auto_task") == conv_now.get("task_id"))))
     auto = auto or screen_auto
     if tool.kind in APPROVAL_FLAGS and rule is None and not auto and not settings.get(APPROVAL_FLAGS[tool.kind] or "", False):
         approval_id = uuid.uuid4().hex[:12]
@@ -137,7 +139,8 @@ async def run_tool(cid, root, name, args, call_id, out, allowed=None, parent_id=
     if rule:
         out["result"]["rule"] = rule  # affiché sur la carte : autorisée sans te demander, par cette règle
     elif screen_auto:
-        out["result"]["rule"] = "action ordinaire autorisée pour cette tâche"
+        out["result"]["rule"] = ("action ordinaire, autorisée d'office en mode PC entier" if pc_mode
+                                 else "action ordinaire autorisée pour cette tâche")
     elif auto:
         out["result"]["rule"] = "outil MCP autorisé d'office (Réglages)"
 
