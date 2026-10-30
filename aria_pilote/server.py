@@ -149,7 +149,7 @@ class ServerManager:
         exe = engines.find_server(engine)
         if exe is None:
             self.state = "error"
-            self.error = f"Moteur « {engine} » non installé (lance tools/install_engines.py)."
+            self.error = f"Moteur « {engine} » non installé : installe-le dans Réglages › Moteurs."
             raise EngineMissing(self.error)
         cfg = config.get()
         self.api_key = secrets.token_urlsafe(32)

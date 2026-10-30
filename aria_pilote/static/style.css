@@ -207,7 +207,9 @@ input.switch:disabled { opacity: .35; cursor: not-allowed; }
 .badge.loaded { border-color: var(--ok); color: var(--ok); }
 .badge.err { border-color: var(--err); color: var(--err); }
 
-.engines li { display: flex; justify-content: space-between; gap: 8px; padding: 4px 0; font-size: 13px; }
+.engines li { display: grid; grid-template-columns: 1fr auto auto; align-items: center; gap: 8px; padding: 4px 0; font-size: 13px; }
+.engines .engine-actions { display: flex; align-items: center; justify-content: flex-end; gap: 6px; flex-wrap: wrap; }
+.engines .engine-actions button { padding: 3px 10px; }
 
 /* --- Détail et formulaire --- */
 

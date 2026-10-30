@@ -376,16 +376,92 @@ async function pollLogs() {
     }
 }
 
-async function loadEngines() {
+const ENGINE_RUNNING = ["downloading", "installing"];
+
+function engineActions(e) {
+    const box = el("span", { className: "engine-actions" });
+    if (!("latest" in e)) return box;  // SearXNG : pas de mise à jour ici
+    const job = e.update;
+    if (ENGINE_RUNNING.includes(job?.status)) {
+        const pct = job.total_bytes ? ` ${Math.floor((job.done_bytes * 100) / job.total_bytes)} %` : "…";
+        box.append(el("span", { className: "muted small" },
+            job.status === "installing" ? `Installation de ${job.tag}…` : `Téléchargement de ${job.tag}${pct}`));
+        return box;
+    }
+    if (job?.status === "error") box.append(el("span", { className: "error small", title: job.error }, "⚠ échec"));
+    if (job?.status === "done") box.append(el("span", { className: "muted small" }, "✓ mis à jour"));
+    if (e.latest_error) box.append(el("span", { className: "error small", title: e.latest_error }, "⚠ vérification"));
+    if (e.newer) {
+        const verb = e.installed ? "Mettre à jour" : "Installer";
+        const btn = el("button", { type: "button", className: "primary small", textContent: `${verb} → ${e.latest}` });
+        btn.addEventListener("click", () => {
+            if (confirm(`${verb} ${e.label} en ${e.latest} ? Le téléchargement depuis GitHub fait quelques centaines de Mo.`)) {
+                engineAction(e, "update");
+            }
+        });
+        box.append(btn);
+    } else if (e.latest && !job) {
+        box.append(el("span", { className: "muted small" }, "à jour"));
+    }
+    if (e.previous) {
+        const back = el("button", { type: "button", className: "ghost small", textContent: `Revenir à ${e.previous}` });
+        back.addEventListener("click", () => {
+            if (confirm(`Remettre ${e.label} en ${e.previous} ? La version actuelle sera gardée pour y revenir.`)) {
+                engineAction(e, "rollback");
+            }
+        });
+        box.append(back);
+    }
+    return box;
+}
+
+function renderEngines(engines) {
     const list = $("#engines");
     list.replaceChildren();
-    for (const e of await api("/api/engines")) {
+    for (const e of engines) {
         const detail = e.installed
             ? `${e.release?.tag ?? "version ?"}${e.release?.backend ? ` · ${e.release.backend}` : ""}`
             : "non installé";
-        list.append(el("li", {}, el("span", {}, e.label), el("span", { className: e.installed ? "mono" : "error" }, detail)));
+        list.append(el("li", {}, el("span", {}, e.label), el("span", { className: e.installed ? "mono" : "error" }, detail),
+            engineActions(e)));
     }
 }
+
+function showEngineError(message) {
+    $("#engines-error").textContent = message;
+    $("#engines-error").hidden = !message;
+}
+
+async function loadEngines() {
+    const engines = await api("/api/engines");
+    renderEngines(engines);
+    // Pendant une mise à jour, la progression est relue chaque seconde
+    clearTimeout(state.enginePoll);
+    if (engines.some((e) => ENGINE_RUNNING.includes(e.update?.status))) state.enginePoll = setTimeout(loadEngines, 1000);
+}
+
+async function engineAction(e, action) {
+    showEngineError("");
+    try {
+        await api(`/api/engines/${encodeURIComponent(e.name)}/${action}`, { method: "POST" });
+    } catch (err) {
+        showEngineError(err.message);
+    }
+    await loadEngines();
+}
+
+$("#btn-engines-check").addEventListener("click", async (ev) => {
+    const btn = ev.currentTarget;
+    btn.disabled = true;
+    showEngineError("");
+    try {
+        renderEngines(await api("/api/engines/check", { method: "POST" }));
+    } catch (err) {
+        showEngineError(err.message);
+    } finally {
+        btn.disabled = false;
+    }
+});
 
 $("#btn-unload").addEventListener("click", async () => {
     state.status = await api("/api/unload", { method: "POST" });
