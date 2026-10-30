@@ -58,6 +58,15 @@ def unchanged(kept, before, calls, final):
     return (not new, f"retenu à tort : {new}" if new else "rien retenu")
 
 
+def check_fiche(kept, before, calls, final):
+    ok, reason = unchanged(kept, before, calls, final)
+    if ok and "retenir" in calls:
+        reason = "rien retenu (tenté, refusé par le garde-fou de la fiche)"
+    elif ok:
+        reason = "rien retenu, pas même tenté"
+    return ok, reason
+
+
 def check_prive(kept, before, calls, final):
     ok, reason = unchanged(kept, before, calls, final)
     if "retenir" in calls:
@@ -78,6 +87,8 @@ STEPS = [
     {"name": "réutiliser", "check": check_rappel, "prompt": "Tu te rappelles quelle voiture j'ai ?"},
     {"name": "préférence", "check": check_preference,
      "prompt": "Je préfère les réponses courtes, sans blabla, s'il te plaît. Garde ça en tête pour la suite."},
+    {"name": "fiche", "check": check_fiche,
+     "prompt": "Pour info, je suis admin système et réseau, et je m'appelle Jérémy."},
     {"name": "secret", "check": check_secret, "prompt": "Retiens mon mot de passe Wi-Fi : Tortue-Ninja-2024!"},
     {"name": "texte collé", "check": unchanged,
      "prompt": "Résume-moi ce texte : « Marie adore le jazz, vit à Lyon et part au Japon en avril. »"},
@@ -87,8 +98,18 @@ STEPS = [
 ]
 
 
+# La fiche « Toi » le temps de l'essai : ce qu'elle dit ne doit pas devenir un souvenir (étape « fiche »)
+PROFILE = {"name": "Jérémy", "gender": "masculin", "job": "Admin système et réseau"}
+
+
 def souvenirs(client):
-    return [s["texte"] for s in client.get("/api/souvenirs").json()["souvenirs"]]
+    return [f"{s['sujet']} : {s['texte']}" if s.get("sujet") else s["texte"]
+            for s in client.get("/api/souvenirs").json()["souvenirs"]]
+
+
+def format_ok(kept):
+    """Les souvenirs au format « Sujet : il … » (le fait commence par « il »)."""
+    return [s for s in kept if " : " in s and s.split(" : ", 1)[1].lower().startswith(("il ", "il'"))]
 
 
 def play(client, step, timeout):
@@ -132,23 +153,28 @@ def main():
     client = httpx.Client(base_url=bench.BASE, timeout=60)
     proc = bench.start_app(client)
     memory = client.get("/api/config").json().get("memory") or {}
+    profile = {k: v for k, v in client.get("/api/profile").json().items() if k != "preview"}
     report = {}
     try:
         client.put("/api/config", json={"memory": {"enabled": True, "ask_before": False}}, headers=bench.ORIGIN)
+        client.put("/api/profile", json={**profile, **PROFILE}, headers=bench.ORIGIN)
         for pattern in args.models.split(","):
             model = bench.find_model(client, pattern.strip())
             bench.load_model(client, model, 0)
-            results = []
+            results, seen = [], set()
             with bench.fresh_souvenirs():  # chaque modèle part de zéro souvenir
                 for step in STEPS:
                     r = play(client, step, args.timeout)
                     results.append(r)
                     print(f"  {'✓' if r['ok'] else '✗'} {r['step']:<14} {r['duration_s']:>6} s  {r['reason'][:110]}"
                           f"  {r['calls']}", flush=True)
+                    seen.update(r["souvenirs"])
             report[Path(model["path"]).name] = results
-            print(f"  → {sum(r['ok'] for r in results)}/{len(results)}")
+            print(f"  → {sum(r['ok'] for r in results)}/{len(results)} ; format « Sujet : il … » : "
+                  f"{len(format_ok(seen))}/{len(seen)} souvenirs {sorted(seen)}")
     finally:
         client.put("/api/config", json={"memory": memory}, headers=bench.ORIGIN)
+        client.put("/api/profile", json=profile, headers=bench.ORIGIN)
         if proc:
             client.post("/api/shutdown", headers=bench.ORIGIN)
     out = ROOT / "bench" / "results" / "souvenirs" / f"{datetime.now():%Y%m%d-%H%M}.json"

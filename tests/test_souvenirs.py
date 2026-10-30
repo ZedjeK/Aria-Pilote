@@ -145,7 +145,7 @@ class Budget(Base):
         self.assertIn("aucun souvenir", souvenirs.render([], 0))
         saved, _ = souvenirs.add("Il préfère quatre espaces", "preferences")
         text = souvenirs.render([saved], 7)
-        self.assertIn(f"- [{saved['id']}] (Préférences) Il préfère quatre espaces", text)
+        self.assertIn(f"- [{saved['id']}] Préférences · Il préfère quatre espaces (", text)
         self.assertIn("1 sur 7", text)
 
 
@@ -241,6 +241,122 @@ class Agent(Base):
         result = asyncio.run(execute(cid, "oublier", {"id": a["id"]}))
         self.assertEqual(result["status"], "ok")
         self.assertEqual(len(souvenirs.all_souvenirs()), 1)
+
+
+class Format(Base):
+    """« Sujet : fait au présent. » : coupé, rangé, daté, et le même sujet met à jour au lieu de doubler."""
+
+    def test_decoupe_et_nettoyage(self):
+        self.assertEqual(souvenirs.split("Voiture : Il roule en Captur"), ("il roule en Captur", "Voiture"))
+        self.assertEqual(souvenirs.split("Voiture: il roule en Captur"), ("il roule en Captur", "Voiture"))
+        self.assertEqual(souvenirs.split("Voiture : il roule en Captur", "voiture"), ("il roule en Captur", "Voiture"))
+        self.assertEqual(souvenirs.split("il roule en Captur", "réponses :"), ("il roule en Captur", "Réponses"))
+        # Pas un sujet : une heure, une phrase avec un pronom, quatre mots ou plus, un sujet différent déjà donné
+        for text in ("Il se lève à 6:30", "Il a dit : bonjour", "Le soir quand il rentre : il joue",
+                     "Note : il joue"):
+            with self.subTest(text=text):
+                self.assertEqual(souvenirs.split(text, "Jeux" if text.startswith("Note") else "")[0], text)
+        self.assertEqual(souvenirs.split("Renault Captur hybride", "Voiture"), ("Renault Captur hybride", "Voiture"))
+
+    def test_secret_coupe_en_deux_refuse(self):
+        for args in (("mot de passe : Hunter2024", ""), ("Hunter2024", "mot de passe :")):
+            with self.subTest(args=args), self.assertRaises(souvenirs.SouvenirError):
+                souvenirs.add(*args[:1], sujet=args[1])
+        saved, _ = souvenirs.add("il aime le thé", sujet="Boisson")
+        with self.assertRaises(souvenirs.SouvenirError):
+            souvenirs.update(saved["id"], sujet="mot de passe :", texte="Hunter2024")
+        with self.assertRaises(souvenirs.SouvenirError):
+            souvenirs.add("x", sujet="un sujet bien trop long pour tenir en trois mots")
+
+    def test_meme_sujet_met_a_jour(self):
+        first, _ = souvenirs.add("il roule en Captur hybride grise", "toi", sujet="Voiture")
+        saved, old = souvenirs.add("sa Captur est blanche", "toi", sujet="voiture")
+        self.assertEqual((saved["id"], old, saved["ancien_sujet"]), (first["id"], "il roule en Captur hybride grise",
+                                                                     "Voiture"))
+        self.assertNotIn("ancien_sujet", souvenirs.all_souvenirs()[0])
+        # Même sujet, mais rien à voir : deux souvenirs
+        souvenirs.add("il adore NieR Automata", "preferences", sujet="Jeux")
+        souvenirs.add("il joue à Stellar Blade", "preferences", sujet="Jeux")
+        self.assertEqual(len(souvenirs.all_souvenirs()), 3)
+
+    def test_rendu_date_et_recherche_par_sujet(self):
+        saved, _ = souvenirs.add("il les préfère courtes", "preferences", sujet="Réponses")
+        text = souvenirs.render([saved], 1)
+        self.assertIn(f"- [{saved['id']}] Préférences · Réponses : il les préfère courtes (", text)
+        self.assertRegex(text, r"\((janv\.|févr\.|mars|avr\.|mai|juin|juil\.|août|sept\.|oct\.|nov\.|déc\.) \d{4}\)")
+        self.assertIn("l'emportent en cas de désaccord", text)
+        self.assertEqual([s["id"] for s in souvenirs.search("mes réponses")], [saved["id"]])
+        old, _ = souvenirs.add("Il aime le café", "preferences")  # souvenir d'avant le format : sans sujet
+        self.assertIn("Préférences · Il aime le café (", souvenirs.render([old], 2))
+
+    def test_outil_retenir_avec_sujet(self):
+        cid = new_conversation()
+        result = asyncio.run(execute(new_conversation(), "retenir", {"sujet": "Voiture", "categorie": "toi",
+                                                                     "texte": "Il roule en Captur hybride grise"}))
+        self.assertEqual(result["status"], "ok")
+        self.assertIn("Voiture : il roule en Captur hybride grise", result["output"])
+        result = asyncio.run(execute(cid, "retenir", {"sujet": "Voiture", "texte": "il a une Captur blanche, pas grise",
+                                                      "categorie": "toi"}))
+        self.assertEqual(result["souvenir"]["action"], "mis à jour")
+        self.assertEqual([(s["sujet"], s["texte"]) for s in souvenirs.all_souvenirs()],
+                         [("Voiture", "il a une Captur blanche, pas grise")])
+        # L'annulation remet le texte ET le sujet d'avant
+        souvenirs.update(souvenirs.all_souvenirs()[0]["id"], sujet="Auto")
+        api = client()
+        api.post("/api/souvenirs/annuler", json={"conversation_id": cid, "tool_call_id": "c1"}, headers=ORIGIN)
+        self.assertEqual([(s["sujet"], s["texte"]) for s in souvenirs.all_souvenirs()],
+                         [("Voiture", "il roule en Captur hybride grise")])
+        self.assertIn("sujet", tools.TOOLS["retenir"].parameters["required"])
+
+
+class Fiche(Base):
+    """Ce que dit déjà la fiche « Toi » : le modèle ne le recopie pas ; ce qui la contredit est gardé."""
+
+    PROFILE = {"name": "Jérémy", "gender": "masculin", "job": "Admin système et réseau",
+               "likes": "Des réponses courtes, de l'humour et des emojis",
+               "about": "Il monte ses PC lui-même, joue à Warhammer 40k et roule en Captur hybride."}
+
+    def setUp(self):
+        super().setUp()
+        self.addCleanup(persona.PROFILE_PATH.unlink, missing_ok=True)
+        persona.save_profile(self.PROFILE)
+
+    def test_doublons_de_la_fiche(self):
+        for text in ("il s'appelle Jérémy", "Ses prénoms sont Jérémy", "il est admin système et réseau",
+                     "il travaille comme admin réseau et système", "il aime les réponses courtes avec de l'humour",
+                     "il joue à Warhammer 40k"):
+            with self.subTest(text=text):
+                self.assertIsNotNone(souvenirs.in_profile(text, self.PROFILE))
+
+    def test_complete_ou_contredit_la_fiche(self):
+        for text in ("il est passé chef de projet", "il roule en Captur hybride blanche depuis octobre",
+                     "il a un chat", "il s'appelle Jérémy Dupont", "il préfère Bonsai à Qwen pour coder"):
+            with self.subTest(text=text):
+                self.assertIsNone(souvenirs.in_profile(text, self.PROFILE))
+        self.assertIsNone(souvenirs.in_profile("il s'appelle Jérémy", {}))  # fiche vide : rien ne bloque
+
+    def test_outil_refuse_le_doublon_garde_la_contradiction(self):
+        cid = new_conversation()
+        result = asyncio.run(execute(cid, "retenir", {"sujet": "Métier", "texte": "il est admin système et réseau",
+                                                      "categorie": "toi"}))
+        self.assertEqual(result["status"], "error")
+        self.assertIn("Déjà dans la fiche de l'utilisateur (Métier)", result["output"])
+        result = asyncio.run(execute(cid, "retenir", {"sujet": "Métier", "texte": "il est passé chef de projet",
+                                                      "categorie": "toi"}))
+        self.assertEqual(result["status"], "ok")
+        self.assertEqual([s["texte"] for s in souvenirs.all_souvenirs()], ["il est passé chef de projet"])
+
+    def test_ajout_a_la_main_signale_sans_bloquer(self):
+        api = client()
+        r = api.post("/api/souvenirs", json={"sujet": "Métier", "texte": "il est admin système et réseau"},
+                     headers=ORIGIN)
+        self.assertEqual((r.status_code, r.json()["dans_fiche"], r.json()["sujet"]), (200, "Métier", "Métier"))
+        r = api.post("/api/souvenirs", json={"texte": "Voiture : il roule en Captur blanche", "categorie": "toi"},
+                     headers=ORIGIN)
+        self.assertEqual((r.json()["sujet"], r.json()["texte"], r.json()["dans_fiche"]),
+                         ("Voiture", "il roule en Captur blanche", None))
+        r = api.put(f"/api/souvenirs/{r.json()['id']}", json={"sujet": ""}, headers=ORIGIN)
+        self.assertEqual(r.json()["sujet"], "")
 
 
 class Api(Base):

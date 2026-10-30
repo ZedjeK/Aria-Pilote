@@ -3,6 +3,25 @@
 
 const souvenirsUi = { items: [], categories: {}, personas: {} };
 
+// Le modèle « Sujet : fait » du champ d'ajout, selon la catégorie choisie
+const SOUVENIR_EXAMPLES = {
+    toi: ["Voiture", "il roule en Captur hybride blanche"],
+    preferences: ["Réponses", "il les préfère courtes, sans blabla"],
+    projets: ["Aria Pilote", "il développe une appli d'IA locale"],
+    decisions: ["Indentation", "il a choisi quatre espaces en Python"],
+    relation: ["Surnom", "il aime qu'on l'appelle mon loulou"],
+};
+
+function souvenirLabel(s) {
+    return s.sujet ? `${s.sujet} : ${s.texte}` : s.texte;
+}
+
+function syncSouvenirTemplate() {
+    const [sujet, fait] = SOUVENIR_EXAMPLES[$("#souvenir-new-cat").value] || SOUVENIR_EXAMPLES.toi;
+    $("#souvenir-new-sujet").placeholder = `Sujet, ex. ${sujet}`;
+    $("#souvenir-new").placeholder = `Le fait, ex. ${fait}`;
+}
+
 // --- Carte « Souvenirs » (Réglages › Général) ------------------------------------------------------
 
 async function loadSouvenirsCard() {
@@ -23,13 +42,14 @@ async function loadSouvenirsCard() {
     const select = $("#souvenir-new-cat");
     if (!select.options.length) {
         select.append(...Object.entries(data.categories).map(([id, label]) => el("option", { value: id }, label)));
+        syncSouvenirTemplate();
     }
     renderSouvenirs();
 }
 
 function renderSouvenirs() {
     const wanted = $("#souvenir-filter").value.trim().toLowerCase();
-    const items = souvenirsUi.items.filter((s) => !wanted || s.texte.toLowerCase().includes(wanted));
+    const items = souvenirsUi.items.filter((s) => !wanted || souvenirLabel(s).toLowerCase().includes(wanted));
     const total = souvenirsUi.items.length;
     $("#souvenirs-count").textContent = total ? `${total} souvenir${total > 1 ? "s" : ""}` : "";
     $("#btn-souvenirs-clear").hidden = !total;
@@ -49,6 +69,9 @@ function renderSouvenirs() {
 }
 
 function souvenirRow(s) {
+    const sujet = el("input", { className: "souvenir-sujet", value: s.sujet || "", maxLength: 40,
+        placeholder: "Sujet", title: "Sujet : le thème en 1 à 3 mots" });
+    sujet.addEventListener("change", () => editSouvenir(s, { sujet: sujet.value }, sujet));
     const text = el("input", { value: s.texte, maxLength: 300, title: souvenirTitle(s) });
     text.addEventListener("change", () => editSouvenir(s, { texte: text.value }, text));
     const cat = el("select", { className: "souvenir-cat-select" },
@@ -64,7 +87,7 @@ function souvenirRow(s) {
             alert(err.message);
         }
     });
-    const parts = [text, cat, del];
+    const parts = [sujet, text, cat, del];
     if (s.intime) {
         const who = souvenirsUi.personas[s.persona] || "persona supprimé";
         parts.unshift(el("span", { className: "souvenir-badge", title: `Souvenir intime : ne revient qu'avec ${who}, en registre naturel` }, `🔒 ${who}`));
@@ -91,11 +114,18 @@ async function editSouvenir(s, patch, field) {
 
 async function addSouvenir() {
     const input = $("#souvenir-new");
+    const sujet = $("#souvenir-new-sujet");
+    const note = $("#souvenir-note");
     if (!input.value.trim()) return;
     try {
-        await api("/api/souvenirs", { method: "POST",
-            body: JSON.stringify({ texte: input.value, categorie: $("#souvenir-new-cat").value }) });
+        const saved = await api("/api/souvenirs", { method: "POST",
+            body: JSON.stringify({ texte: input.value, sujet: sujet.value, categorie: $("#souvenir-new-cat").value }) });
         input.value = "";
+        sujet.value = "";
+        // Ajouté quand même (c'est toi qui décides), mais signalé : la fiche le dit déjà
+        note.hidden = !saved.dans_fiche;
+        note.textContent = saved.dans_fiche
+            ? `Ajouté, mais ta fiche « Toi » le dit déjà (${saved.dans_fiche}) : ton IA le lira deux fois.` : "";
         flashSaved();
         loadSouvenirsCard();
     } catch (err) {
@@ -104,12 +134,15 @@ async function addSouvenir() {
 }
 
 $("#btn-souvenir-add").addEventListener("click", addSouvenir);
-$("#souvenir-new").addEventListener("keydown", (e) => {
-    if (e.key === "Enter") {
-        e.preventDefault();
-        addSouvenir();
-    }
-});
+$("#souvenir-new-cat").addEventListener("change", syncSouvenirTemplate);
+for (const field of ["#souvenir-new", "#souvenir-new-sujet"]) {
+    $(field).addEventListener("keydown", (e) => {
+        if (e.key === "Enter") {
+            e.preventDefault();
+            addSouvenir();
+        }
+    });
+}
 $("#souvenir-filter").addEventListener("input", renderSouvenirs);
 $("#btn-souvenirs-clear").addEventListener("click", async () => {
     const n = souvenirsUi.items.length;
@@ -131,9 +164,9 @@ function souvenirNode(m) {
     const s = m.souvenir;
     const node = el("div", { className: `souvenir-chip${s.annule ? " undone" : ""}` });
     node.dataset.callId = m.tool_call_id || "";
-    node.append(el("span", {}, `${SOUVENIR_ACTIONS[s.action] || "🧠"} : « ${s.texte} »`));
+    node.append(el("span", {}, `${SOUVENIR_ACTIONS[s.action] || "🧠"} : « ${souvenirLabel(s)} »`));
     if (s.action === "mis à jour" && s.ancien && s.ancien !== s.texte) {
-        node.title = `Avant : « ${s.ancien} »`;
+        node.title = `Avant : « ${souvenirLabel({ sujet: s.ancien_sujet, texte: s.ancien })} »`;
     }
     if (s.annule) {
         node.append(el("span", { className: "muted small" }, "annulé ↩"));

@@ -680,6 +680,7 @@ button.chip-on { border-color: var(--accent-2); color: var(--accent);
 .souvenirs-list { display: grid; gap: 12px; max-height: 480px; overflow: auto; }
 .souvenir-cat { font-weight: 600; font-size: 13px; color: var(--muted); margin-bottom: 4px; }
 .souvenirs-list .rules-list input { flex: 1; min-width: 0; }
+.souvenir-add input.souvenir-sujet, .souvenirs-list .rules-list input.souvenir-sujet { flex: 0 0 11.5em; font-weight: 600; }
 .souvenir-badge { flex: none; font-size: 12px; color: var(--muted); }
 .souvenir-chip { display: inline-flex; align-items: center; gap: 10px; align-self: flex-start; max-width: 100%;
     padding: 4px 6px 4px 12px; border: 1px solid var(--accent-2); border-radius: 14px; font-size: 13px;
