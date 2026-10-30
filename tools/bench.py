@@ -16,6 +16,7 @@ et approuve les plans proposés (sauf si la tâche dit le contraire).
 """
 
 import argparse
+import contextlib
 import importlib.util
 import json
 import shutil
@@ -47,6 +48,25 @@ sys.path.insert(0, str(BENCH))  # check.py importe les utilitaires de bench/chec
 
 
 # --- Appli et modèles ----------------------------------------------------------
+
+SOUVENIRS = ROOT / "data" / "souvenirs.json"
+
+
+@contextlib.contextmanager
+def fresh_souvenirs():
+    """Les souvenirs de l'appli de dev mis de côté le temps d'un essai : il part de zéro (mesures comparables, et rien
+    de ce que retient le modèle ne reste), puis ils sont remis tels quels."""
+    saved = SOUVENIRS.read_bytes() if SOUVENIRS.exists() else None
+    SOUVENIRS.parent.mkdir(parents=True, exist_ok=True)
+    SOUVENIRS.write_text('{"souvenirs": []}', encoding="utf-8")
+    try:
+        yield
+    finally:
+        if saved is None:
+            SOUVENIRS.unlink(missing_ok=True)
+        else:
+            SOUVENIRS.write_bytes(saved)
+
 
 def alive(client):
     try:
@@ -324,18 +344,8 @@ def main():
                                        capture_output=True, text=True).stdout.strip(),
               "models": {}}
     try:
-        for pattern in [p.strip() for p in args.models.split(",") if p.strip()]:
-            model = find_model(client, pattern)
-            load_model(client, model, args.ctx)
-            name = Path(model["path"]).stem
-            results = report["models"].setdefault(name, {})
-            for task in tasks:
-                for n in range(args.runs):
-                    label = f"{task['name']}" + (f" (passage {n + 1})" if args.runs > 1 else "")
-                    print(f"  {label:<40}", end="", flush=True)
-                    result = run_task(client, task, args)
-                    results.setdefault(task["name"], []).append(result)
-                    print(f"{'OK ' if result['ok'] else 'ÉCHEC'}  {result['duration_s']:>5.0f}s  {result['reason'][:60]}")
+        with fresh_souvenirs():
+            run_models(client, tasks, args, report)
     finally:
         if proc is not None:
             try:
@@ -355,6 +365,21 @@ def main():
     print(f"\nRapport détaillé : {out}")
     if before:
         print(f"Comparé au run du {before['date']} (commit {before.get('commit') or '?'}).")
+
+
+def run_models(client, tasks, args, report):
+    for pattern in [p.strip() for p in args.models.split(",") if p.strip()]:
+        model = find_model(client, pattern)
+        load_model(client, model, args.ctx)
+        name = Path(model["path"]).stem
+        results = report["models"].setdefault(name, {})
+        for task in tasks:
+            for n in range(args.runs):
+                label = f"{task['name']}" + (f" (passage {n + 1})" if args.runs > 1 else "")
+                print(f"  {label:<40}", end="", flush=True)
+                result = run_task(client, task, args)
+                results.setdefault(task["name"], []).append(result)
+                print(f"{'OK ' if result['ok'] else 'ÉCHEC'}  {result['duration_s']:>5.0f}s  {result['reason'][:60]}")
 
 
 if __name__ == "__main__":

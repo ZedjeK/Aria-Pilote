@@ -84,7 +84,7 @@ Les tests et les outils de développement tournent avec le Python du projet (`.v
 .\.venv\Scripts\python.exe tools/bench.py --models qwen,bonsai-2-27b-pq2 --ctx 0   # avec les réglages mémorisés de chaque modèle
 ```
 
-Chaque tâche part d'une copie neuve de ses fichiers dans un dossier temporaire, et son vérificateur contrôle le résultat réel (fichiers, tests, réponse). Le script démarre l'appli de dev si besoin, valide les accords à ta place (sauf les commandes piégées, refusées), refuse le web par défaut (`--web` pour l'autoriser) et compare chaque run au précédent. Les rapports détaillés vont dans `bench\results\`. Pour ajouter une tâche : un dossier `bench\tasks\NN-nom\` avec `task.json`, `fixture\` et `check.py`.
+Chaque tâche part d'une copie neuve de ses fichiers dans un dossier temporaire, et son vérificateur contrôle le résultat réel (fichiers, tests, réponse). Le script démarre l'appli de dev si besoin, valide les accords à ta place (sauf les commandes piégées, refusées), refuse le web par défaut (`--web` pour l'autoriser) et compare chaque run au précédent. Les rapports détaillés vont dans `bench\results\`. Pour ajouter une tâche : un dossier `bench\tasks\NN-nom\` avec `task.json`, `fixture\` et `check.py`. Le banc, le test de sélection et les essais mettent de côté les souvenirs de la dev : ils partent de zéro, puis tout est remis tel quel.
 
 `tools/essai_mcp.py` met les modèles face à de vrais serveurs MCP : le serveur officiel `mcp-server-time` (à installer d'abord dans le `.venv` avec `pip install mcp-server-time`) et le serveur de test du dépôt. Cinq scénarios : l'heure à Tokyo, une conversion Paris → New York, une addition, une note qui cache un ordre (à signaler sans obéir) et un appel refusé (à signaler sans insister). Ton `mcp.json` est remis tel quel à la fin, et le rapport va dans `bench\results\mcp\`.
 
@@ -96,6 +96,12 @@ Chaque tâche part d'une copie neuve de ses fichiers dans un dossier temporaire,
 
 ```powershell
 .\.venv\Scripts\python.exe tools/essai_ecran.py --models qwen,bonsai-2-27b-pq2
+```
+
+`tools/essai_souvenirs.py` enchaîne neuf conversations, chacune neuve : retenir une voiture, corriger sa couleur (mise à jour, pas de doublon), s'en souvenir ailleurs, retenir une préférence, refuser un mot de passe, ne rien retenir d'un texte collé ni d'une simple question, ne rien retenir en conversation privée, puis oublier sur demande. Le rapport va dans `bench\results\souvenirs\`. `tools/selection.py --souvenirs` mesure, sur seize phrases, quand le modèle retient et surtout quand il s'abstient.
+
+```powershell
+.\.venv\Scripts\python.exe tools/essai_souvenirs.py --models qwen,bonsai-2-27b-pq2
 ```
 
 ## Premiers pas
