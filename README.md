@@ -11,7 +11,7 @@
 </p>
 
 <p align="center">
-  <a href="#compiler-soi-même"><b>Compiler Aria Pilote</b></a> · v0.22 · Windows 10/11 x64 · carte NVIDIA conseillée · licence MIT (code d'Aria) / AGPL-3.0 (SearXNG embarqué)
+  <a href="#compiler-soi-même"><b>Compiler Aria Pilote</b></a> · v0.23 · Windows 10/11 x64 · carte NVIDIA conseillée · licence MIT (code d'Aria) / AGPL-3.0 (SearXNG embarqué)
 </p>
 
 ## Ce qu'il fait
@@ -56,7 +56,7 @@ py -3.11 tools/build_portable.py
 | --- | --- |
 | `install_engines.py` | Télécharge `llama-server` officiel et celui de PrismML (dernières builds, ou `--prism-tag` pour une version précise) avec le runtime CUDA ; même code que Réglages › Moteurs |
 | `install_searxng.py` | Télécharge SearXNG à une version épinglée, lui applique la retouche Windows et génère sa configuration (clé secrète aléatoire, `127.0.0.1` uniquement) |
-| `build_portable.py` | Assemble `..\Aria-Pilote-0.22.0\` : Python portable vérifié par SHA-256, code, moteurs, SearXNG et le lanceur `Aria-Pilote.exe` |
+| `build_portable.py` | Assemble `..\Aria-Pilote-0.23.0\` : Python portable vérifié par SHA-256, code, moteurs, SearXNG et le lanceur `Aria-Pilote.exe` |
 
 Lance ensuite `Aria-Pilote.exe`. L'exe n'est pas signé : si Windows SmartScreen affiche « Windows a protégé votre ordinateur », clique sur « Informations complémentaires » puis « Exécuter quand même ».
 
