@@ -275,6 +275,38 @@ def list_engines():
     return engines.all_info() + [searxng.manager.info()]
 
 
+def engine_in_use(name):
+    """Le moteur fait tourner le modèle chargé (ou un essai des réglages va charger des modèles)."""
+    return (manager.engine == name and manager.state in ("loading", "ready")) or trial.is_running()
+
+
+@app.post("/api/engines/check")
+async def check_engines():
+    return await engines.check() + [searxng.manager.info()]
+
+
+@app.post("/api/engines/{name}/update")
+async def update_engine(name: str):
+    if name not in engines.ENGINES:
+        raise HTTPException(404, f"Moteur inconnu : {name}")
+    try:
+        return await engines.update(name, engine_in_use)
+    except engines.UpdateError as exc:
+        raise HTTPException(409, str(exc))
+    except (httpx.HTTPError, RuntimeError) as exc:
+        raise HTTPException(502, str(exc) if isinstance(exc, RuntimeError) else "Impossible de joindre GitHub.")
+
+
+@app.post("/api/engines/{name}/rollback")
+def rollback_engine(name: str):
+    if name not in engines.ENGINES:
+        raise HTTPException(404, f"Moteur inconnu : {name}")
+    try:
+        return engines.rollback(name, engine_in_use)
+    except engines.UpdateError as exc:
+        raise HTTPException(409, str(exc))
+
+
 @app.get("/api/models")
 def list_models(refresh: bool = False):
     return [models.to_dict(m) for m in models.scan(force=refresh)]
@@ -353,6 +385,8 @@ async def load(req: LoadRequest):
         config.save_model_settings(model.key, settings)
     auto = settings["engine"] == "auto"
     engine = model.engine_auto if auto else settings["engine"]
+    if engines.busy(engine):
+        raise HTTPException(409, "Ce moteur est en cours de mise à jour : attends la fin, puis charge le modèle.")
     try:
         await manager.load(model, settings, engine, auto)
     except EngineMissing as exc:

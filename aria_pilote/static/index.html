@@ -532,9 +532,14 @@ py -3.11 tools/build_portable.py</pre>
 
             <section class="settings-section" data-section="moteurs" data-title="Moteurs" hidden>
                 <div class="set-card">
-                    <div class="set-card-title">Moteurs installés</div>
+                    <div class="set-card-head">
+                        <div class="set-card-title">Moteurs installés</div>
+                        <button type="button" id="btn-engines-check" class="ghost">↻ Vérifier les mises à jour</button>
+                    </div>
                     <ul id="engines" class="engines"></ul>
-                    <p class="muted small">llama.cpp officiel pour la plupart des modèles, le fork PrismML pour les modèles ternaires comme Bonsai. « Auto » choisit selon le modèle.</p>
+                    <p id="engines-error" class="error small" hidden></p>
+                    <p class="muted small">llama.cpp officiel pour la plupart des modèles, le fork PrismML pour les modèles ternaires comme Bonsai. « Auto » choisit selon le modèle.
+                        Une mise à jour garde la version précédente : « Revenir » la remet en place si la nouvelle pose problème.</p>
                 </div>
                 <p class="muted small">Les réglages de chargement (par défaut et par modèle) sont dans
                     <a href="#/reglages/mes-modeles" id="link-defaults">Mes modèles › ⚙ Réglages par défaut</a>.</p>
