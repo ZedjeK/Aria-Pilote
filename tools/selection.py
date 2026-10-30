@@ -5,6 +5,9 @@ compétence chargée avec load_skill au premier tour (ou « aucune » s'il répo
 
     .venv/Scripts/python.exe tools/selection.py --models qwen,bonsai-2-27b-pq2
     .venv/Scripts/python.exe tools/selection.py --models bonsai --only dev,prof
+
+Avec --souvenirs, on mesure l'outil « retenir » : chaque phrase part de zéro souvenir, le tour va jusqu'au bout, et on
+regarde si un souvenir a été gardé quand il le fallait, et surtout pas quand il ne le fallait pas.
 """
 
 import argparse
@@ -20,7 +23,7 @@ from pathlib import Path
 import httpx
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from bench import BASE, ORIGIN, alive, find_model, load_model  # noqa: E402
+from bench import BASE, ORIGIN, alive, find_model, fresh_souvenirs, load_model  # noqa: E402
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from aria_pilote.skills import normalize  # noqa: E402
@@ -112,6 +115,28 @@ CASES = [
 ]
 
 
+# Outil « retenir » : (phrase, un souvenir doit-il rester ?). Les « non » comptent autant : un secret, ce que dit un
+# texte collé, une question ou un détail du moment ne se retiennent pas.
+MEMORY_CASES = [
+    ("Retiens que je travaille de nuit le week-end.", True),
+    ("Je m'appelle Jérémy, je suis admin système et réseau.", True),
+    ("Au fait, j'ai deux chats, Pixel et Byte.", True),
+    ("À partir de maintenant, donne-moi toujours les commandes en PowerShell plutôt qu'en bash.", True),
+    ("On a décidé de migrer toute l'infra de VMware vers Proxmox l'an prochain.", True),
+    ("Souviens-toi que mon NAS est un Synology DS920+.", True),
+    ("Je suis allergique aux arachides, garde-le en tête pour tes idées de recettes.", True),
+    ("Mon anniversaire, c'est le 12 mars.", True),
+    ("Quelle est la capitale du Japon ?", False),
+    ("Combien font 17 fois 23 ?", False),
+    ("Traduis en anglais : « le serveur redémarre à minuit ».", False),
+    ("Résume ce texte : « Marie adore le jazz, vit à Lyon et part au Japon en avril. »", False),
+    ("Retiens mon mot de passe VPN : Azerty-Rouge-77", False),
+    ("Il fait beau aujourd'hui, hein ?", False),
+    ("Écris-moi une fonction Python qui inverse une chaîne.", False),
+    ("Merci, c'était parfait.", False),
+]
+
+
 # Compétences qui n'ont de sens qu'avec un dossier attaché : leurs phrases tournent dans un petit projet de test
 FOLDER_SKILLS = {"memoire-projet"}
 FIXTURE = {
@@ -177,6 +202,47 @@ def pick(client, prompt, timeout, folder=False):
     return chosen, others
 
 
+def remembers(client, prompt, timeout):
+    """Le tour entier, en partant de zéro souvenir : ce qui a été retenu, et les outils appelés."""
+    client.delete("/api/souvenirs?confirm=true", headers=ORIGIN)
+    conv = client.post("/api/conversations", json={"persona_id": "none"}).json()
+    cid = conv["id"]
+    client.patch(f"/api/conversations/{cid}", json={"title": "[sélection souvenirs]"})
+    calls, deadline = [], time.time() + timeout
+    try:
+        with client.stream("POST", "/api/chat", json={"conversation_id": cid, "content": prompt},
+                           timeout=httpx.Timeout(30, read=None)) as resp:
+            if resp.status_code != 200:
+                return None, [f"erreur {resp.status_code}"]
+            for line in resp.iter_lines():
+                if time.time() > deadline:
+                    calls.append("délai")
+                    break
+                if not line.startswith("data: "):
+                    continue
+                ev = json.loads(line[6:])
+                if ev["type"] == "tool_call":
+                    calls.append(ev["name"])
+                elif ev["type"] == "approval":
+                    client.post("/api/agent/approve", json={"approval_id": ev["approval_id"], "decision": "deny"})
+    finally:
+        client.delete(f"/api/conversations/{cid}", headers=ORIGIN)
+    return [s["texte"] for s in client.get("/api/souvenirs").json()["souvenirs"]], calls
+
+
+def memory_run(client, timeout):
+    rows = []
+    for i, (prompt, expected) in enumerate(MEMORY_CASES, 1):
+        started = time.time()
+        kept, calls = remembers(client, prompt, timeout)
+        ok = kept is not None and bool(kept) == expected
+        rows.append({"prompt": prompt, "expected": expected, "kept": kept, "calls": calls, "ok": ok,
+                     "s": round(time.time() - started, 1)})
+        print(f"[{i:02d}/{len(MEMORY_CASES)}] {'✓' if ok else '✗'} {'retenir' if expected else 'rien':<8} "
+              f"{prompt[:55]:<55} → {kept if kept else 'rien'}{' (' + ','.join(calls) + ')' if calls else ''}", flush=True)
+    return rows
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--models", required=True, help="motifs de noms, séparés par des virgules")
@@ -184,16 +250,25 @@ def main():
     parser.add_argument("--only", default="", help="compétences attendues à tester (ex. dev,aucune)")
     parser.add_argument("--timeout", type=int, default=180)
     parser.add_argument("--out", default="", help="fichier JSON des résultats")
+    parser.add_argument("--souvenirs", action="store_true", help="mesurer l'outil « retenir » au lieu des compétences")
     args = parser.parse_args()
     only = {s.strip() for s in args.only.split(",") if s.strip()}
     cases = [c for c in CASES if not only or set(_answers(c[1])) & only]
     report = {}
-    with httpx.Client(base_url=BASE, timeout=60) as client:
+    with httpx.Client(base_url=BASE, timeout=60) as client, fresh_souvenirs():
         if not alive(client):
             sys.exit(f"L'appli de dev ne répond pas sur {BASE}.")
         for pattern in args.models.split(","):
             model = find_model(client, pattern.strip())
             load_model(client, model, args.ctx)
+            if args.souvenirs:
+                rows = memory_run(client, args.timeout)
+                rate = sum(r["ok"] for r in rows) / len(rows)
+                wrong_keep = [r["prompt"][:40] for r in rows if not r["ok"] and not r["expected"]]
+                print(f"=== {Path(model['path']).name} : {rate:.0%} ({sum(r['ok'] for r in rows)}/{len(rows)}) ; "
+                      f"retenu à tort : {wrong_keep or 'rien'}", flush=True)
+                report[Path(model["path"]).name] = {"rate": rate, "rows": rows}
+                continue
             rows, misses = [], Counter()
             for i, (prompt, expected) in enumerate(cases, 1):
                 started = time.time()

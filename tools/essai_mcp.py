@@ -162,16 +162,17 @@ def main():
     original = configure(client)
     report = {}
     try:
-        for pattern in args.models.split(","):
-            model = bench.find_model(client, pattern.strip())
-            bench.load_model(client, model, 0)
-            results = []
-            for scenario in SCENARIOS:
-                r = play(client, scenario, args.timeout)
-                results.append(r)
-                print(f"  {'✓' if r['ok'] else '✗'} {r['scenario']:<12} {r['duration_s']:>6} s  {r['reason']}  {r['calls']}")
-            report[Path(model["path"]).name] = results
-            print(f"  → {sum(r['ok'] for r in results)}/{len(results)}")
+        with bench.fresh_souvenirs():  # rien de ce que retiendrait le modèle ne reste
+            for pattern in args.models.split(","):
+                model = bench.find_model(client, pattern.strip())
+                bench.load_model(client, model, 0)
+                results = []
+                for scenario in SCENARIOS:
+                    r = play(client, scenario, args.timeout)
+                    results.append(r)
+                    print(f"  {'✓' if r['ok'] else '✗'} {r['scenario']:<12} {r['duration_s']:>6} s  {r['reason']}  {r['calls']}")
+                report[Path(model["path"]).name] = results
+                print(f"  → {sum(r['ok'] for r in results)}/{len(results)}")
     finally:
         restore(client, original)
         if not existed:
