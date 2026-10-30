@@ -819,6 +819,7 @@ def get_skill(name: str, conversation_id: str | None = None):
 class SouvenirBody(BaseModel):
     texte: str | None = None
     categorie: str | None = None
+    sujet: str | None = None
 
 
 class SouvenirUndo(BaseModel):
@@ -841,7 +842,7 @@ def undo_souvenir(req: SouvenirUndo):
         if done["action"] == "ajouté":
             souvenirs.remove(done["id"])
         elif done["action"] == "mis à jour":
-            souvenirs.update(done["id"], texte=done["ancien"])
+            souvenirs.update(done["id"], texte=done["ancien"], sujet=done.get("ancien_sujet"))
         else:
             souvenirs.restore(done)
     except souvenirs.SouvenirError as exc:
@@ -864,18 +865,20 @@ def list_souvenirs():
 
 @app.post("/api/souvenirs")
 def add_souvenir(req: SouvenirBody):
-    """Un souvenir ajouté à la main (Réglages › Toi)."""
+    """Un souvenir ajouté à la main (Réglages › Général) : jamais refusé parce que la fiche le dit déjà, seulement
+    signalé (« dans_fiche »), puisque c'est l'utilisateur qui décide."""
     try:
-        saved, _ = souvenirs.add(req.texte or "", req.categorie or "toi")
+        saved, _ = souvenirs.add(req.texte or "", req.categorie or "toi", sujet=req.sujet or "")
     except souvenirs.SouvenirError as exc:
         raise HTTPException(400, str(exc))
-    return saved
+    saved.pop("ancien_sujet", None)
+    return {**saved, "dans_fiche": souvenirs.in_profile(saved["texte"], persona.get_profile())}
 
 
 @app.put("/api/souvenirs/{sid}")
 def edit_souvenir(sid: str, req: SouvenirBody):
     try:
-        return souvenirs.update(sid, req.texte, req.categorie)
+        return souvenirs.update(sid, req.texte, req.categorie, req.sujet)
     except souvenirs.SouvenirError as exc:
         raise HTTPException(404 if "Pas de souvenir" in str(exc) else 400, str(exc))
 

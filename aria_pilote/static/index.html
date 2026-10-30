@@ -220,10 +220,12 @@
                         <input type="number" class="set-num" min="0" max="200" step="5" data-config="memory.max_injected">
                     </label>
                     <div class="souvenir-add">
-                        <input id="souvenir-new" maxlength="300" placeholder="Ajouter un souvenir, ex. Il préfère les réponses courtes">
-                        <select id="souvenir-new-cat"></select>
+                        <select id="souvenir-new-cat" title="Catégorie"></select>
+                        <input id="souvenir-new-sujet" class="souvenir-sujet" maxlength="40" title="Sujet : le thème en 1 à 3 mots">
+                        <input id="souvenir-new" maxlength="300" title="Le fait, en une phrase au présent">
                         <button id="btn-souvenir-add" class="ghost">Ajouter</button>
                     </div>
+                    <p id="souvenir-note" class="muted small" hidden></p>
                     <input id="souvenir-filter" placeholder="🔍 Chercher dans les souvenirs">
                     <div id="souvenirs-list" class="souvenirs-list"></div>
                     <div class="row">
