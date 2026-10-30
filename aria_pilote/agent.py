@@ -340,7 +340,7 @@ def memory_chosen(conv, root):
 def memory_block(conv, root):
     """Les souvenirs du prompt, avec la règle des outils."""
     chosen = memory_chosen(conv, root)
-    return souvenirs.MEMORY_RULE + "\n\n" + souvenirs.render(chosen, len(souvenirs.all_souvenirs()))
+    return souvenirs.memory_rule(persona.get_profile()) + "\n\n" + souvenirs.render(chosen, len(souvenirs.all_souvenirs()))
 
 
 def task_tools(conv, root):

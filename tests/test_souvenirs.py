@@ -346,6 +346,15 @@ class Fiche(Base):
         self.assertEqual(result["status"], "ok")
         self.assertEqual([s["texte"] for s in souvenirs.all_souvenirs()], ["il est passé chef de projet"])
 
+    def test_rappel_de_la_fiche_seulement_si_elle_est_remplie(self):
+        conv = conversations.get(new_conversation())
+        self.assertIn("ni ce que dit déjà sa fiche (prénom, métier", agent._system_prompt(conv, None, None))
+        # Fiche vide : pas de « ni son prénom, ni son métier », qui dissuadait Bonsai de retenir « je m'appelle… »
+        persona.save_profile({"name": "", "job": "", "likes": "", "about": ""})
+        prompt = agent._system_prompt(conv, None, None)
+        self.assertNotIn("sa fiche", prompt)
+        self.assertIn("garde son sujet pour le\n  mettre à jour). Seulement ce qu'il t'a dit lui-même", prompt)
+
     def test_ajout_a_la_main_signale_sans_bloquer(self):
         api = client()
         r = api.post("/api/souvenirs", json={"sujet": "Métier", "texte": "il est admin système et réseau"},
