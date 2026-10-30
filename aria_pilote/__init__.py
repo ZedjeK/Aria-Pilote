@@ -1,3 +1,3 @@
 """Aria Pilote : gestionnaire local de modèles GGUF (llama.cpp + fork PrismML)."""
 
-VERSION = "0.21.0"
+VERSION = "0.22.0"
