@@ -308,6 +308,22 @@ class Format(Base):
                          [("Voiture", "il roule en Clio hybride grise")])
         self.assertIn("sujet", tools.TOOLS["retenir"].parameters["required"])
 
+    def test_date_du_prompt_recopiee_retiree(self):
+        # Bonsai recopiait la date du prompt dans le fait : « … blanche (oct. 2026) (oct. 2026) » au tour suivant
+        result = asyncio.run(execute(new_conversation(), "retenir", {
+            "sujet": "Voiture", "categorie": "toi", "texte": "il roule en Clio hybride blanche (oct. 2026)"}))
+        self.assertIn("Voiture : il roule en Clio hybride blanche »", result["output"])
+        self.assertEqual(souvenirs.all_souvenirs()[0]["texte"], "il roule en Clio hybride blanche")
+        # Une date qui fait partie du fait, ou pas à la fin, reste
+        for text in ("il a acheté sa Clio en oct. 2026", "il a deux chats (Pixel et Byte)",
+                     "il a fini (déc. 2025) sa formation"):
+            with self.subTest(text=text):
+                self.assertEqual(souvenirs.drop_stamp(text), text)
+        self.assertEqual(souvenirs.drop_stamp("il code en Rust (févr. 2027)"), "il code en Rust")
+
+    def test_secret_rien_de_la_phrase(self):
+        self.assertIn("ne retiens rien de sa phrase", souvenirs.memory_rule({}))
+
 
 class Fiche(Base):
     """Ce que dit déjà la fiche « Toi » : le modèle ne le recopie pas ; ce qui la contredit est gardé."""

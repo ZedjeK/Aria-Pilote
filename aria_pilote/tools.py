@@ -1147,6 +1147,7 @@ def _memory_conv(cid):
 def prepare_remember(root, args):
     from . import persona as personas
     texte, sujet = souvenirs.split(args.get("texte"), args.get("sujet"))
+    texte = souvenirs.drop_stamp(texte)
     categorie = str(args.get("categorie") or "toi").strip().lower()
     if categorie not in souvenirs.CATEGORIES:
         raise ToolError(f"« categorie » : {', '.join(souvenirs.CATEGORIES)}.")
