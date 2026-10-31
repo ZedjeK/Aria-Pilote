@@ -10,7 +10,7 @@ La liste noire et les hooks restent prioritaires (ils interviennent avant toute 
 import re
 from pathlib import Path
 
-from . import config
+from . import config, github
 
 # Tout ce qui permet d'enchaîner, de rediriger ou d'évaluer une autre commande
 OPERATORS = re.compile(r"[;&|<>`$(){}\r\n]")
@@ -82,6 +82,8 @@ def add(root, rule, command):
         raise RuleError("Une règle « commence par » ne peut pas contenir d'opérateur (; & | > $ …).")
     if not matches(rule, command):
         raise RuleError("Cette règle ne couvre pas la commande en attente.")
+    if github.outward(command):
+        raise RuleError("Cette commande sort de ton PC (push, PR, release…) : elle te sera toujours demandée.")
     current = rules(root)
     if rule not in current:
         if len(current) >= MAX_RULES:

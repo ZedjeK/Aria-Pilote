@@ -1241,7 +1241,10 @@ function approvalNode(ev) {
         task.addEventListener("click", () => decide("allow_task", "Autorisé, ainsi que les actions ordinaires de cette tâche ✓"));
         buttons.append(task);
     }
-    if (ev.kind === "command" && ev.command) {
+    if (ev.kind === "command" && ev.outward) {
+        // git push, gh pr create… : sort de ton PC, donc demandé à chaque fois (pas de règle possible)
+        buttons.append(el("span", { className: "muted small" }, `↗ Sort de ton PC (${ev.outward}) : toujours demandé.`));
+    } else if (ev.kind === "command" && ev.command) {
         // « Toujours autoriser dans ce projet » : la commande exacte, ou un début de commande (modifiable)
         const always = el("button", { className: "ghost" }, "Toujours autoriser dans ce projet ▾");
         always.addEventListener("click", () => {

@@ -4,7 +4,7 @@ import asyncio
 import json
 import uuid
 
-from . import chat, conversations, hooks, mcp_client, permissions, tools
+from . import chat, conversations, github, hooks, mcp_client, permissions, tools
 
 # Types d'outils soumis à accord, et le drapeau qui les autorise pour toute la conversation
 # (None : jamais d'autorisation globale)
@@ -100,7 +100,9 @@ async def run_tool(cid, root, name, args, call_id, out, allowed=None, parent_id=
     settings = conversations.get(cid).get("agent") or {}
     decision = "allow"
     command = prepared.get("command") if tool.kind == "command" else None
-    rule = permissions.find(root, command) if command and root else None  # « toujours autoriser » dans ce projet
+    # Ce qui sort de ton PC (git push, gh pr create…) est toujours demandé, quelles que soient les règles
+    outward = github.outward(command) if command else None
+    rule = permissions.find(root, command) if command and root and not outward else None  # « toujours autoriser »
     auto = prepared.get("auto_allowed")  # outil MCP réglé sur « Toujours autoriser »
     conv_now = conversations.get(cid) or {}
     # Action ordinaire à l'écran : d'office en mode PC entier, ou si tu l'as permis pour cette tâche
@@ -121,7 +123,8 @@ async def run_tool(cid, root, name, args, call_id, out, allowed=None, parent_id=
             "path": prepared.get("rel"),
             "preview": prepared["preview"],
             "command": command,
-            "rule_prefix": permissions.suggest_prefix(command) if command else None,
+            "rule_prefix": permissions.suggest_prefix(command) if command and not outward else None,
+            "outward": outward,
             "ordinary": bool(prepared.get("ordinary")) if tool.kind == "screen_action" else None,
         })
         try:
