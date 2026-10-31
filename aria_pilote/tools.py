@@ -545,6 +545,8 @@ def prepare_load_skill(root, args):
         if args.get("file"):
             return {"output": _truncate(skills.read_extra(skill, args["file"]))}
         text = skills.body(skill)
+        if skill.name in github.SKILLS:
+            text += github.conventions()
     except skills.SkillError as exc:
         names = ", ".join(skills.discover(root)) or "aucune"
         raise ToolError(f"{exc} Compétences disponibles : {names}.")

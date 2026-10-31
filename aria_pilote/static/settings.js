@@ -2,7 +2,7 @@
 // S'appuie sur $, api, el, state, loadModels, loadEngines, renderHardware (app.js) et SKILL_SOURCES (chat.js).
 
 const SECTIONS = ["general", "persona", "modele-defaut", "mes-modeles", "presets", "decouvrir", "moteurs", "materiel",
-    "comportement", "autorisations", "competences", "hooks", "mcp", "web", "donnees"];
+    "comportement", "autorisations", "github", "competences", "hooks", "mcp", "web", "donnees"];
 
 // --- Navigation ------------------------------------------------------------------
 
@@ -814,6 +814,75 @@ $("#btn-sx-toggle").addEventListener("click", async () => {
     }
 });
 
+// --- GitHub ---------------------------------------------------------------------------
+
+async function loadGithub() {
+    fillConfigFields($('.settings-section[data-section="github"]'));
+    showProtectedBranches();
+    await checkGithub();
+}
+
+function showProtectedBranches() {
+    $("#set-gh-protected").value = (state.config.github?.protected_branches || []).join(", ");
+}
+
+// La liste tapée « main, master » est découpée et vérifiée par le serveur
+$("#set-gh-protected").addEventListener("change", async (event) => {
+    try {
+        await saveConfig({ github: { protected_branches: event.target.value } });
+    } catch (err) {
+        alert(err.message);
+    }
+    showProtectedBranches();
+});
+
+async function checkGithub() {
+    const button = $("#btn-github-check");
+    button.disabled = true;
+    $("#github-status").replaceChildren(el("p", { className: "muted small" }, "Vérification…"));
+    try {
+        renderGithubStatus(await api("/api/github/status"));
+    } catch (err) {
+        $("#github-status").replaceChildren(el("p", { className: "error small" }, err.message));
+    } finally {
+        button.disabled = false;
+    }
+}
+
+$("#btn-github-check").addEventListener("click", checkGithub);
+
+// Une ligne d'état : ✓ ou ⚠, le détail, et la commande à lancer toi-même s'il manque quelque chose
+function githubRow(ok, label, detail, fix = "") {
+    return el("div", { className: "set-row" },
+        el("div", {}, el("div", { className: "set-label" }, `${ok ? "✓" : "⚠"} ${label}`),
+            el("div", { className: "muted small" }, detail)),
+        fix ? el("code", { className: "mono small" }, fix) : "");
+}
+
+function renderGithubStatus(s) {
+    const rows = [];
+    if (!s.git) {
+        rows.push(githubRow(false, "git", "Introuvable : à installer, puis relance Aria Pilote.", "winget install Git.Git"));
+    } else {
+        rows.push(githubRow(true, `git ${s.git.version}`, "Installé."));
+        rows.push(s.git.user_name
+            ? githubRow(true, "Identité des commits", `${s.git.user_name} <${s.git.user_email || "sans e-mail"}>`)
+            : githubRow(false, "Identité des commits", "Pas réglée : git refusera de commiter.",
+                'git config --global user.name "Ton nom"'));
+    }
+    if (!s.gh) {
+        rows.push(githubRow(false, "gh (GitHub CLI)", "Introuvable : l'agent ne peut rien faire sur GitHub.",
+            "winget install GitHub.cli"));
+    } else if (!s.gh.accounts.length) {
+        rows.push(githubRow(false, `gh ${s.gh.version}`, s.gh.error, "gh auth login"));
+    } else {
+        const who = s.gh.accounts.map((a) => `${a.login} (${a.host})`).join(", ");
+        const scopes = s.gh.scopes.length ? ` · droits : ${s.gh.scopes.join(", ")}` : "";
+        rows.push(githubRow(true, `gh ${s.gh.version}`, `Connecté : ${who}${scopes}`));
+    }
+    $("#github-status").replaceChildren(...rows);
+}
+
 // --- Données ---------------------------------------------------------------------------
 
 function humanSize(bytes) {
@@ -1105,6 +1174,7 @@ const LOADERS = {
     moteurs: loadEnginesSection,
     materiel: loadHardwareSection,
     autorisations: loadRules,
+    github: loadGithub,
     competences: loadSkills,
     hooks: loadHooks,
     mcp: loadMcp,

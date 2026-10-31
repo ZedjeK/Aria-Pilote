@@ -109,7 +109,9 @@ async def run_tool(cid, root, name, args, call_id, out, allowed=None, parent_id=
     pc_mode = conv_now.get("screen_mode") == "pc"
     screen_auto = (tool.kind == "screen_action" and prepared.get("ordinary")
                    and (pc_mode or (conv_now.get("task_id") and conv_now.get("screen_auto_task") == conv_now.get("task_id"))))
-    auto = auto or screen_auto
+    # Lecture git ou gh (git status, gh pr checks…) : sans demander si c'est activé dans Réglages › GitHub
+    read_auto = bool(command) and rule is None and github.settings()["read_auto"] and github.read_only(command)
+    auto = auto or screen_auto or read_auto
     if tool.kind in APPROVAL_FLAGS and rule is None and not auto and not settings.get(APPROVAL_FLAGS[tool.kind] or "", False):
         approval_id = uuid.uuid4().hex[:12]
         future = asyncio.get_running_loop().create_future()
@@ -145,6 +147,8 @@ async def run_tool(cid, root, name, args, call_id, out, allowed=None, parent_id=
     elif screen_auto:
         out["result"]["rule"] = ("action ordinaire, autorisée d'office en mode PC entier" if pc_mode
                                  else "action ordinaire autorisée pour cette tâche")
+    elif read_auto:
+        out["result"]["rule"] = "lecture git ou GitHub, autorisée d'office (Réglages › GitHub)"
     elif auto and prepared.get("auto_reason"):
         out["result"]["rule"] = prepared["auto_reason"]
 

@@ -60,6 +60,10 @@ DEFAULTS = {
     "mcp": {"servers": {}},
     # Appels d'outils au plus par tâche de l'agent
     "max_tool_calls": 25,
+    # GitHub (voir github.py) : compétences github-*, branches sans push direct, conventions données au modèle, et
+    # lectures git/gh lancées sans demander (coupé tant que tu ne l'actives pas)
+    "github": {"skills": True, "protected_branches": ["main", "master"], "feature_prefix": "feat/", "fix_prefix": "fix/",
+               "merge_method": "squash", "attribution": "", "read_auto": False},
     # Recherche web : coupée, l'agent ne voit plus web_search ni web_fetch (ni les sous-agents qui n'ont que ça)
     "web": {"enabled": True, "results": 8, "language": "auto", "safesearch": 0},
     # SearXNG arrêté après ce nombre de minutes sans recherche (0 : tourne jusqu'à la fermeture d'Aria)

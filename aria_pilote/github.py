@@ -10,12 +10,16 @@ mille détours.
 
 import re
 import shlex
+import shutil
 import subprocess
 from pathlib import Path
 
 from . import config
 
 DEFAULT_PROTECTED = ["main", "master"]
+SKILLS = ("github-pr", "github-issues", "github-release")
+BRANCH_RE = re.compile(r"^[\w.\-/]{1,60}$")  # un nom de branche ou un préfixe (« feat/ »), sans espace ni caractère spécial
+MERGE_METHODS = ("squash", "merge", "rebase")
 # Ce qui sépare deux commandes (PowerShell) : chaque morceau est examiné à part
 SEPARATORS = re.compile(r"[;\r\n|&]+")
 GIT_RE = re.compile(r"^(?:&\s*)?(?:[\w:\\/.\"' -]*[\\/])?git(?:\.exe)?[\"']?$", re.I)
@@ -29,9 +33,31 @@ GH_READ = {"list", "view", "status", "checks", "diff", "search", "watch", "downl
 GH_API_WRITE = {"-f", "-F", "--field", "--raw-field", "--input"}
 
 
+def settings():
+    return {**config.DEFAULTS["github"], **(config.get().get("github") or {})}
+
+
 def protected_branches():
-    branches = (config.get().get("github") or {}).get("protected_branches")
+    branches = settings().get("protected_branches")
     return list(DEFAULT_PROTECTED if branches is None else branches)
+
+
+def skills_enabled():
+    return bool(settings()["skills"])
+
+
+def conventions():
+    """Les choix de Réglages › GitHub, ajoutés à une compétence github-* quand le modèle la charge."""
+    s = settings()
+    protected = ", ".join(s["protected_branches"]) or "aucune"
+    lines = [f"- Branches de travail : {s['feature_prefix']}sujet-court pour une nouveauté, {s['fix_prefix']}sujet-court "
+             "pour un correctif.",
+             f"- Fusion d'une pull request : gh pr merge <n> --{s['merge_method']}.",
+             f"- Branches protégées, sans push direct (Aria le refuse) : {protected}."]
+    if s["attribution"]:
+        lines.append(f"- Termine chaque message de commit et chaque corps de pull request par cette ligne, telle "
+                     f"quelle : {s['attribution']}")
+    return "\n\nRéglages de l'utilisateur (Réglages › GitHub), prioritaires sur les exemples ci-dessus :\n" + "\n".join(lines)
 
 
 def _tokens(segment):
@@ -169,3 +195,106 @@ def check_push(command, root):
             if target and target.lower() in protected:
                 return f"push direct sur « {target} », une branche protégée"
     return None
+
+
+# --- lectures sans demander (Réglages › GitHub, « read_auto ») ------------------------------------
+
+# Sous-commandes git qui ne font que lire, et les options qui les rendent dangereuses (écrire un fichier, lancer un
+# programme). Une option globale (git -c …) n'est jamais permise : -c core.pager=… lancerait n'importe quoi.
+GIT_AUTO = {"status", "log", "diff", "show", "fetch", "branch", "remote", "rev-parse", "describe", "tag", "blame",
+            "shortlog", "ls-files"}
+GIT_AUTO_DENIED = ("--output", "--upload-pack", "--exec", "--ext-diff", "--textconv")
+# git branch, tag et remote ne lisent qu'avec ces options seules (« git branch nom » crée une branche)
+GIT_LIST_ONLY = {"branch": {"-a", "--all", "-r", "--remotes", "-v", "-vv", "--list", "--show-current"},
+                 "tag": {"-l", "--list"}, "remote": {"-v", "--verbose"}}
+GH_AUTO = {("pr", "view"), ("pr", "list"), ("pr", "checks"), ("pr", "diff"), ("pr", "status"), ("issue", "view"),
+           ("issue", "list"), ("issue", "status"), ("run", "view"), ("run", "list"), ("repo", "view"),
+           ("release", "list"), ("release", "view"), ("label", "list"), ("auth", "status")}
+
+
+def read_only(command):
+    """Vrai si la commande est une seule lecture git ou gh de la liste (lancée sans demander si c'est activé)."""
+    from .permissions import OPERATORS  # permissions importe ce module
+    if OPERATORS.search(command or ""):
+        return False
+    found = segments(command)
+    if len(found) != 1:
+        return False
+    tool, args = found[0]
+    if tool == "git":
+        if not args or args[0].startswith("-") or args[0].lower() not in GIT_AUTO:
+            return False
+        sub, rest = args[0].lower(), args[1:]
+        if any(a.lower().startswith(GIT_AUTO_DENIED) for a in rest):
+            return False
+        if sub == "fetch" and any(":" in a for a in rest):  # « git fetch origin main:main » écrit une branche
+            return False
+        return sub not in GIT_LIST_ONLY or all(a in GIT_LIST_ONLY[sub] for a in rest)
+    words = _gh_words(args)
+    if any(a in ("--web", "-w") for a in args):  # ouvrirait le navigateur
+        return False
+    return words[:1] == ["search"] or tuple(words[:2]) in GH_AUTO
+
+
+# --- état de git et gh (Réglages › GitHub) --------------------------------------------------------
+
+def _run(args, timeout=15):
+    """(code, sortie) d'un programme, ou None s'il ne se lance pas."""
+    try:
+        out = subprocess.run(args, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=timeout,
+                             creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+    except (OSError, subprocess.SubprocessError):
+        return None
+    return out.returncode, (out.stdout or "") + (out.stderr or "")
+
+
+def status():
+    """git et gh installés, identité des commits, compte GitHub connecté. Le jeton n'est jamais lu ni renvoyé."""
+    result = {"git": None, "gh": None}
+    git = shutil.which("git")
+    if git:
+        ran = _run([git, "--version"])
+        name = _run([git, "config", "--global", "--get", "user.name"])
+        email = _run([git, "config", "--global", "--get", "user.email"])
+        result["git"] = {"version": ran[1].strip().removeprefix("git version ") if ran else "?",
+                         "user_name": name[1].strip() if name and name[0] == 0 else "",
+                         "user_email": email[1].strip() if email and email[0] == 0 else ""}
+    gh = shutil.which("gh")
+    if gh:
+        ran = _run([gh, "--version"])
+        version = re.search(r"gh version (\S+)", ran[1]) if ran else None
+        auth = _run([gh, "auth", "status", "--active"], timeout=20)
+        text = auth[1] if auth else ""
+        accounts = [{"host": h, "login": login} for h, login in re.findall(r"Logged in to (\S+) account (\S+)", text)]
+        scopes = re.search(r"Token scopes: (.*)", text)
+        result["gh"] = {"version": version.group(1) if version else "?", "accounts": accounts,
+                        "scopes": re.findall(r"'([^']+)'", scopes.group(1)) if scopes else [],
+                        "error": "" if accounts else ("Connexion refusée par GitHub : relance gh auth login."
+                                                      if "Failed to log in" in text else "Pas connecté à GitHub.")}
+    return result
+
+
+def check_settings(patch):
+    """Réglages › GitHub vérifiés : ValueError avec un message lisible si une valeur ne va pas."""
+    out = dict(patch)
+    branches = out.get("protected_branches")
+    if branches is not None:
+        if isinstance(branches, str):  # « main, master » tapé dans le champ
+            branches = re.split(r"[\s,]+", branches)
+        branches = list(dict.fromkeys(b.strip() for b in branches if b and b.strip()))
+        bad = [b for b in branches if not BRANCH_RE.match(b) or b.startswith("-")]
+        if bad:
+            raise ValueError(f"Nom de branche invalide : {bad[0]}")
+        if len(branches) > 20:
+            raise ValueError("20 branches protégées au plus.")
+        out["protected_branches"] = branches
+    for key in ("feature_prefix", "fix_prefix"):
+        if out.get(key) is not None:
+            out[key] = out[key].strip()
+            if out[key] and (not BRANCH_RE.match(out[key]) or out[key].startswith("-")):
+                raise ValueError(f"Préfixe de branche invalide : {out[key]}")
+    if out.get("merge_method") is not None and out["merge_method"] not in MERGE_METHODS:
+        raise ValueError(f"Mode de fusion inconnu : {out['merge_method']}")
+    if out.get("attribution") is not None:
+        out["attribution"] = " ".join(out["attribution"].split())  # une seule ligne
+    return out

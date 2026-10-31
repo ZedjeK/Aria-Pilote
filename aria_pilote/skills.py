@@ -15,7 +15,7 @@ import unicodedata
 from dataclasses import dataclass
 from pathlib import Path
 
-from . import config, trash, workspace
+from . import config, github, trash, workspace
 
 BUILTIN_DIR = Path(__file__).parent / "skills"
 USER_DIR = config.ROOT / "skills"
@@ -81,6 +81,8 @@ def _scan(base, source):
 def discover(root=None):
     """Compétences visibles, par nom : celles du projet masquent les perso, qui masquent les intégrées."""
     found = _scan(BUILTIN_DIR, "intégrée")
+    if not github.skills_enabled():  # coupées dans Réglages › GitHub (une copie perso reste la tienne)
+        found = {name: s for name, s in found.items() if name not in github.SKILLS}
     found.update(_scan(USER_DIR, "perso"))
     if root:
         try:

@@ -1,4 +1,4 @@
-"""Git et GitHub : liste noire, commandes qui sortent du PC toujours demandées, branches protégées."""
+"""Git et GitHub : liste noire, commandes qui sortent du PC toujours demandées, branches protégées, Réglages › GitHub."""
 
 import asyncio
 import copy
@@ -6,9 +6,11 @@ import json
 import subprocess
 import unittest
 
-from base import new_conversation, workspace
+from unittest import mock
 
-from aria_pilote import config, github, permissions, toolrun, tools
+from base import ORIGIN, client, new_conversation, workspace
+
+from aria_pilote import config, github, permissions, skills, toolrun, tools
 
 
 def keep_config(test):
@@ -156,6 +158,118 @@ class BranchesProtegees(unittest.TestCase):
         self.assertIn("branche protégée", str(ctx.exception))
         self.assertIn("pull request", str(ctx.exception))
         tools.prepare_run_command(str(self.root), {"command": "git push -u origin feat/x"})
+
+
+GH_AUTH = """github.com
+  ✓ Logged in to github.com account ZedjeK (keyring)
+  - Active account: true
+  - Git operations protocol: https
+  - Token: gho_ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789
+  - Token scopes: 'gist', 'read:org', 'repo', 'workflow'
+"""
+
+
+class Reglages(unittest.TestCase):
+    def setUp(self):
+        keep_config(self)
+        self.api = client()
+
+    def put(self, **github_settings):
+        return self.api.put("/api/config", json={"github": github_settings}, headers=ORIGIN)
+
+    def test_valeurs_verifiees_et_normalisees(self):
+        r = self.put(protected_branches="dev, prod  ,dev", attribution="Co-Authored-By: Aria\n<a@b.fr>",
+                     merge_method="rebase", feature_prefix=" nouveau/ ")
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual({k: r.json()["github"][k] for k in ("protected_branches", "attribution", "merge_method",
+                                                             "feature_prefix")},
+                         {"protected_branches": ["dev", "prod"], "attribution": "Co-Authored-By: Aria <a@b.fr>",
+                          "merge_method": "rebase", "feature_prefix": "nouveau/"})
+        self.assertEqual(github.protected_branches(), ["dev", "prod"])
+        for bad in ({"protected_branches": "main;calc"}, {"protected_branches": "-f"}, {"merge_method": "fast"},
+                    {"fix_prefix": "a b"}):
+            with self.subTest(bad=bad):
+                self.assertEqual(self.put(**bad).status_code, 400)
+        self.assertEqual(self.put(protected_branches="").json()["github"]["protected_branches"], [])
+
+    def test_etat_sans_jamais_le_jeton(self):
+        def fake_run(args, timeout=15):
+            if args[1:] == ["--version"]:
+                return 0, "gh version 2.103.3 (2026-10-28)\n" if "gh" in args[0] else "git version 2.56.0\n"
+            if args[1:3] == ["auth", "status"]:
+                return 0, GH_AUTH
+            return 0, {"user.name": "ZedjeK\n", "user.email": "z@exemple.fr\n"}[args[-1]]
+        with mock.patch.object(github.shutil, "which", side_effect=lambda name: f"C:/bin/{name}.exe"), \
+                mock.patch.object(github, "_run", side_effect=fake_run):
+            r = self.api.get("/api/github/status")
+        data = r.json()
+        self.assertEqual((data["git"]["user_name"], data["gh"]["version"], data["gh"]["accounts"], data["gh"]["scopes"]),
+                         ("ZedjeK", "2.103.3", [{"host": "github.com", "login": "ZedjeK"}],
+                          ["gist", "read:org", "repo", "workflow"]))
+        self.assertNotIn("gho_", r.text)
+        with mock.patch.object(github.shutil, "which", return_value=None):
+            self.assertEqual(self.api.get("/api/github/status").json(), {"git": None, "gh": None})
+
+    def test_competences_coupees(self):
+        self.assertTrue(set(github.SKILLS) <= set(skills.discover()))
+        config.update({"github": {"skills": False}})
+        self.assertFalse(set(github.SKILLS) & set(skills.discover()))
+        self.assertNotIn("github-pr", skills.prompt_section())
+        with self.assertRaises(tools.ToolError):
+            tools.prepare_load_skill(None, {"name": "github-pr"})
+
+    def test_conventions_ajoutees_a_la_competence(self):
+        config.update({"github": {"merge_method": "merge", "attribution": "Co-Authored-By: Aria <a@b.fr>",
+                                  "protected_branches": ["prod"]}})
+        text = tools.prepare_load_skill(None, {"name": "github-pr"})["output"]
+        self.assertIn("gh pr merge <n> --merge", text)
+        self.assertIn("telle quelle : Co-Authored-By: Aria <a@b.fr>", text)
+        self.assertIn("(Aria le refuse) : prod.", text)
+        self.assertNotIn("Réglages › GitHub", tools.prepare_load_skill(None, {"name": "dev"})["output"])
+
+
+class LecturesSansDemander(unittest.TestCase):
+    def setUp(self):
+        keep_config(self)
+
+    def test_classement(self):
+        for command, expected in [
+            ("git status", True), ("git log --oneline -5", True), ("git diff HEAD~1", True), ("git fetch origin", True),
+            ("git branch -a", True), ("git tag", True), ("gh pr list", True), ("gh pr checks 12", True),
+            ("gh run view 5 --log-failed", True), ("gh search issues bug", True), ("gh -R a/b issue view 3", True),
+            ("git -c core.pager=calc log", False), ("git branch nouvelle", False), ("git branch -D x", False),
+            ("git tag v1", False), ("git fetch origin main:main", False), ("git fetch --upload-pack=calc", False),
+            ("git diff --output=x", False), ("git status; Remove-Item x", False), ("git status | Out-File x", False),
+            ("git push", False), ("gh pr create", False), ("gh pr view 3 --web", False), ("gh api repos/a/b", False),
+            ("gh pr checkout 5", False), ("python -m unittest", False),
+        ]:
+            with self.subTest(command=command):
+                self.assertEqual(github.read_only(command), expected)
+
+    def run_command(self, root, command):
+        cid = new_conversation(root)
+
+        async def go():
+            out, evs = {}, []
+            async for ev in toolrun.run_tool(cid, str(root), "run_command", {"command": command}, "c1", out):
+                evs.append(json.loads(ev[6:]))
+                if evs[-1]["type"] == "approval":
+                    toolrun.resolve_approval(evs[-1]["approval_id"], "deny")
+            return out["result"], evs
+        return asyncio.run(go())
+
+    def test_seulement_si_active(self):
+        root = workspace()
+        git(root, "init", "-q", "-b", "main")
+        _, evs = self.run_command(root, "git status --short")
+        self.assertTrue(any(e["type"] == "approval" for e in evs))
+        config.update({"github": {"read_auto": True}})
+        result, evs = self.run_command(root, "git status --short")
+        self.assertEqual(evs, [])
+        self.assertEqual((result["status"], result["rule"]),
+                         ("ok", "lecture git ou GitHub, autorisée d'office (Réglages › GitHub)"))
+        _, evs = self.run_command(root, "git status --short; echo x")
+        self.assertTrue(any(e["type"] == "approval" for e in evs))
 
 
 if __name__ == "__main__":

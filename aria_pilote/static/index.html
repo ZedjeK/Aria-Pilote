@@ -137,6 +137,7 @@
             <div class="nav-group">Agents</div>
             <a href="#/reglages/comportement" data-section="comportement">🤖 Comportement</a>
             <a href="#/reglages/autorisations" data-section="autorisations">🛡 Autorisations</a>
+            <a href="#/reglages/github" data-section="github">🐙 GitHub</a>
             <a href="#/reglages/competences" data-section="competences">📚 Compétences et sous-agents</a>
             <a href="#/reglages/hooks" data-section="hooks">🪝 Hooks</a>
             <a href="#/reglages/mcp" data-section="mcp">🔌 Serveurs MCP</a>
@@ -634,6 +635,58 @@ py -3.11 tools/build_portable.py</pre>
                 <p class="muted">Commandes que l'agent lance sans te demander, projet par projet. Une règle terminée par * couvre
                     les commandes qui commencent ainsi, jamais une suite avec ; &amp; | &gt; $ (enchaînement). La liste noire reste prioritaire.</p>
                 <div id="rules-all"></div>
+            </section>
+
+            <section class="settings-section" data-section="github" data-title="GitHub" hidden>
+                <div class="set-card">
+                    <div class="set-card-head">
+                        <div class="set-card-title">Git et gh sur ce PC</div>
+                        <button type="button" id="btn-github-check" class="ghost">↻ Vérifier</button>
+                    </div>
+                    <div id="github-status" class="github-status"><p class="muted small">Vérification…</p></div>
+                    <p class="muted small">🔒 L'agent passe par gh, connecté à ton compte : le jeton reste dans le coffre de Windows et Aria ne le lit jamais.
+                        La connexion se fait toi-même, dans un terminal (l'agent ne peut pas lancer gh auth login).</p>
+                </div>
+                <div class="set-card">
+                    <div class="set-card-title">Compétences</div>
+                    <label class="set-row">
+                        <div><div class="set-label">Compétences GitHub</div><div class="muted small">github-pr, github-issues et github-release. Coupées, le modèle ne les voit plus (et elles quittent la liste des compétences)</div></div>
+                        <input type="checkbox" class="switch" data-config="github.skills">
+                    </label>
+                    <label class="set-row">
+                        <div><div class="set-label">Préfixe des branches de nouveauté</div><div class="muted small">feat/sujet-court</div></div>
+                        <input class="mono set-num" data-config="github.feature_prefix" placeholder="feat/">
+                    </label>
+                    <label class="set-row">
+                        <div><div class="set-label">Préfixe des branches de correctif</div><div class="muted small">fix/sujet-court</div></div>
+                        <input class="mono set-num" data-config="github.fix_prefix" placeholder="fix/">
+                    </label>
+                    <label class="set-row">
+                        <div><div class="set-label">Fusion d'une pull request</div><div class="muted small">Ce que l'agent passe à gh pr merge, quand tu lui demandes de fusionner</div></div>
+                        <select data-config="github.merge_method">
+                            <option value="squash">Squash : un seul commit</option>
+                            <option value="merge">Merge : un commit de fusion</option>
+                            <option value="rebase">Rebase : les commits rejoués</option>
+                        </select>
+                    </label>
+                    <label class="set-row">
+                        <div><div class="set-label">Ligne d'attribution</div><div class="muted small">Ajoutée à la fin de chaque message de commit et de chaque pull request (vide : aucune)</div></div>
+                        <input class="mono set-wide" data-config="github.attribution" placeholder="Co-Authored-By: Aria &lt;aria@exemple.fr&gt;">
+                    </label>
+                </div>
+                <div class="set-card">
+                    <div class="set-card-title">Garde-fous</div>
+                    <label class="set-row">
+                        <div><div class="set-label">Branches protégées</div><div class="muted small">Aria refuse le push direct sur ces branches : le travail passe par une pull request. Séparées par des virgules ; vide, plus de protection</div></div>
+                        <input id="set-gh-protected" class="mono set-wide" placeholder="main, master">
+                    </label>
+                    <label class="set-row">
+                        <div><div class="set-label">Lectures sans demander</div><div class="muted small">git status, log, diff, show, fetch, branch, blame… et gh pr, issue, run (list, view, checks), repo view, release list, search : lancées sans te demander. Seules, sans enchaînement ni option qui écrit</div></div>
+                        <input type="checkbox" class="switch" data-config="github.read_auto">
+                    </label>
+                    <p class="muted small">Toujours, quoi que tu règles ici : ce qui sort de ton PC (push, pull request, commentaire, release) t'est demandé à chaque fois,
+                        et le push forcé, les suppressions sur GitHub et la lecture du jeton sont refusés d'office.</p>
+                </div>
             </section>
 
             <section class="settings-section" data-section="competences" data-title="Compétences et sous-agents" hidden>
