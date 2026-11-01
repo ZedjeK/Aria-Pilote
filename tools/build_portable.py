@@ -170,6 +170,7 @@ def compile_launcher(out):
 # --- exe portable ------------------------------------------------------------------
 
 PAYLOAD_MAGIC = b"ARIAPAK1"
+EXE_HOME = Path.home() / ".Aria-Pilote"  # là où l'exe installe l'appli (voir Launcher.cs)
 SEARXNG_SETTINGS = Path("services") / "searxng" / "settings.yml"
 
 
@@ -337,6 +338,8 @@ def main():
     if args.exe:
         exe = build_exe(staging, releases_dir)
         shutil.rmtree(staging)
+        if releases_dir == ROOT.parent.resolve() and (EXE_HOME / "models").is_dir():
+            point_dev_config(EXE_HOME)
         step("Terminé")
         print(f"\nExe portable : {exe} ({exe.stat().st_size / 1024**2:.0f} Mo)\n"
               "Au lancement, il installe ou met à jour l'appli dans %USERPROFILE%\\.Aria-Pilote.")
