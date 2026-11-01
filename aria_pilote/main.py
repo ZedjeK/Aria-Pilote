@@ -12,9 +12,9 @@ from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse, Str
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from . import (VERSION, agent, attachments, background, backups, chat, config, context, conversations, downloads, engines, hardware,
-               hooks, hub, images, mcp_client, models, optimizer, permissions, persona, pick_folder, presets, screen, searxng,
-               skills, souvenirs, subagents, tools, trial, updates, workspace)
+from . import (VERSION, agent, attachments, background, backups, chat, config, context, conversations, downloads,
+               engines, github, hardware, hooks, hub, images, mcp_client, models, optimizer, permissions, persona,
+               pick_folder, presets, screen, searxng, skills, souvenirs, subagents, tools, trial, updates, workspace)
 from .server import EngineMissing, manager
 
 STATIC_DIR = Path(__file__).parent / "static"
@@ -132,6 +132,16 @@ class MemorySettings(BaseModel):
     max_injected: int | None = Field(None, ge=0, le=200)
 
 
+class GithubSettings(BaseModel):
+    skills: bool | None = None
+    protected_branches: list[str] | str | None = None  # « main, master » tapé dans le champ, ou une liste
+    feature_prefix: str | None = Field(None, max_length=60)
+    fix_prefix: str | None = Field(None, max_length=60)
+    merge_method: str | None = None
+    attribution: str | None = Field(None, max_length=200)
+    read_auto: bool | None = None
+
+
 class WebSettings(BaseModel):
     enabled: bool | None = None
     results: int | None = Field(None, ge=3, le=20)
@@ -163,6 +173,7 @@ class ConfigPatch(BaseModel):
     screen_control: bool | None = None
     web: WebSettings | None = None
     memory: MemorySettings | None = None
+    github: GithubSettings | None = None
     searxng_idle_minutes: int | None = Field(None, ge=0, le=1440)
     backup_retention_days: int | None = Field(None, ge=0, le=3650)
     conversation_retention_days: int | None = Field(None, ge=0, le=3650)
@@ -504,6 +515,11 @@ def put_config(patch: ConfigPatch):
             except workspace.WorkspaceError as exc:
                 raise HTTPException(400, str(exc))
         new.pop("enabled", None)  # le dossier proposé ne s'attache jamais tout seul
+    if "github" in data:
+        try:
+            data["github"] = github.check_settings(data["github"])
+        except ValueError as exc:
+            raise HTTPException(400, str(exc))
     if "load_defaults" in data:
         try:
             data["load_defaults"] = config.check_load_settings(data["load_defaults"])
@@ -941,6 +957,12 @@ class MCPServerPatch(BaseModel):
 
 class MCPConfigText(BaseModel):
     content: str  # contenu complet de mcp.json
+
+
+@app.get("/api/github/status")
+async def github_status():
+    """git et gh installés, identité des commits, compte connecté (Réglages › GitHub ; jamais le jeton)."""
+    return await asyncio.to_thread(github.status)
 
 
 @app.get("/api/mcp")

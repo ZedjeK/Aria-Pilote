@@ -17,7 +17,8 @@ import time
 from dataclasses import dataclass
 from typing import Awaitable, Callable
 
-from . import background, backups, checks, config, conversations, images, jobs, screen, skills, souvenirs, web, workspace
+from . import (background, backups, checks, config, conversations, github, images, jobs, screen, skills, souvenirs, web,
+               workspace)
 from .server import manager
 
 SKIP_DIRS = {".git", ".hg", ".svn", "node_modules", ".venv", "venv", "__pycache__", ".mypy_cache", ".idea"}
@@ -286,6 +287,8 @@ async def run_write(prepared, cid):
 # même de te les montrer. Ce n'est pas une frontière infranchissable (PowerShell offre
 # mille détours), juste une protection contre un « Autoriser » cliqué trop vite.
 _RM = r"\b(?:remove-item|rm|ri|del|erase|rd|rmdir)\b"
+# « git », ses options (-C dossier, -c clé=valeur…), puis la sous-commande : « git commit -m "push -f" » ne compte pas
+_GIT = r"\bgit(?:\.exe)?[\"']?(?:\s+-[cC]\s+\S+|\s+--?[\w-]+(?:=\S+)?)*\s+"
 DENYLIST = [(re.compile(p, re.IGNORECASE), reason) for p, reason in [
     (r"\bformat-volume\b|\bformat(?:\.com)?\s+[a-z]:", "formatage d'un disque"),
     (r"\b(?:diskpart|clear-disk|initialize-disk|remove-partition|set-disk)\b", "manipulation des disques et partitions"),
@@ -302,6 +305,17 @@ DENYLIST = [(re.compile(p, re.IGNORECASE), reason) for p, reason in [
     (r"\b(?:powershell|pwsh)(?:\.exe)?\b.*\s-(?:e|ec|enc|encodedcommand)\s+\S{16,}", "commande encodée, impossible à relire"),
     (r"\b(?:takeown|icacls)\b.*\b[a-z]:\\(?:windows|program files)?\\?(?=[\s\"]|$)", "prise de possession de fichiers système"),
     (r"\bdd\s+if=|\bmkfs\b", "écriture brute sur un disque"),
+    # Git et GitHub : ce qui réécrit ou efface sur GitHub, et ce qui montre ton jeton (voir aussi github.py)
+    (_GIT + r"push\b[^;|&\n]*?\s(?:--force(?![-\w])|-[a-z]*f[a-z]*\b|\+\S|--mirror\b)",
+     "push forcé, qui réécrit l'historique sur GitHub"),
+    (_GIT + r"push\b[^;|&\n]*?\s(?:--delete\b|-d\b|--prune\b|:\S)",
+     "suppression de branches ou de tags sur GitHub"),
+    (r"\bgh(?:\.exe)?\s+(?:(?:-R|--repo)\s+\S+\s+)?(?:[a-z][\w-]*\s+){1,2}delete(?:-asset)?\b"
+     r"|\bgh(?:\.exe)?\s+api\b[^;|&\n]*?(?:-X\s*|--method[\s=]+)[\"']?delete\b", "suppression sur GitHub"),
+    (r"\bgh(?:\.exe)?\s+auth\s+token\b|\bgh(?:\.exe)?\s+auth\s+status\b[^;|&\n]*?\s(?:-t|--show-token)\b"
+     r"|" + _GIT + r"credential(?:-manager(?:-core)?)?\s+(?:fill|get)\b",
+     "lecture du jeton ou des identifiants GitHub"),
+    (r"\bgh(?:\.exe)?\s+auth\s+(?:login|logout|refresh|switch)\b", "connexion à GitHub, à faire toi-même dans un terminal"),
 ]]
 
 
@@ -321,6 +335,9 @@ def prepare_run_command(root, args):
     if reason:
         raise ToolError(f"Commande refusée d'office ({reason}). Elle est sur la liste noire d'Aria Pilote : "
                         "propose une autre approche, ou demande à l'utilisateur de la lancer lui-même.")
+    refusal = github.push_refusal(command, workspace.validate_root(root))
+    if refusal:
+        raise ToolError(refusal)
     background_mode = bool(args.get("background"))
     keep = background_mode and bool(args.get("keep"))
     preview = command
@@ -527,6 +544,8 @@ def prepare_load_skill(root, args):
         if args.get("file"):
             return {"output": _truncate(skills.read_extra(skill, args["file"]))}
         text = skills.body(skill)
+        if skill.name in github.SKILLS:
+            text += github.conventions()
     except skills.SkillError as exc:
         names = ", ".join(skills.discover(root)) or "aucune"
         raise ToolError(f"{exc} Compétences disponibles : {names}.")
@@ -1147,6 +1166,7 @@ def _memory_conv(cid):
 def prepare_remember(root, args):
     from . import persona as personas
     texte, sujet = souvenirs.split(args.get("texte"), args.get("sujet"))
+    texte = souvenirs.drop_stamp(texte)
     categorie = str(args.get("categorie") or "toi").strip().lower()
     if categorie not in souvenirs.CATEGORIES:
         raise ToolError(f"« categorie » : {', '.join(souvenirs.CATEGORIES)}.")
