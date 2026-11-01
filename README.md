@@ -7,11 +7,11 @@
 <p align="center">
   Tes modèles d'IA en local, et un agent qui travaille dans tes dossiers sous ton contrôle.<br>
   Tout se passe sur ton PC : les modèles tournent sur ta carte graphique, rien ne part dans le cloud.<br>
-  Rien à installer : un dossier portable et un exe.
+  Un seul exe, qui range l'appli dans ton dossier utilisateur : rien d'autre à installer.
 </p>
 
 <p align="center">
-  <a href="#compiler-soi-même"><b>Compiler Aria Pilote</b></a> · v0.24 · Windows 10/11 x64 · carte NVIDIA conseillée · licence MIT (code d'Aria) / AGPL-3.0 (SearXNG embarqué)
+  <a href="https://github.com/ZedjeK/Aria-Pilote/releases/latest"><b>Télécharger Aria Pilote</b></a> · <a href="#compiler-soi-même">Compiler</a> · v0.25 · Windows 10/11 x64 · carte NVIDIA conseillée · licence MIT (code d'Aria) / AGPL-3.0 (SearXNG embarqué)
 </p>
 
 ## Ce qu'il fait
@@ -39,9 +39,17 @@
 | **Recherche web** | Recherche privée par un SearXNG qui tourne sur ton PC, lecture de pages publiques. Les adresses de ta machine et de ton réseau local sont refusées | SearXNG embarqué |
 | **Sécurité locale** | llama-server n'accepte que les requêtes d'Aria (clé régénérée à chaque lancement, CORS limité), l'interface refuse les autres sites et le DNS rebinding, et tout ce qu'Aria lance s'arrête avec elle | — |
 
+## Installer
+
+Télécharge `Aria-Pilote-X.Y.Z.exe` dans la [dernière release](https://github.com/ZedjeK/Aria-Pilote/releases/latest) (environ 1,5 Go, moteurs compris), range-le où tu veux et double-clique dessus. Au premier lancement, il installe l'appli dans `%USERPROFILE%\.Aria-Pilote` (une petite fenêtre suit la copie, moins d'une minute), puis ouvre l'interface dans ton navigateur ; les fois suivantes, il la lance directement.
+
+L'exe n'est pas signé : si Windows SmartScreen affiche « Windows a protégé votre ordinateur », clique sur « Informations complémentaires » puis « Exécuter quand même ».
+
+**Mettre à jour** : lance l'exe de la nouvelle version. Il arrête Aria si elle tourne, remplace son code, puis la relance. Tes modèles, tes conversations, ta config, tes compétences, tes serveurs MCP et les moteurs déjà installés ne sont jamais touchés ; si un fichier est encore utilisé, l'ancienne version reste en place et l'exe te le dit. Un exe plus ancien ne remplace jamais une version plus récente.
+
 ## Compiler soi-même
 
-Pas encore de release téléchargeable : avec ses moteurs, le dossier dépasse la taille d'un fichier de release GitHub (2 Go). En attendant, la construction se fait en quatre commandes.
+La construction se fait en quatre commandes.
 
 **Prérequis** : Windows 10/11 x64, [Python 3.11](https://www.python.org/downloads/) pour la construction (l'appli finale embarque son propre Python), et une carte NVIDIA avec un pilote récent. Sans carte NVIDIA, ajoute `--backend vulkan` ou `--backend cpu` à la première commande.
 
@@ -50,16 +58,16 @@ git clone https://github.com/ZedjeK/Aria-Pilote.git "Source code"
 cd "Source code"
 py -3.11 tools/install_engines.py
 py -3.11 tools/install_searxng.py
-py -3.11 tools/build_portable.py
+py -3.11 tools/build_portable.py --exe
 ```
 
 | Commande | Ce qu'elle fait |
 | --- | --- |
 | `install_engines.py` | Télécharge `llama-server` officiel et celui de PrismML (dernières builds, ou `--prism-tag` pour une version précise) avec le runtime CUDA ; même code que Réglages › Moteurs |
 | `install_searxng.py` | Télécharge SearXNG à une version épinglée, lui applique la retouche Windows et génère sa configuration (clé secrète aléatoire, `127.0.0.1` uniquement) |
-| `build_portable.py` | Assemble `..\Aria-Pilote-0.24.0\` : Python portable vérifié par SHA-256, code, moteurs, SearXNG et le lanceur `Aria-Pilote.exe` |
+| `build_portable.py --exe` | Construit `..\Aria-Pilote-0.25.0.exe` : Python portable vérifié par SHA-256, code, moteurs et SearXNG dans une archive collée à la suite du lanceur. La configuration de SearXNG y est un modèle : chaque PC tire sa propre clé secrète au premier lancement. Sans `--exe`, l'ancien mode : un dossier `..\Aria-Pilote-0.25.0\` avec le lanceur `Aria-Pilote.exe` |
 
-Lance ensuite `Aria-Pilote.exe`. L'exe n'est pas signé : si Windows SmartScreen affiche « Windows a protégé votre ordinateur », clique sur « Informations complémentaires » puis « Exécuter quand même ».
+Lance ensuite l'exe, comme une version téléchargée (voir [Installer](#installer)).
 
 Pour développer sans construire : `run.ps1` lance l'appli depuis le code source.
 
@@ -73,7 +81,7 @@ Les tests et les outils de développement tournent avec le Python du projet (`.v
 .\.venv\Scripts\python.exe -m unittest discover tests
 ```
 
-377 tests, environ 90 secondes, sans modèle ni carte graphique : ask_user, multi_edit, annulation de tâche, historique des modifications, sauvegardes, commandes en arrière-plan (vrais processus), vérification de syntaxe, règles d'autorisation (dont 14 tentatives d'enchaînement), identifiants de modèles, ports de la version de dev, optimiseur (en-têtes réels de Qwen 3.8, Bonsai 2 et SmolLM2 dans `tests\donnees\`), essai réel avec un faux moteur, démarrage avec la sortie redirigée, client MCP face à un vrai serveur stdio (accords, refus, erreurs, images, chute et relance), souvenirs (secrets refusés, doublons fusionnés, intime selon le persona et le registre, budget du prompt, conversation privée, Annuler, format « Sujet : fait », doublons de la fiche), mise à jour des moteurs (faux zip et faux GitHub : empreinte, échange de dossiers, retour arrière, refus pendant qu'un modèle tourne), GitHub (push direct sur une branche protégée refusé avec la marche à suivre, push forcé et suppressions interdits, commandes qui sortent du PC toujours demandées, jeton jamais lu, lectures sans demande). Les tests tournent dans un dossier temporaire (`ARIA_PILOTE_HOME`) avec une fausse corbeille et le port 8799 : ils ne touchent jamais ta config, tes conversations ni ta corbeille. Ceux qui demandent Windows ou PowerShell sont sautés ailleurs. Ils vérifient le code ; le banc d'essai ci-dessous vérifie l'agent avec les vrais modèles.
+382 tests, environ 90 secondes, sans modèle ni carte graphique : ask_user, multi_edit, annulation de tâche, historique des modifications, sauvegardes, commandes en arrière-plan (vrais processus), vérification de syntaxe, règles d'autorisation (dont 14 tentatives d'enchaînement), identifiants de modèles, ports de la version de dev, optimiseur (en-têtes réels de Qwen 3.8, Bonsai 2 et SmolLM2 dans `tests\donnees\`), essai réel avec un faux moteur, démarrage avec la sortie redirigée, client MCP face à un vrai serveur stdio (accords, refus, erreurs, images, chute et relance), souvenirs (secrets refusés, doublons fusionnés, intime selon le persona et le registre, budget du prompt, conversation privée, Annuler, format « Sujet : fait », doublons de la fiche), mise à jour des moteurs (faux zip et faux GitHub : empreinte, échange de dossiers, retour arrière, refus pendant qu'un modèle tourne), GitHub (push direct sur une branche protégée refusé avec la marche à suivre, push forcé et suppressions interdits, commandes qui sortent du PC toujours demandées, jeton jamais lu, lectures sans demande), exe portable (le vrai lanceur compilé, avec une petite archive : première installation, mise à jour qui garde tes affaires et tes moteurs, version plus récente laissée en place, retour arrière quand un fichier est utilisé). Les tests tournent dans un dossier temporaire (`ARIA_PILOTE_HOME`) avec une fausse corbeille et le port 8799 : ils ne touchent jamais ta config, tes conversations ni ta corbeille. Ceux qui demandent Windows ou PowerShell sont sautés ailleurs. Ils vérifient le code ; le banc d'essai ci-dessous vérifie l'agent avec les vrais modèles.
 
 ### Banc d'essai de l'agent
 
@@ -121,8 +129,8 @@ Chaque tâche part d'une copie neuve de ses fichiers dans un dossier temporaire,
 ## Bon à savoir
 
 - **Quitter** : utilise le bouton **⏻ Quitter**. Fermer l'onglet ne suffit pas : Aria reste en arrière-plan pour garder ton modèle chargé.
-- **Mises à jour** : une nouvelle version construite à côté de l'ancienne récupère tes modèles, tes conversations et ta config, puis supprime l'ancienne. Ces trois éléments ne sont jamais écrasés, et la construction s'arrête si Aria est encore ouverte. Les réglages mémorisés par modèle suivent aussi : ils sont rangés par chemin relatif au dossier `models\`.
-- **Où sont tes données** : `models\` pour les modèles, `data\` pour les conversations, presets, journaux et sauvegardes de l'agent, `config.json` pour les réglages. Tout reste dans le dossier de l'appli. Les sauvegardes de l'agent sont gardées 30 jours (`backup_retention_days` dans `config.json`, 0 pour tout garder), puis envoyées à la corbeille au démarrage, comme celles d'une conversation supprimée.
+- **Mises à jour** : l'exe d'une nouvelle version remplace le code de l'appli et garde le reste (voir [Installer](#installer)). Les réglages mémorisés par modèle suivent aussi : ils sont rangés par chemin relatif au dossier `models\`.
+- **Où sont tes données** : `models\` pour les modèles, `data\` pour les conversations, presets, journaux et sauvegardes de l'agent, `config.json` pour les réglages. Tout reste dans `%USERPROFILE%\.Aria-Pilote`, à côté du code de l'appli. Les sauvegardes de l'agent sont gardées 30 jours (`backup_retention_days` dans `config.json`, 0 pour tout garder), puis envoyées à la corbeille au démarrage, comme celles d'une conversation supprimée.
 - **La liste noire est un filet, pas un mur** : PowerShell offre mille détours. La vraie protection, c'est ta validation de chaque commande.
 - **Carte graphique partagée** : si un autre logiciel occupe la VRAM (génération d'images, jeu…), le modèle déborde en RAM et devient beaucoup plus lent.
 - **Serveurs MCP** : un serveur `npx` demande Node.js (`winget install OpenJS.NodeJS.LTS`), un serveur `uvx` demande uv (`winget install astral-sh.uv`). `${ARIA_PYTHON}` dans la commande désigne le Python d'Aria : pratique pour un serveur Python installé avec son pip, mais à réinstaller après une mise à jour d'Aria (son Python est neuf à chaque version). Les jetons et variables restent en clair dans `mcp.json`, sur ton PC, et suivent les mises à jour. Le journal de chaque serveur est dans `data\mcp-logs\`.
@@ -131,4 +139,4 @@ Chaque tâche part d'une copie neuve de ses fichiers dans un dossier temporaire,
 
 ## Licence
 
-Le code d'Aria Pilote est sous licence [MIT](LICENSE). Les composants téléchargés par les scripts gardent leur propre licence : notamment [SearXNG](https://github.com/searxng/searxng) (AGPL-3.0), embarqué dans le dossier portable, [llama.cpp](https://github.com/ggml-org/llama.cpp) et [le fork de PrismML](https://github.com/PrismML-Eng/llama.cpp), et [python-build-standalone](https://github.com/astral-sh/python-build-standalone). Les modèles téléchargés sur Hugging Face ont chacun la leur, indiquée sur leur fiche.
+Le code d'Aria Pilote est sous licence [MIT](LICENSE). Les composants téléchargés par les scripts gardent leur propre licence : notamment [SearXNG](https://github.com/searxng/searxng) (AGPL-3.0), embarqué dans l'exe, [llama.cpp](https://github.com/ggml-org/llama.cpp) et [le fork de PrismML](https://github.com/PrismML-Eng/llama.cpp), et [python-build-standalone](https://github.com/astral-sh/python-build-standalone). Les modèles téléchargés sur Hugging Face ont chacun la leur, indiquée sur leur fiche.
