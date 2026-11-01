@@ -45,6 +45,7 @@ PLAN_APPROVED = "Le plan est approuvé : exécute-le étape par étape, en tenan
 INCIDENTS = {"tourne en rond": "boucle", "Réponse coupée": "coupée", "Limite de": "limite"}
 
 sys.path.insert(0, str(BENCH))  # check.py importe les utilitaires de bench/checks.py
+from checks import remove_tree  # noqa: E402
 
 
 # --- Appli et modèles ----------------------------------------------------------
@@ -267,8 +268,8 @@ def run_task(client, task, args):
 
     if not args.keep:
         client.delete(f"/api/conversations/{cid}", headers=ORIGIN)
-        shutil.rmtree(ws, ignore_errors=True)
-    shutil.rmtree(snapshot, ignore_errors=True)
+        remove_tree(ws)
+    remove_tree(snapshot)
     incidents = sorted({label for e in run["errors"] for key, label in INCIDENTS.items() if key in e}
                        | ({"délai"} if "délai dépassé" in run["errors"] else set()))
     return {

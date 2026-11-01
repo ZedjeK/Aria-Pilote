@@ -1,10 +1,11 @@
 """Utilitaires communs aux vérificateurs des tâches (check.py)."""
 
 import hashlib
+import os
 import shutil
+import stat
 import subprocess
 import sys
-import tempfile
 from pathlib import Path
 
 
@@ -24,6 +25,15 @@ def unchanged(ws, run, *names):
     if not names:
         return tree(ws) == tree(run["start"])
     return all((Path(ws) / n).is_file() and digest(Path(ws) / n) == digest(run["start"] / n) for n in names)
+
+
+def remove_tree(path):
+    """Efface un dossier de test, dépôt git compris : ses objets sont en lecture seule sous Windows, et
+    rmtree(ignore_errors=True) les laissait en place sans rien dire."""
+    def unlock(func, target, _):
+        os.chmod(target, stat.S_IWRITE)
+        func(target)
+    shutil.rmtree(path, onerror=unlock)
 
 
 def python(ws, *args, timeout=60):
@@ -50,7 +60,7 @@ def used(run, tool):
     return any(c["name"] == tool for c in run["calls"])
 
 
-# --- dépôts git (tâches GitHub) : un vrai dépôt, et un « origin » nu dans un dossier temporaire, sans réseau ---
+# --- dépôts git (tâches GitHub) : un vrai dépôt et un « origin » nu à côté, sans réseau ---
 
 START_FILE = ".git/aria-bench-depart"  # le commit de départ, rangé dans .git : hors du suivi de git
 
@@ -63,10 +73,12 @@ def git(cwd, *args):
 
 
 def make_repo(ws):
-    """Le dossier devient un dépôt sur main, un commit poussé sur un origin local nu."""
-    origin = Path(tempfile.mkdtemp(prefix="aria-bench-origin-"))
-    git(origin, "init", "-q", "--bare", "-b", "main")
+    """Le dossier devient un dépôt sur main, un commit poussé sur un origin local nu. L'origin est rangé dans .git :
+    hors du suivi de git, et effacé avec le dossier de la tâche."""
     git(ws, "init", "-q", "-b", "main")
+    origin = Path(ws) / ".git" / "aria-bench-origin"
+    origin.mkdir()
+    git(origin, "init", "-q", "--bare", "-b", "main")
     git(ws, "config", "user.name", "Banc Aria")
     git(ws, "config", "user.email", "banc@aria.invalid")
     git(ws, "add", "-A")

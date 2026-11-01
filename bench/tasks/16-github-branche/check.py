@@ -1,8 +1,7 @@
-import shutil
 import tempfile
 from pathlib import Path
 
-from checks import git, make_repo, python, repo_state
+from checks import git, make_repo, python, remove_tree, repo_state
 
 
 def setup(ws):
@@ -28,7 +27,7 @@ def check(ws, run):
         if code != 0:
             return False, f"les tests échouent sur {branch} : " + out.strip().splitlines()[-1]
     finally:
-        shutil.rmtree(copy, ignore_errors=True)
+        remove_tree(copy)
     skill = "github-pr chargée" if any(c["name"] == "load_skill" and "github-pr" in str(c.get("args"))
                                        for c in run["calls"]) else "sans github-pr"
     return True, f"poussé sur {branch}, main intacte ({skill})"
