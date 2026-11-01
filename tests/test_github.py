@@ -153,11 +153,31 @@ class BranchesProtegees(unittest.TestCase):
         self.assertIsNone(github.check_push("git push origin prod", self.root))
 
     def test_outil_refuse_avec_explication(self):
+        # Le banc l'a montré : « git add … && git commit … && git push origin main » refusé en entier, le modèle
+        # croyait avoir commité. Le message dit que rien n'a été lancé, et comment s'en sortir.
         with self.assertRaises(tools.ToolError) as ctx:
-            tools.prepare_run_command(str(self.root), {"command": "git push origin main"})
-        self.assertIn("branche protégée", str(ctx.exception))
-        self.assertIn("pull request", str(ctx.exception))
+            tools.prepare_run_command(str(self.root), {"command": "git add x && git commit -m y && git push origin master"})
+        message = str(ctx.exception)
+        for expected in ("une branche protégée", "Rien n'a été lancé", "git switch -c fix/sujet-court",
+                         "git branch -f master origin/master"):
+            self.assertIn(expected, message)
         tools.prepare_run_command(str(self.root), {"command": "git push -u origin feat/x"})
+
+    def test_la_reparation_proposee_marche(self):
+        # Commit déjà fait sur main : la branche créée là, puis main remise sur origin, comme le dit le message
+        origin = workspace("origin")
+        git(origin, "init", "-q", "--bare", "-b", "main")
+        git(self.root, "config", "user.name", "Test")
+        git(self.root, "config", "user.email", "test@aria.invalid")
+        git(self.root, "commit", "-q", "--allow-empty", "-m", "Départ")
+        git(self.root, "remote", "add", "origin", str(origin))
+        git(self.root, "push", "-q", "-u", "origin", "main")
+        git(self.root, "commit", "-q", "--allow-empty", "-m", "Correctif")
+        for command in ("switch -c fix/sujet-court", "push -q -u origin HEAD", "branch -f main origin/main"):
+            git(self.root, *command.split())
+        log = lambda ref: subprocess.run(["git", "log", "--format=%s", ref], cwd=self.root, capture_output=True,
+                                         text=True, encoding="utf-8").stdout.split()
+        self.assertEqual((log("main"), log("origin/fix/sujet-court")), (["Départ"], ["Correctif", "Départ"]))
 
 
 GH_AUTH = """github.com

@@ -199,6 +199,23 @@ def check_push(command, root):
     return None
 
 
+def push_refusal(command, root):
+    """Le message renvoyé au modèle quand check_push refuse, ou None. Il dit que rien n'a été lancé : un modèle qui
+    enchaîne « git add … && git commit … && git push origin main » croyait sinon avoir commité, et poussait une
+    branche vide. Puis comment s'en sortir, y compris après un commit déjà fait sur la branche protégée."""
+    reason = check_push(command, root)
+    if not reason:
+        return None
+    named = re.search(r"« (.+?) »", reason)
+    branch = named.group(1) if named else (protected_branches() or ["main"])[0]
+    return (f"Commande refusée ({reason}, Réglages › GitHub). Rien n'a été lancé : toute la ligne est refusée, y "
+            "compris un git add ou un git commit placé avant le push. Pour livrer : crée d'abord la branche de travail "
+            f"(git switch -c {settings()['fix_prefix']}sujet-court), tes modifications non commitées la suivent ; "
+            "commite, puis pousse cette branche (git push -u origin HEAD). Si tu as déjà commité sur "
+            f"{branch} : crée la branche là où tu es, pousse-la, puis remets {branch} sur origin "
+            f"(git branch -f {branch} origin/{branch}). Sinon, demande à l'utilisateur de pousser lui-même.")
+
+
 # --- lectures sans demander (Réglages › GitHub, « read_auto ») ------------------------------------
 
 # Sous-commandes git qui ne font que lire, et les options qui les rendent dangereuses (écrire un fichier, lancer un

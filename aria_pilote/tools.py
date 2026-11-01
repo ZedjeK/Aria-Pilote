@@ -335,10 +335,9 @@ def prepare_run_command(root, args):
     if reason:
         raise ToolError(f"Commande refusée d'office ({reason}). Elle est sur la liste noire d'Aria Pilote : "
                         "propose une autre approche, ou demande à l'utilisateur de la lancer lui-même.")
-    reason = github.check_push(command, workspace.validate_root(root))
-    if reason:
-        raise ToolError(f"Commande refusée ({reason}, Réglages › GitHub). Pousse une branche de travail et ouvre une "
-                        "pull request, ou demande à l'utilisateur de pousser lui-même.")
+    refusal = github.push_refusal(command, workspace.validate_root(root))
+    if refusal:
+        raise ToolError(refusal)
     background_mode = bool(args.get("background"))
     keep = background_mode and bool(args.get("keep"))
     preview = command
