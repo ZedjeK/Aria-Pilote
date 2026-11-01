@@ -40,6 +40,7 @@ En liste : numéro, titre, étiquettes, état et une ligne de résumé. Pour une
 - Citer le numéro et le lien de chaque issue touchée.
 ### À ne jamais faire
 - Fermer, étiqueter, assigner ou commenter sans l'accord de l'utilisateur.
+- Corriger l'issue ou ouvrir une pull request dans la foulée : propose-le, sans le faire.
 - Publier un secret, un journal non nettoyé ou des données personnelles dans une issue.
 - Inventer une étiquette ou un responsable qui n'existe pas.
 

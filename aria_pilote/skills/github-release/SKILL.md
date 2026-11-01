@@ -14,7 +14,7 @@ Une version publiée sans surprise : le bon numéro, un tag sur le bon commit, e
 
 ## Méthode
 ### Préparer
-1. Vérifie l'état : git status --short (rien en cours), git switch <branche par défaut>, git pull, puis les tests du projet.
+1. Vérifie l'état : git status --short (rien en cours), git switch <branche par défaut>, git pull, puis les tests du projet. Un test rouge : arrête-toi, signale-le et demande comment continuer ; une release ne corrige rien et n'ouvre aucune pull request d'elle-même.
 2. La dernière version : gh release list --limit 5, ou git describe --tags --abbrev=0.
 3. Les changements depuis : git log <dernier tag>..HEAD --oneline, et les pull requests fusionnées (gh pr list --state merged --limit 30).
 4. Propose le numéro selon SemVer (correctif x.y.Z, nouveauté compatible x.Y.0, rupture X.0.0), ou selon la convention du projet s'il en a une.

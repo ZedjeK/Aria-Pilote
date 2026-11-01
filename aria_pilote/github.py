@@ -52,7 +52,8 @@ def conventions():
     protected = ", ".join(s["protected_branches"]) or "aucune"
     lines = [f"- Branches de travail : {s['feature_prefix']}sujet-court pour une nouveauté, {s['fix_prefix']}sujet-court "
              "pour un correctif.",
-             f"- Fusion d'une pull request : gh pr merge <n> --{s['merge_method']}.",
+             f"- Fusion d'une pull request, seulement quand l'utilisateur la demande (une CI verte n'est pas une "
+             f"demande) : gh pr merge <n> --{s['merge_method']}.",
              f"- Branches protégées, sans push direct (Aria le refuse) : {protected}."
              + (" Ne commite jamais dessus : crée la branche de travail avant de modifier un fichier."
                 if s["protected_branches"] else "")]

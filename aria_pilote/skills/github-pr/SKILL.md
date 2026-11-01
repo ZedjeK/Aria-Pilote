@@ -30,6 +30,7 @@ Un changement livré proprement : sur sa branche, dans une pull request claire, 
 ### Suivre la CI
 1. gh pr checks <n> donne l'état des vérifications. Pour attendre la fin, lance gh pr checks <n> --watch en arrière-plan (background) et lis-le avec command_output : au premier plan, il dépasserait le délai.
 2. Un check rouge : gh run list --branch <branche>, puis gh run view <id> --log-failed. Corrige la cause, commit, push.
+3. CI au vert : arrête-toi là et donne son état. Une CI verte n'est pas une demande de fusion : la pull request reste ouverte tant que l'utilisateur ne demande pas de la fusionner.
 ### Traiter les revues
 1. Lis la discussion et les avis : gh pr view <n> --comments ; les commentaires sur le code : gh api "repos/{owner}/{repo}/pulls/<n>/comments" (entre guillemets pour PowerShell).
 2. Corrige par de nouveaux commits, pousse, puis propose une réponse (gh pr comment <n> --body "…") qui dit ce qui a changé.
