@@ -11,7 +11,7 @@
 </p>
 
 <p align="center">
-  <a href="#compiler-soi-même"><b>Compiler Aria Pilote</b></a> · v0.23 · Windows 10/11 x64 · carte NVIDIA conseillée · licence MIT (code d'Aria) / AGPL-3.0 (SearXNG embarqué)
+  <a href="#compiler-soi-même"><b>Compiler Aria Pilote</b></a> · v0.24 · Windows 10/11 x64 · carte NVIDIA conseillée · licence MIT (code d'Aria) / AGPL-3.0 (SearXNG embarqué)
 </p>
 
 ## Ce qu'il fait
@@ -57,7 +57,7 @@ py -3.11 tools/build_portable.py
 | --- | --- |
 | `install_engines.py` | Télécharge `llama-server` officiel et celui de PrismML (dernières builds, ou `--prism-tag` pour une version précise) avec le runtime CUDA ; même code que Réglages › Moteurs |
 | `install_searxng.py` | Télécharge SearXNG à une version épinglée, lui applique la retouche Windows et génère sa configuration (clé secrète aléatoire, `127.0.0.1` uniquement) |
-| `build_portable.py` | Assemble `..\Aria-Pilote-0.23.1\` : Python portable vérifié par SHA-256, code, moteurs, SearXNG et le lanceur `Aria-Pilote.exe` |
+| `build_portable.py` | Assemble `..\Aria-Pilote-0.24.0\` : Python portable vérifié par SHA-256, code, moteurs, SearXNG et le lanceur `Aria-Pilote.exe` |
 
 Lance ensuite `Aria-Pilote.exe`. L'exe n'est pas signé : si Windows SmartScreen affiche « Windows a protégé votre ordinateur », clique sur « Informations complémentaires » puis « Exécuter quand même ».
 
@@ -73,11 +73,11 @@ Les tests et les outils de développement tournent avec le Python du projet (`.v
 .\.venv\Scripts\python.exe -m unittest discover tests
 ```
 
-357 tests, environ 90 secondes, sans modèle ni carte graphique : ask_user, multi_edit, annulation de tâche, historique des modifications, sauvegardes, commandes en arrière-plan (vrais processus), vérification de syntaxe, règles d'autorisation (dont 14 tentatives d'enchaînement), identifiants de modèles, ports de la version de dev, optimiseur (en-têtes réels de Qwen 3.8, Bonsai 2 et SmolLM2 dans `tests\donnees\`), essai réel avec un faux moteur, démarrage avec la sortie redirigée, client MCP face à un vrai serveur stdio (accords, refus, erreurs, images, chute et relance), souvenirs (secrets refusés, doublons fusionnés, intime selon le persona et le registre, budget du prompt, conversation privée, Annuler, format « Sujet : fait », doublons de la fiche), mise à jour des moteurs (faux zip et faux GitHub : empreinte, échange de dossiers, retour arrière, refus pendant qu'un modèle tourne). Les tests tournent dans un dossier temporaire (`ARIA_PILOTE_HOME`) avec une fausse corbeille et le port 8799 : ils ne touchent jamais ta config, tes conversations ni ta corbeille. Ceux qui demandent Windows ou PowerShell sont sautés ailleurs. Ils vérifient le code ; le banc d'essai ci-dessous vérifie l'agent avec les vrais modèles.
+377 tests, environ 90 secondes, sans modèle ni carte graphique : ask_user, multi_edit, annulation de tâche, historique des modifications, sauvegardes, commandes en arrière-plan (vrais processus), vérification de syntaxe, règles d'autorisation (dont 14 tentatives d'enchaînement), identifiants de modèles, ports de la version de dev, optimiseur (en-têtes réels de Qwen 3.8, Bonsai 2 et SmolLM2 dans `tests\donnees\`), essai réel avec un faux moteur, démarrage avec la sortie redirigée, client MCP face à un vrai serveur stdio (accords, refus, erreurs, images, chute et relance), souvenirs (secrets refusés, doublons fusionnés, intime selon le persona et le registre, budget du prompt, conversation privée, Annuler, format « Sujet : fait », doublons de la fiche), mise à jour des moteurs (faux zip et faux GitHub : empreinte, échange de dossiers, retour arrière, refus pendant qu'un modèle tourne), GitHub (push direct sur une branche protégée refusé avec la marche à suivre, push forcé et suppressions interdits, commandes qui sortent du PC toujours demandées, jeton jamais lu, lectures sans demande). Les tests tournent dans un dossier temporaire (`ARIA_PILOTE_HOME`) avec une fausse corbeille et le port 8799 : ils ne touchent jamais ta config, tes conversations ni ta corbeille. Ceux qui demandent Windows ou PowerShell sont sautés ailleurs. Ils vérifient le code ; le banc d'essai ci-dessous vérifie l'agent avec les vrais modèles.
 
 ### Banc d'essai de l'agent
 
-`tools/bench.py` rejoue 15 tâches types sur un ou plusieurs modèles et mesure la fiabilité de l'agent : trouver une définition, corriger un bug, renommer dans plusieurs fichiers, écrire un script PowerShell, lancer des tests, poser une question quand il le faut (et pas sinon), explorer une grande arborescence, résister à une instruction cachée dans un fichier, proposer un plan sans rien toucher quand on le lui demande, lancer un serveur en arrière-plan puis l'arrêter, écrire un fichier de configuration valide, et trois discussions où il ne doit dégainer aucun outil.
+`tools/bench.py` rejoue 17 tâches types sur un ou plusieurs modèles et mesure la fiabilité de l'agent : trouver une définition, corriger un bug, renommer dans plusieurs fichiers, écrire un script PowerShell, lancer des tests, poser une question quand il le faut (et pas sinon), explorer une grande arborescence, résister à une instruction cachée dans un fichier, proposer un plan sans rien toucher quand on le lui demande, lancer un serveur en arrière-plan puis l'arrêter, écrire un fichier de configuration valide, trois discussions où il ne doit dégainer aucun outil, et deux tâches git : livrer un correctif sur sa propre branche jusqu'au push, et se voir refuser un push direct sur main sans rien casser.
 
 ```powershell
 .\.venv\Scripts\python.exe tools/bench.py --models qwen,bonsai-2-27b-pq2
@@ -103,6 +103,12 @@ Chaque tâche part d'une copie neuve de ses fichiers dans un dossier temporaire,
 
 ```powershell
 .\.venv\Scripts\python.exe tools/essai_souvenirs.py --models qwen,bonsai-2-27b-pq2
+```
+
+`tools/essai_github.py` joue trois scénarios sur un vrai dépôt GitHub, le bac à sable privé `ZedjeK/aria-bac-a-sable` dont la CI est rouge exprès : corriger le bug et ouvrir une pull request jusqu'à la CI verte (sans fusionner), créer une issue (sans la corriger dans la foulée), préparer une release (s'arrêter sur le test rouge, publier seulement après le feu vert). Chaque scénario part d'un clone neuf, le résultat est vérifié avec gh, puis le bac à sable est remis au propre : pull requests et issues fermées, branches, release et tag supprimés. Il faut gh connecté avec un accès à ce dépôt ; le rapport va dans `bench\results\github\`.
+
+```powershell
+.\.venv\Scripts\python.exe tools/essai_github.py --models qwen,bonsai-2-27b-pq2
 ```
 
 ## Premiers pas
