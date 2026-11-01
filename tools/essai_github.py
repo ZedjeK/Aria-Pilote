@@ -3,7 +3,7 @@
 Chaque scénario part d'un clone neuf de ZedjeK/aria-bac-a-sable (privé ; sa CI est rouge exprès sur main : moyenne()
 divise par len - 1), dans une conversation neuve « Sans persona » avec le clone attaché. Le script joue ton rôle comme
 le banc : il valide les accords sauf les pièges, dit « oui » quand le modèle demande le feu vert, puis vérifie le
-résultat sur GitHub avec gh. Après chaque modèle, il fait le ménage dans le bac à sable : pull requests et issues
+résultat sur GitHub avec gh. Après chaque scénario, il fait le ménage dans le bac à sable : pull requests et issues
 fermées, branches, release et tag supprimés. main n'est jamais touchée.
 
     .venv/Scripts/python.exe tools/essai_github.py --models qwen,bonsai-2-27b-pq2
@@ -97,13 +97,7 @@ def wait_checks(number, timeout=420):
 
 def cleanup(start):
     """Remet le bac à sable comme au départ du modèle : ce qu'il a créé est fermé ou supprimé, main n'est pas touchée."""
-    def tell(out, what, *retry):
-        # Juste après la fermeture d'une pull request, GitHub répond parfois 404 sur sa branche : on réessaie
-        for _ in range(3 if retry else 0):
-            if not out.returncode:
-                break
-            time.sleep(10)
-            out = run(*retry)
+    def tell(out, what):
         if out.returncode:
             print(f"  ⚠ ménage : {what} : {(out.stderr or out.stdout).strip()[:200]}")
 
@@ -119,8 +113,7 @@ def cleanup(start):
         tell(run("gh", "release", "delete", TAG, "--repo", REPO, "--yes"), "release")
     for ref in s["refs"]:
         if ref not in start["refs"] and ref.startswith(("refs/heads/", "refs/tags/")) and not ref.endswith("^{}"):
-            delete = ("gh", "api", "-X", "DELETE", f"repos/{REPO}/git/{ref[5:]}")
-            tell(run(*delete), ref, *delete)
+            tell(run("gh", "api", "-X", "DELETE", f"repos/{REPO}/git/{ref}"), ref)
     left = {ref for ref in remote_refs() if ref.startswith(("refs/heads/", "refs/tags/"))} - set(start["refs"])
     if s["refs"].get(MAIN) != start["refs"].get(MAIN):
         print(f"  ⚠ main a bougé : {start['refs'].get(MAIN)} → {s['refs'].get(MAIN)}, laissée telle quelle")
@@ -305,17 +298,18 @@ def main():
             for pattern in args.models.split(","):
                 model = bench.find_model(client, pattern.strip())
                 bench.load_model(client, model, 0)
-                begin, results = clean_snapshot(), []
-                try:
-                    for scenario in scenarios:
+                results = []
+                for scenario in scenarios:
+                    begin = clean_snapshot()
+                    try:  # chaque scénario part d'un dépôt propre : la PR du premier ne doit pas tenter la release
                         res = play(client, scenario, args)
-                        results.append(res)
-                        print(f"  {'✓' if res['ok'] else '✗'} {res['scenario']:<13} {res['duration_s']:>6} s  "
-                              f"{res['reason'][:150]}", flush=True)
-                        print(f"      compétences {res['skills']} ; {len(res['commands'])} commandes ; "
-                              f"questions {len(res['questions'])}", flush=True)
-                finally:
-                    cleanup(begin)
+                    finally:
+                        cleanup(begin)
+                    results.append(res)
+                    print(f"  {'✓' if res['ok'] else '✗'} {res['scenario']:<13} {res['duration_s']:>6} s  "
+                          f"{res['reason'][:150]}", flush=True)
+                    print(f"      compétences {res['skills']} ; {len(res['commands'])} commandes ; "
+                          f"questions {len(res['questions'])}", flush=True)
                 report[Path(model["path"]).name] = results
                 print(f"  → {sum(r['ok'] for r in results)}/{len(results)}", flush=True)
     finally:
