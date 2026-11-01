@@ -16,7 +16,11 @@ Le dossier contient :
 - engines\\           les moteurs llama.cpp, en liens physiques vers ceux du code source (sauf --no-engines) ;
 - services\\searxng\\  SearXNG et ses dépendances dans un site-packages à part.
 
-Usage : python tools/build_portable.py [--no-engines] [--releases-dir DOSSIER]
+--exe construit à la place un seul ..\\Aria-Pilote-X.Y.Z.exe, qui embarque tout cela (moteurs compris, sauf
+--no-engines) : à son lancement, il installe ou met à jour l'appli dans %USERPROFILE%\\.Aria-Pilote, sans jamais
+toucher à models, data, config.json ni aux moteurs déjà installés (voir tools/launcher/Launcher.cs).
+
+Usage : python tools/build_portable.py [--exe] [--no-engines] [--releases-dir DOSSIER]
 """
 
 import argparse
@@ -24,10 +28,12 @@ import hashlib
 import os
 import re
 import shutil
+import struct
 import subprocess
 import sys
 import tarfile
 import urllib.request
+import zipfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -141,6 +147,10 @@ def install_search(python, dest):
 
 def build_launcher(dest):
     step("Lanceur Aria-Pilote.exe")
+    compile_launcher(dest / EXE_NAME)
+
+
+def compile_launcher(out):
     if not CSC.exists():
         sys.exit(f"Compilateur C# introuvable : {CSC}")
     icon_dir = CACHE / "icon"
@@ -148,11 +158,59 @@ def build_launcher(dest):
     (icon_dir / "aria.ico").write_bytes(make_icon.ico())
     subprocess.run([
         str(CSC), "/nologo", "/target:winexe", "/optimize+",
-        f"/out:{dest / EXE_NAME}",
+        f"/out:{out}",
         f"/win32icon:{icon_dir / 'aria.ico'}",
         "/reference:System.Windows.Forms.dll",
+        "/reference:System.Drawing.dll",
+        "/reference:System.IO.Compression.dll",
         str(ROOT / "tools" / "launcher" / "Launcher.cs"),
-    ], check=True)
+    ], check=True, stdout=subprocess.DEVNULL)
+
+
+# --- exe portable ------------------------------------------------------------------
+
+PAYLOAD_MAGIC = b"ARIAPAK1"
+SEARXNG_SETTINGS = Path("services") / "searxng" / "settings.yml"
+
+
+def make_payload(staging, out, version):
+    """L'archive embarquée : tout le dossier construit, plus son numéro de version. La configuration de SearXNG y est
+    un modèle : le lanceur y met une clé secrète propre à chaque PC, au lieu de celle de la construction."""
+    settings = staging / SEARXNG_SETTINGS
+    if settings.exists():
+        settings.unlink()
+    if (staging / SEARXNG_SETTINGS.parent).is_dir():
+        settings.with_name("settings.yml.modele").write_text(install_searxng.SETTINGS_TEMPLATE, encoding="utf-8")
+    files = sorted(p for p in staging.rglob("*") if p.is_file())
+    with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED, compresslevel=6) as zf:
+        zf.writestr("VERSION", version)
+        for n, f in enumerate(files, 1):
+            zf.write(f, f.relative_to(staging).as_posix())
+            if n % 2000 == 0:
+                print(f"  {n}/{len(files)} fichiers")
+    return out
+
+
+def write_exe(launcher, payload, out):
+    """Le lanceur, l'archive à sa suite, puis le pied : la position de l'archive sur 8 octets et PAYLOAD_MAGIC."""
+    with open(out, "wb") as exe:
+        exe.write(Path(launcher).read_bytes())
+        start = exe.tell()
+        with open(payload, "rb") as src:
+            shutil.copyfileobj(src, exe, 16 * 1024 * 1024)
+        exe.write(struct.pack("<q", start) + PAYLOAD_MAGIC)
+    return out
+
+
+def build_exe(staging, releases_dir):
+    step("Archive embarquée")
+    payload = make_payload(staging, CACHE / "payload.zip", VERSION)
+    step("Exe portable")
+    launcher = CACHE / "lanceur.exe"
+    compile_launcher(launcher)
+    out = write_exe(launcher, payload, releases_dir / f"Aria-Pilote-{VERSION}.exe")
+    payload.unlink()
+    return out
 
 
 # --- mise en place -----------------------------------------------------------------
@@ -259,6 +317,8 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--releases-dir", default=str(ROOT.parent), help="où placer Aria-Pilote-X.Y.Z (par défaut : à côté du code source)")
     parser.add_argument("--no-engines", action="store_true", help="ne pas inclure les moteurs (~2,4 Go)")
+    parser.add_argument("--exe", action="store_true",
+                        help="un seul Aria-Pilote-X.Y.Z.exe qui s'installe dans %%USERPROFILE%%\\.Aria-Pilote")
     args = parser.parse_args()
 
     releases_dir = Path(args.releases_dir).resolve()
@@ -274,6 +334,13 @@ def main():
     if not args.no_engines:
         copy_engines(staging)
     install_search(python, staging)
+    if args.exe:
+        exe = build_exe(staging, releases_dir)
+        shutil.rmtree(staging)
+        step("Terminé")
+        print(f"\nExe portable : {exe} ({exe.stat().st_size / 1024**2:.0f} Mo)\n"
+              "Au lancement, il installe ou met à jour l'appli dans %USERPROFILE%\\.Aria-Pilote.")
+        return
     build_launcher(staging)
     for folder in ("data", "models"):
         (staging / folder).mkdir(exist_ok=True)
