@@ -17,11 +17,12 @@ Un changement livré proprement : sur sa branche, dans une pull request claire, 
 ### Préparer
 1. Vérifie l'outillage : gh auth status, git status --short, git branch --show-current. gh absent ou non connecté : demande à l'utilisateur de lancer lui-même winget install GitHub.cli ou gh auth login.
 2. Repère le dépôt et sa branche par défaut : gh repo view --json nameWithOwner,defaultBranchRef.
-3. Sur la branche par défaut : crée une branche de travail avant tout commit (git switch -c feat/sujet-court, fix/… pour un correctif). Aria refuse le push direct sur une branche protégée (main et master par défaut).
+3. Sur la branche par défaut : crée la branche de travail tout de suite, avant de modifier le moindre fichier (git switch -c feat/sujet-court, fix/… pour un correctif). Aria refuse le push direct sur une branche protégée (main et master par défaut), mais un commit fait dessus reste : la branche locale diverge alors de GitHub.
 ### Commiter et pousser
-1. Un commit par sujet, avec un message au format de message-commit, présenté avant git commit.
-2. Lance les tests du projet, s'il en a, avant de pousser.
-3. Pousse la branche : git push -u origin HEAD.
+1. Juste avant git commit, vérifie git branch --show-current : jamais la branche par défaut.
+2. Un commit par sujet, avec un message au format de message-commit, présenté avant git commit.
+3. Lance les tests du projet, s'il en a, avant de pousser.
+4. Pousse la branche : git push -u origin HEAD.
 ### Ouvrir la pull request
 1. Écris le corps dans .git/PR_BODY.md (write_file, hors du suivi de git) : quoi, pourquoi, comment vérifier, et l'issue liée (« Closes #12 »).
 2. gh pr create --base <branche par défaut> --title "…" --body-file .git/PR_BODY.md, avec --draft si le travail n'est pas prêt à relire. Toujours un titre et un corps : sans eux, gh attend une saisie et la commande reste bloquée.
@@ -56,7 +57,8 @@ Ce qui a été fait (branche, commits, pull request avec son lien), l'état de l
 - Mettre un secret dans un commit, un corps de pull request ou un commentaire.
 
 ## Vérifier avant de répondre
-- [ ] Branche de travail, tests lancés, chaque action sortante annoncée.
+- [ ] La branche de travail existait avant le premier commit : aucun commit sur la branche par défaut.
+- [ ] Tests lancés, chaque action sortante annoncée.
 - [ ] La pull request a un titre clair et un corps : quoi, pourquoi, comment vérifier.
 - [ ] Le lien est donné, et l'état de la CI dit sans l'embellir.
 

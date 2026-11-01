@@ -4,6 +4,7 @@ import hashlib
 import shutil
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 
@@ -47,3 +48,38 @@ def missing(run, *words):
 
 def used(run, tool):
     return any(c["name"] == tool for c in run["calls"])
+
+
+# --- dépôts git (tâches GitHub) : un vrai dépôt, et un « origin » nu dans un dossier temporaire, sans réseau ---
+
+START_FILE = ".git/aria-bench-depart"  # le commit de départ, rangé dans .git : hors du suivi de git
+
+
+def git(cwd, *args):
+    """(code, sortie) d'une commande git."""
+    proc = subprocess.run(["git", *args], cwd=cwd, capture_output=True, text=True, encoding="utf-8",
+                          errors="replace", timeout=60)
+    return proc.returncode, (proc.stdout + proc.stderr).strip()
+
+
+def make_repo(ws):
+    """Le dossier devient un dépôt sur main, un commit poussé sur un origin local nu."""
+    origin = Path(tempfile.mkdtemp(prefix="aria-bench-origin-"))
+    git(origin, "init", "-q", "--bare", "-b", "main")
+    git(ws, "init", "-q", "-b", "main")
+    git(ws, "config", "user.name", "Banc Aria")
+    git(ws, "config", "user.email", "banc@aria.invalid")
+    git(ws, "add", "-A")
+    git(ws, "commit", "-q", "-m", "Départ")
+    git(ws, "remote", "add", "origin", str(origin))
+    git(ws, "push", "-q", "-u", "origin", "main")
+    (Path(ws) / START_FILE).write_text(git(ws, "rev-parse", "HEAD")[1], encoding="utf-8")
+
+
+def repo_state(ws):
+    """(commit de départ, dossier de l'origin, main local, main de l'origin, autres branches de l'origin)."""
+    start = (Path(ws) / START_FILE).read_text(encoding="utf-8").strip()
+    origin = git(ws, "remote", "get-url", "origin")[1]
+    branches = git(origin, "for-each-ref", "--format=%(refname:short)", "refs/heads")[1].split()
+    return (start, origin, git(ws, "rev-parse", "main")[1], git(origin, "rev-parse", "main")[1],
+            [b for b in branches if b != "main"])

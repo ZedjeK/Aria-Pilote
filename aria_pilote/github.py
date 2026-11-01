@@ -53,7 +53,9 @@ def conventions():
     lines = [f"- Branches de travail : {s['feature_prefix']}sujet-court pour une nouveauté, {s['fix_prefix']}sujet-court "
              "pour un correctif.",
              f"- Fusion d'une pull request : gh pr merge <n> --{s['merge_method']}.",
-             f"- Branches protégées, sans push direct (Aria le refuse) : {protected}."]
+             f"- Branches protégées, sans push direct (Aria le refuse) : {protected}."
+             + (" Ne commite jamais dessus : crée la branche de travail avant de modifier un fichier."
+                if s["protected_branches"] else "")]
     if s["attribution"]:
         lines.append(f"- Termine chaque message de commit et chaque corps de pull request par cette ligne, telle "
                      f"quelle : {s['attribution']}")
