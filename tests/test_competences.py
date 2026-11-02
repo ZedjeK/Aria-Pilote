@@ -1,4 +1,5 @@
 """Chantier 3 : les anciens modes deviennent des compétences au format du modèle (formulaire <-> fichier)."""
+import re
 import tempfile
 import unittest
 from pathlib import Path
@@ -25,6 +26,27 @@ class FormatTest(unittest.TestCase):
             self.assertTrue(fields["verifier"], name)
             # L'aller-retour ne perd rien : le fichier regénéré est identique
             self.assertEqual(skills.render_markdown(fields), text, name)
+
+    def test_chacune_a_son_exemple(self):
+        for name, skill in skills._scan(skills.BUILTIN_DIR, "intégrée").items():
+            example = skills.parse_markdown((skill.folder / "SKILL.md").read_text(encoding="utf-8"))["exemple"]
+            self.assertTrue(example["demande"] and example["reponse"], name)
+
+    def test_taille_raisonnable(self):
+        # Une compétence chargée reste dans le prompt système pendant toute la tâche
+        for name, skill in skills._scan(skills.BUILTIN_DIR, "intégrée").items():
+            self.assertLess(len((skill.folder / "SKILL.md").read_text(encoding="utf-8")), 3600, name)
+
+    def test_renvois_vers_des_competences_existantes(self):
+        verbs = {"réponds", "prends", "indique", "dis", "agis"}  # « … : réponds directement », pas une compétence
+        for name, skill in skills._scan(skills.BUILTIN_DIR, "intégrée").items():
+            fields = skills.parse_markdown((skill.folder / "SKILL.md").read_text(encoding="utf-8"))
+            for line in fields["eviter"]:
+                for target in re.findall(r": ([\w-]+)", line):
+                    self.assertIn(target, set(BUILTINS) | verbs, f"{name} : {line}")
+                for target in re.findall(r"\w+(?:-\w+)+", line):
+                    if not re.search(r"-(moi|toi|le|la|les|lui)$", target):
+                        self.assertIn(target, BUILTINS, f"{name} : {line}")
 
     def test_registres_suggeres(self):
         found = skills._scan(skills.BUILTIN_DIR, "intégrée")
@@ -87,7 +109,21 @@ class SelectionTest(unittest.TestCase):
         self.assertIn("charge-la d'abord avec load_skill", section)
         self.assertIn("n'en charge aucune", section)
         self.assertIn("- dev : ", section)
-        self.assertIn("Objectif : Du code qui fonctionne", section)
+        self.assertNotIn("Objectif :", section)  # la description suffit au choix : la liste part à chaque message
+
+    def test_budget_de_la_liste(self):
+        # Environ 900 tokens pour les compétences intégrées (elle en coûtait 1 540 avec l'Objectif)
+        self.assertLess(len(skills.prompt_section()), 3200)
+
+    def test_au_dela_de_la_limite_les_noms_seuls(self):
+        limit = skills.MAX_LISTED
+        skills.MAX_LISTED = 3
+        self.addCleanup(setattr, skills, "MAX_LISTED", limit)
+        section = skills.prompt_section()
+        names = list(skills.discover())
+        self.assertIn(f"- {names[2]} : ", section)
+        self.assertNotIn(f"- {names[3]} : ", section)
+        self.assertIn("- autres compétences (sans description) : " + ", ".join(names[3:]), section)
 
     def test_nom_avec_accent_ou_majuscule(self):
         self.assertEqual(skills.get("créatif").name, "creatif")

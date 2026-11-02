@@ -10,6 +10,7 @@ Du code qui fonctionne, lisible et maintenable, avec le moyen de le vérifier.
 
 ## Ne pas l'utiliser si
 - Relire tout un code pour en lister les défauts : revue-code. Script d'administration Windows : script-powershell.
+- Une panne dont on ne sait pas encore où est la cause (ça ne marche plus, c'est lent, ça coupe) : depannage. Dès qu'elle est dans un code ou une config à modifier, c'est dev.
 - Incident de sécurité, malware : securite. Notion à comprendre sans code à écrire : prof.
 
 ## Méthode

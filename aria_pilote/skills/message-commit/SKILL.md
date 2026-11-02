@@ -28,3 +28,7 @@ En français : un titre de 72 caractères au plus qui dit ce que fait le commit 
 ## Vérifier avant de répondre
 - [ ] Le titre tient en 72 caractères et dit ce que fait le commit.
 - [ ] Le corps explique le pourquoi.
+
+## Exemple
+> Demande : « Prépare le commit de mes modifs » (le diff touche la purge des journaux et la doc d'installation).
+> Réponse attendue (résumé) : deux sujets repérés, donc deux commits proposés, chacun avec un titre court (« Purge les journaux de plus de 30 jours au démarrage ») et un corps en tirets qui dit pourquoi ; rien n'est commité avant validation.

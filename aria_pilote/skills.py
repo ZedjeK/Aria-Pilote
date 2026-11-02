@@ -38,7 +38,6 @@ class Skill:
     source: str  # projet | perso | intégrée
     folder: Path
     registre: str = DEFAULT_REGISTER  # registre du persona suggéré pour cette compétence
-    objectif: str = ""
 
     @property
     def editable(self):
@@ -71,10 +70,8 @@ def _scan(base, source):
         name = meta.get("name") or skill_md.parent.name
         if NAME_RE.match(name):
             registre = meta.get("registre", DEFAULT_REGISTER)
-            fields = parse_markdown(skill_md.read_text(encoding="utf-8-sig", errors="replace")[:MAX_SKILL_CHARS])
             found[name] = Skill(name, meta.get("description", "")[:300], source, skill_md.parent,
-                                registre if registre in REGISTERS else DEFAULT_REGISTER,
-                                (fields or {}).get("objectif", "")[:300])
+                                registre if registre in REGISTERS else DEFAULT_REGISTER)
     return found
 
 
@@ -125,12 +122,16 @@ def read_extra(skill, rel):
 
 
 def prompt_section(root=None):
-    """Liste des compétences pour le prompt système : nom, quand la charger et son objectif. C'est d'après elle que le
-    modèle choisit tout seul (aucun déclencheur à écrire) ; « /nom » dans le chat force une compétence."""
-    skills = list(discover(root).values())[:MAX_LISTED]
+    """Liste des compétences pour le prompt système : nom et quand la charger. C'est d'après elle que le modèle choisit
+    tout seul (aucun déclencheur à écrire) ; « /nom » dans le chat force une compétence. Elle part à chaque message :
+    la description suffit au choix (l'Objectif, qui la répétait, coûtait un tiers de la liste en plus)."""
+    skills = list(discover(root).values())
     if not skills:
         return ""
-    lines = [f"- {s.name} : {s.description}" + (f" Objectif : {s.objectif}" if s.objectif else "") for s in skills]
+    lines = [f"- {s.name} : {s.description}" for s in skills[:MAX_LISTED]]
+    if len(skills) > MAX_LISTED:
+        # Au-delà, les noms seuls : le modèle peut encore charger une compétence que l'utilisateur nomme
+        lines.append("- autres compétences (sans description) : " + ", ".join(s.name for s in skills[MAX_LISTED:]))
     return ("Compétences : avant de répondre, regarde si la demande correspond à l'une d'elles. Si oui, charge-la "
             "d'abord avec load_skill, puis suis ses instructions ; si plusieurs conviennent, prends la plus précise. "
             "Pour une simple conversation ou une question rapide, n'en charge aucune.\n" + "\n".join(lines))

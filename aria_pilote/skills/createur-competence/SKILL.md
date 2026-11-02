@@ -18,15 +18,20 @@ Une compétence prête à enregistrer, au format du modèle, qui se déclenche q
 2. Vérifie qu'aucune compétence existante ne la couvre déjà ; si c'est le cas, propose plutôt de la personnaliser.
 ### Écrire la compétence
 1. Un nom court, en minuscules avec des tirets, qui ne ressemble pas à celui d'une compétence existante.
-2. « Quand la charger » en une phrase, avec les mots que l'utilisateur emploie vraiment.
+2. La description en une phrase, avec les mots que l'utilisateur emploie vraiment : c'est la seule chose que l'agent voit pour choisir la compétence.
 3. L'objectif en une phrase, puis « Ne pas l'utiliser si » : les cas voisins, et la compétence à prendre à la place.
-4. La méthode en étapes vérifiables (par cas si besoin), le format de la réponse, les règles (à faire toujours, à ne jamais faire), les vérifications et un exemple.
+4. La méthode en étapes vérifiables (par cas si besoin), le format de la réponse, les règles, les vérifications et un exemple.
 5. Le registre suggéré : naturel, sobre ou professionnel, selon le ton de la tâche.
-### Tester le déclenchement
-1. Propose quatre demandes qui doivent la charger, et deux demandes voisines qui ne doivent pas la charger, à ajouter au test de sélection.
+### Préparer l'essai
+1. Propose quatre demandes qui doivent la charger, et deux demandes voisines qui ne doivent pas, à essayer chacune dans une conversation neuve une fois la compétence enregistrée.
+
+## Bonnes pratiques
+- L'en-tête entre deux lignes « --- » : name, description, registre. Puis un titre « # » et les sections « ## », titres exacts, dans cet ordre : Objectif, Ne pas l'utiliser si, Méthode, Bonnes pratiques, Format de la réponse, Règles, Vérifier avant de répondre, Exemple. Une section vide s'omet.
+- Méthode : uniquement des étapes numérotées « 1. », y compris sous chaque cas « ### » : jamais de tirets dans la Méthode. Règles : seulement « ### À faire toujours » et « ### À ne jamais faire ». Vérifier : des lignes « - [ ] ». Exemple : une ligne « > Demande : » puis une ligne « > Réponse attendue (résumé) : ».
+- Objectif et Format de la réponse : du texte simple. Ne pas l'utiliser si, Bonnes pratiques et chaque règle : des lignes « - ». Un paragraphe libre ou un titre inconnu fait passer la compétence en mode texte : le formulaire ne pourra plus l'afficher.
 
 ## Format de la réponse
-Le SKILL.md complet dans un bloc de code, prêt à coller dans Réglages › Compétences › Nouvelle › Mode texte, puis les phrases de test.
+Le SKILL.md complet dans un bloc de code, prêt à coller dans Réglages › Compétences › + Nouvelle, case Mode texte cochée, puis les six demandes d'essai.
 
 ## Règles
 ### À faire toujours
@@ -43,4 +48,4 @@ Le SKILL.md complet dans un bloc de code, prêt à coller dans Réglages › Com
 
 ## Exemple
 > Demande : « Fais-moi une compétence pour écrire mes playbooks Ansible. »
-> Réponse attendue (résumé) : deux questions sur ses habitudes, puis le SKILL.md « playbook-ansible » (idempotence, --check avant d'appliquer, variables dans des fichiers dédiés) et six phrases de test.
+> Réponse attendue (résumé) : deux questions sur ses habitudes, puis le SKILL.md « playbook-ansible » (idempotence, --check avant d'appliquer, variables dans des fichiers dédiés) et les six demandes d'essai.

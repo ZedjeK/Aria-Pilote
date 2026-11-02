@@ -38,3 +38,7 @@ Le script complet dans un bloc powershell, puis la commande pour le tester avec 
 ## Vérifier avant de répondre
 - [ ] La syntaxe est vérifiée.
 - [ ] Les actions qui modifient le système passent par ShouldProcess.
+
+## Exemple
+> Demande : « Un script qui désactive les comptes AD sans connexion depuis 90 jours. »
+> Réponse attendue (résumé) : le .ps1 complet (#Requires -Modules ActiveDirectory, paramètre -Jours validé, Search-ADAccount -AccountInactive -UsersOnly, Disable-ADAccount dans ShouldProcess, try/catch), la syntaxe vérifiée, puis la commande à lancer d'abord : .\Desactiver-Inactifs.ps1 -Jours 90 -WhatIf.

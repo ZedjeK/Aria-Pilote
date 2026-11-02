@@ -302,15 +302,15 @@ def save_profile(data):
 
 # --- Mise en texte pour le modèle -------------------------------------------------------------
 
-def register_for(persona, skill=None):
+def register_for(persona, skill=None, root=None):
     """Registre en vigueur : celui de la compétence chargée (réglé dans le persona, sinon celui que la compétence
-    suggère), sinon celui de la discussion."""
+    suggère), sinon celui de la discussion. `root` : dossier de travail, pour trouver une compétence du projet."""
     registers = (persona or {}).get("registers") or {}
     if skill:
         if skill in registers:
             return registers[skill]
         from . import skills  # import tardif : skills ne dépend pas du persona
-        found = skills.discover().get(skill)
+        found = skills.discover(root).get(skill)
         return found.registre if found and found.registre in REGISTERS else DEFAULT_REGISTER
     return registers.get(DISCUSSION, "naturel")
 
@@ -371,11 +371,11 @@ def render(persona, register):
     return "\n".join(parts)
 
 
-def register_note(persona, skill):
+def register_note(persona, skill, root=None):
     """Ajouté au contenu d'une compétence quand elle est chargée : le registre de ce mode."""
     if not persona:
         return ""
-    register = register_for(persona, skill)
+    register = register_for(persona, skill, root)
     base = register_for(persona)
     lines = personality(persona, register)
     body = "\n".join(lines) if lines else "- aucun trait de personnalité dans ce registre : reste neutre."
@@ -419,11 +419,11 @@ def render_profile(profile):
     return "\n".join(lines)
 
 
-def prompt_blocks(conv, folder=False, skill=None):
+def prompt_blocks(conv, folder=False, skill=None, root=None):
     """(bloc persona, bloc utilisateur) pour le prompt système de la conversation ; `skill` : compétence active de la
     tâche, dont le registre remplace celui de la discussion dans le prompt lui-même."""
     persona = for_conversation(conv)
     profile = get_profile()
-    persona_text = render(persona, register_for(persona, skill)) if persona else ""
+    persona_text = render(persona, register_for(persona, skill, root)) if persona else ""
     profile_text = render_profile(profile) if (not folder or profile.get("in_folder", True)) else ""
     return persona_text, profile_text
