@@ -139,6 +139,8 @@ LOOP_LIMIT = 3
 PRIORITY_RULE = """Ordre de priorité en cas de conflit : 1) les règles de sécurité d'Aria Pilote ci-dessus, 2) tes règles
 d'or, 3) la demande du moment de l'utilisateur, 4) la mémoire du projet, 5) ta personnalité."""
 
+ACTIVE_SKILL_PROMPT = "Compétence active (chargée avec load_skill pour la tâche en cours : suis-la jusqu'au bout) :\n"
+
 MEMORY_PROMPT = """Mémoire du projet (fichier {name} écrit par l'utilisateur : conventions et consignes à respecter) :
 ---
 {memory}
@@ -332,7 +334,7 @@ def memory_active(conv):
 def memory_chosen(conv, root):
     """Les souvenirs glissés dans le prompt : les plus utiles à la dernière demande, selon le persona et son registre."""
     p = persona.for_conversation(conv)
-    register = persona.register_for(p, active_skill(conv)) if p else "naturel"
+    register = persona.register_for(p, active_skill(conv), root) if p else "naturel"
     query = next((m.get("content") or "" for m in reversed((conv or {}).get("messages") or []) if m["role"] == "user"), "")
     return souvenirs.for_prompt(query, p, register, folder=bool(root))
 
@@ -374,19 +376,20 @@ def active_skill(conv):
     if last_user is None:
         return None
     skill = messages[last_user].get("skill")
-    for m in messages[last_user + 1:]:
-        if m["role"] == "tool" and m.get("name") == "load_skill" and m.get("status") == "ok" \
-                and not (m.get("args") or {}).get("file"):
-            skill = ((m.get("args") or {}).get("name") or "").strip() or skill
-    return skill
+    loaded = chat.active_skill_result(conv)
+    if loaded:
+        skill = ((loaded.get("args") or {}).get("name") or "").strip() or skill
+    # Les petits modèles écrivent parfois « Créatif » : le registre et l'étiquette 🧩 attendent « creatif »
+    return skills.normalize(skill) if skill else None
 
 
 def _system_prompt(conv, root, memory, plan_required=False):
     """Prompt système, dans l'ordre validé : persona, fiche de l'utilisateur, règles d'Aria Pilote (et priorités),
-    planification, compétences, sous-agents, mémoire du projet. Le résumé des anciens échanges est ajouté ensuite."""
+    planification, compétences, sous-agents, mémoire du projet, compétence active. Le résumé des anciens échanges est
+    ajouté ensuite."""
     # Le registre de la compétence active est écrit dans le prompt lui-même : une simple note à côté d'un prompt qui
     # décrit le registre de discussion ne suffisait pas à tous les modèles (Qwen 3.8 gardait ses emojis)
-    persona_text, profile_text = persona.prompt_blocks(conv, folder=bool(root), skill=active_skill(conv))
+    persona_text, profile_text = persona.prompt_blocks(conv, folder=bool(root), skill=active_skill(conv), root=root)
     web_rule = WEB_RULE if config.web_enabled() else WEB_RULE_OFF
     if root:
         main = AGENT_PROMPT.format(root=root, todo_rule=TODO_RULE, web_rule=web_rule)
@@ -406,6 +409,11 @@ def _system_prompt(conv, root, memory, plan_required=False):
              skills.prompt_section(root), subagents.prompt_section(root)]
     if memory:
         parts.append(MEMORY_PROMPT.format(name=memory_file(root) or MEMORY_FILE, memory=memory))
+    loaded = chat.active_skill_result(conv)
+    if loaded:
+        # Dans l'historique, ce résultat d'outil serait rogné puis résumé au fil d'une longue tâche, et les règles du
+        # milieu de la compétence (« ne fusionne pas sans demande »…) disparaîtraient : le prompt système la garde entière
+        parts.append(ACTIVE_SKILL_PROMPT + loaded["content"])
     return "\n\n".join(p for p in parts if p)
 
 
@@ -475,7 +483,8 @@ async def _execute(cid, root, call, run_ctx):
             yield ev
     result = holder["result"]
     if name == "load_skill" and result.get("status") == "ok" and not args.get("file"):
-        note = persona.register_note(persona.for_conversation(conversations.get(cid)), (args.get("name") or "").strip())
+        note = persona.register_note(persona.for_conversation(conversations.get(cid)),
+                                     skills.normalize((args.get("name") or "").strip()), root)
         if note:
             result = {**result, "output": result["output"] + note}
 

@@ -12,10 +12,26 @@ from .server import manager
 
 SAMPLING_FIELDS = ("temperature", "top_p", "top_k", "min_p", "presence_penalty", "max_tokens")
 SCREENSHOTS_KEPT = 2
+# Résultat de load_skill quand la compétence est déjà recopiée dans le prompt système (pas de tokens payés deux fois)
+SKILL_IN_PROMPT = "Compétence « {name} » chargée : ses instructions sont dans le prompt système (Compétence active)."
 
 
 class UpstreamError(Exception):
     pass
+
+
+def active_skill_result(conv):
+    """Résultat du dernier load_skill réussi depuis ta demande : la compétence active de la tâche, chargée par le modèle."""
+    messages = (conv or {}).get("messages") or []
+    last_user = max((i for i, m in enumerate(messages) if m["role"] == "user"), default=None)
+    if last_user is None:
+        return None
+    found = None
+    for m in messages[last_user + 1:]:
+        if m["role"] == "tool" and m.get("name") == "load_skill" and m.get("status") == "ok" \
+                and not (m.get("args") or {}).get("file"):
+            found = m
+    return found
 
 
 def build_messages(conv, system_prompt):
@@ -43,7 +59,11 @@ def build_messages(conv, system_prompt):
             messages.append(_screenshots(cid, pending))
             pending = []
         if m["role"] == "tool":
-            content = context.shrink(m["content"], limit) if i in old_tools else m["content"]
+            if m.get("name") == "load_skill" and system_prompt and m["content"] in system_prompt:
+                # Compétence active : le prompt système la garde entière, même quand l'historique est rogné ou résumé
+                content = SKILL_IN_PROMPT.format(name=((m.get("args") or {}).get("name") or "").strip())
+            else:
+                content = context.shrink(m["content"], limit) if i in old_tools else m["content"]
             messages.append({"role": "tool", "tool_call_id": m["tool_call_id"], "content": content})
             if i in shots:
                 pending += m["images"]  # après le dernier résultat du lot : un message ne coupe pas les appels
@@ -58,7 +78,7 @@ def build_messages(conv, system_prompt):
             if m.get("skill"):
                 # « /nom demande » : la compétence, puis le registre de ce mode pour le persona de la conversation
                 root = (conv.get("agent") or {}).get("workspace") if (conv.get("agent") or {}).get("enabled") else None
-                note = persona.register_note(persona.for_conversation(conv), m["skill"])
+                note = persona.register_note(persona.for_conversation(conv), m["skill"], root)
                 text = skills.expand(m["skill"], m["content"], root) + note
             if m.get("files"):
                 text = "\n\n".join(p for p in (text, attachments.for_model(m["files"])) if p)
