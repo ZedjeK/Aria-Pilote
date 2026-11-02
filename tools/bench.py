@@ -188,6 +188,10 @@ def stream(client, task, run, body, deadline, allow_web):
                 client.post("/api/agent/approve", json={"approval_id": ev["approval_id"], "decision": decision})
             elif ev["type"] == "error":
                 run["errors"].append(ev["message"])
+            elif ev["type"] in ("context", "compacted"):
+                run["peak_ctx"] = max(run["peak_ctx"], ev.get("before") or 0, ev.get("used") or 0)
+                if ev["type"] == "compacted":
+                    run["compactions"] += 1
 
 
 def pending_question(conv):
@@ -231,7 +235,7 @@ def run_task(client, task, args):
         patch["agent"] = {"enabled": True, "workspace": str(ws)}
     client.patch(f"/api/conversations/{cid}", json=patch)
     run = {"calls": [], "sub_calls": [], "questions": [], "errors": [], "traps": [], "web_denied": 0,
-           "final": "", "start": snapshot, "plans": 0, "planner": 0}
+           "final": "", "start": snapshot, "plans": 0, "planner": 0, "compactions": 0, "peak_ctx": 0}
     started = time.time()
     deadline = started + args.timeout
     body = {"conversation_id": cid, "content": task["prompt"]}
@@ -261,6 +265,9 @@ def run_task(client, task, args):
     assistants = [m for m in conv["messages"] if m["role"] == "assistant"]
     run["final"] = next((m["content"] for m in reversed(assistants) if m.get("content")), "")
     tokens = sum((m.get("stats") or {}).get("completion_tokens") or 0 for m in assistants)
+    # Tokens du prompt recalculés hors cache, et le temps passé à le faire (sous-agents non comptés)
+    prompt_eval = sum((m.get("stats") or {}).get("prompt_eval") or 0 for m in assistants)
+    prompt_s = sum((m.get("stats") or {}).get("prompt_s") or 0 for m in assistants)
     try:
         ok, reason = task["check"].check(ws, run)
     except Exception as exc:  # un vérificateur qui plante compte comme un échec, avec la raison
@@ -275,6 +282,8 @@ def run_task(client, task, args):
     return {
         "task": task["name"], "ok": bool(ok), "reason": reason, "duration_s": round(duration, 1),
         "calls": len(run["calls"]), "sub_calls": len(run["sub_calls"]), "tokens": tokens,
+        "prompt_eval": prompt_eval, "prompt_s": round(prompt_s, 1), "compactions": run["compactions"],
+        "peak_ctx": run["peak_ctx"], "steps": len(assistants),
         "tools": [c["name"] for c in run["calls"]], "questions": run["questions"],
         "plans": run["plans"], "planner": run["planner"],
         "incidents": incidents, "errors": run["errors"], "traps": run["traps"], "final": run["final"][:3000],
@@ -295,7 +304,8 @@ def score(passes):
 
 def print_model(name, tasks, before):
     print(f"\n--- {name}")
-    print(f"{'tâche':<28} {'réussite':>8} {'appels':>7} {'durée':>7} {'tokens':>7}  incidents / raison")
+    print(f"{'tâche':<28} {'réussite':>8} {'appels':>7} {'durée':>7} {'tokens':>7} {'recalc':>7} {'compact':>7}"
+          "  incidents / raison")
     total = 0.0
     for task, passes in tasks.items():
         rate = score(passes)
@@ -305,13 +315,13 @@ def print_model(name, tasks, before):
         if old:
             diff = rate - score(old)
             delta = " ▲" if diff > 0 else " ▼" if diff < 0 else ""
-        mean = lambda key: sum(p[key] for p in passes) / len(passes)  # noqa: E731
+        mean = lambda key: sum(p.get(key) or 0 for p in passes) / len(passes)  # noqa: E731
         last = passes[-1]
         note = ", ".join(last["incidents"]) or ("" if last["ok"] else last["reason"])
         if last["ok"] and last["reason"] and last["reason"] != "ok":
             note = last["reason"]
         print(f"{task:<28} {rate:>7.0%}{delta:<2}{mean('calls'):>6.1f} {mean('duration_s'):>6.0f}s"
-              f" {mean('tokens'):>7.0f}  {note[:70]}")
+              f" {mean('tokens'):>7.0f} {mean('prompt_eval'):>7.0f} {mean('compactions'):>7.1f}  {note[:70]}")
     print(f"{'score':<28} {total:>6.1f}/{len(tasks)}")
     runs = [p for passes in tasks.values() for p in passes]
     plans = sum(p.get("plans", 0) for p in runs)

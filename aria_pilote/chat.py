@@ -146,6 +146,8 @@ def _summarize(out, stopped):
         "completion_tokens": usage.get("completion_tokens") or timings.get("predicted_n"),
         # usage compte tout le prompt ; timings.prompt_n ne compte que la partie hors cache
         "prompt_tokens": usage.get("prompt_tokens") or timings.get("prompt_n"),
+        "prompt_eval": timings.get("prompt_n"),  # recalculés hors cache : ce que coûte vraiment l'étape
+        "prompt_s": round(timings["prompt_ms"] / 1000, 2) if timings.get("prompt_ms") else None,
         "tok_s": round(tok_s, 1) if tok_s else None,
         "ttft_s": round(first - out["started"], 2) if first else None,
         "duration_s": round(time.time() - out["started"], 1),

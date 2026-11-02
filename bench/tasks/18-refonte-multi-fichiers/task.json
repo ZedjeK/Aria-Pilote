@@ -1,0 +1,4 @@
+{
+    "prompt": "Renomme la fonction calcul_ttc(ht, taux) de outils/montants.py en prix_ttc(montant_ht, taux_tva=0.20) : le taux devient facultatif, 20 % par défaut. Mets à jour tous ses usages dans le projet, sans modifier test_projet.py, puis vérifie que les tests passent.",
+    "measures": "tâche longue : refonte sur 8 fichiers (import aliasé, argument nommé), tests à garder au vert"
+}

@@ -1,0 +1,4 @@
+{
+    "prompt": "Les rapports de ventes sont faux : test_rapport.py échoue, alors que les montants de donnees/ventes.csv sont justes. Trouve la cause et corrige-la à la source, sans modifier les tests.",
+    "measures": "tâche longue : symptôme dans le rapport, cause deux modules plus loin (argument par défaut mutable), leurres"
+}
