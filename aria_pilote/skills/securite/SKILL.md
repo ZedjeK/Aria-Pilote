@@ -49,3 +49,7 @@ Le risque en une phrase, puis les actions immédiates numérotées, puis les exp
 ## Vérifier avant de répondre
 - [ ] Les actions immédiates sont faisables tout de suite, sans outil particulier.
 - [ ] Rien d'irréversible n'est proposé sans être signalé.
+
+## Exemple
+> Demande : « Une collègue a ouvert la pièce jointe d'un faux mail DHL, et depuis son poste rame. »
+> Réponse attendue (résumé) : le risque (poste probablement infecté), puis les actions immédiates : débrancher le réseau sans éteindre, noter l'heure, garder le mail et la pièce jointe, changer ses mots de passe depuis un autre poste ; ensuite pourquoi ne pas éteindre ni nettoyer tout de suite.

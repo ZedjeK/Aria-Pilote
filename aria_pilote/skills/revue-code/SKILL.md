@@ -32,3 +32,7 @@ Pour chaque problème : fichier:ligne, gravité (critique, importante ou mineure
 ## Vérifier avant de répondre
 - [ ] Chaque problème a son emplacement, sa gravité et son correctif.
 - [ ] Le classement va du plus grave au moins grave.
+
+## Exemple
+> Demande : « Relis mon upload.py avant la mise en prod. »
+> Réponse attendue (résumé) : le fichier lu en entier, puis upload.py:12 critique (le nom de fichier reçu sert tel quel dans le chemin : traversée de répertoire) corrigé avec os.path.basename, upload.py:30 importante (requests.get sans timeout) corrigé avec timeout=10, et rien d'autre si le reste est sain.

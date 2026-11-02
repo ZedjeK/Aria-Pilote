@@ -9,7 +9,7 @@ registre: sobre
 Trouver la cause réelle par élimination, rétablir le service, et éviter que ça recommence.
 
 ## Ne pas l'utiliser si
-- Un bug dans du code ou un script à corriger : dev.
+- La cause est déjà située dans un code, un script ou une config à modifier (trace d'erreur d'un programme, conf fournie) : dev.
 - Un soupçon de piratage, un malware, un accès inconnu ou un trafic suspect (connexions vers des adresses inconnues) : securite. Une notion à comprendre sans panne : prof.
 
 ## Méthode
