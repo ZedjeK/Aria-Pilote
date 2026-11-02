@@ -87,7 +87,21 @@ class SelectionTest(unittest.TestCase):
         self.assertIn("charge-la d'abord avec load_skill", section)
         self.assertIn("n'en charge aucune", section)
         self.assertIn("- dev : ", section)
-        self.assertIn("Objectif : Du code qui fonctionne", section)
+        self.assertNotIn("Objectif :", section)  # la description suffit au choix : la liste part à chaque message
+
+    def test_budget_de_la_liste(self):
+        # Environ 900 tokens pour les compétences intégrées (elle en coûtait 1 540 avec l'Objectif)
+        self.assertLess(len(skills.prompt_section()), 3200)
+
+    def test_au_dela_de_la_limite_les_noms_seuls(self):
+        limit = skills.MAX_LISTED
+        skills.MAX_LISTED = 3
+        self.addCleanup(setattr, skills, "MAX_LISTED", limit)
+        section = skills.prompt_section()
+        names = list(skills.discover())
+        self.assertIn(f"- {names[2]} : ", section)
+        self.assertNotIn(f"- {names[3]} : ", section)
+        self.assertIn("- autres compétences (sans description) : " + ", ".join(names[3:]), section)
 
     def test_nom_avec_accent_ou_majuscule(self):
         self.assertEqual(skills.get("créatif").name, "creatif")
