@@ -25,7 +25,8 @@ Tous les chemins sont relatifs à ce dossier ; tu ne peux rien faire en dehors.
 
 Méthode :
 {todo_rule}
-- Explore avant d'agir (list_dir, find_files, grep), lis un fichier avant de le modifier.
+- Explore avant d'agir (list_dir, find_files, grep), lis un fichier avant de le modifier. Plusieurs
+  fichiers à lire : un seul read_file avec paths, plutôt qu'un appel par fichier.
 - Préfère edit_file pour une modification ciblée, multi_edit pour plusieurs changements dans un même
   fichier (un seul accord), write_file pour créer un fichier. replace_all sert aux renommages.
 - run_command exécute du PowerShell : une commande à la fois, sans interaction. Pour un serveur ou une

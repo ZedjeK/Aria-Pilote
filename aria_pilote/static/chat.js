@@ -1037,6 +1037,9 @@ function shortText(text) {
 }
 
 function shortArgs(args) {
+    // Lecture groupée (read_file avec paths) : le nombre de fichiers, puis leurs noms
+    const files = Array.isArray(args?.paths) ? args.paths : Array.isArray(args?.path) ? args.path : null;
+    if (files?.length) return shortText(files.length > 1 ? `${files.length} fichiers : ${files.join(", ")}` : String(files[0]));
     return shortText(String(args?.path ?? args?.pattern ?? args?.command ?? args?.query ?? args?.url ?? args?.name ?? args?.id ?? ""));
 }
 

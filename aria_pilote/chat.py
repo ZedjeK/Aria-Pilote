@@ -62,8 +62,11 @@ def build_messages(conv, system_prompt):
             if m.get("name") == "load_skill" and system_prompt and m["content"] in system_prompt:
                 # Compétence active : le prompt système la garde entière, même quand l'historique est rogné ou résumé
                 content = SKILL_IN_PROMPT.format(name=((m.get("args") or {}).get("name") or "").strip())
+            elif i in old_tools:
+                shrink = context.shrink_sections if m.get("name") == "read_file" else context.shrink
+                content = shrink(m["content"], limit)
             else:
-                content = context.shrink(m["content"], limit) if i in old_tools else m["content"]
+                content = m["content"]
             messages.append({"role": "tool", "tool_call_id": m["tool_call_id"], "content": content})
             if i in shots:
                 pending += m["images"]  # après le dernier résultat du lot : un message ne coupe pas les appels

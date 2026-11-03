@@ -8,6 +8,7 @@ Chaque outil a deux temps :
 import asyncio
 import difflib
 import fnmatch
+import json
 import os
 import re
 import shutil
@@ -17,14 +18,15 @@ import time
 from dataclasses import dataclass
 from typing import Awaitable, Callable
 
-from . import (background, backups, checks, config, conversations, github, images, jobs, screen, skills, souvenirs, web,
-               workspace)
+from . import (background, backups, checks, config, context, conversations, github, images, jobs, screen, skills,
+               souvenirs, web, workspace)
 from .server import manager
 
 SKIP_DIRS = {".git", ".hg", ".svn", "node_modules", ".venv", "venv", "__pycache__", ".mypy_cache", ".idea"}
 MAX_FILE_BYTES = 5 * 1024 * 1024
 MAX_GREP_FILE_BYTES = 2 * 1024 * 1024
 MAX_OUTPUT_CHARS = 20000
+MAX_READ_FILES = 8
 COMMAND_TIMEOUT_S = 120
 
 
@@ -127,18 +129,51 @@ def prepare_list_dir(root, args):
     return {"output": "\n".join(lines) or "(dossier vide)"}
 
 
-def prepare_read_file(root, args):
-    target = _resolve(root, args.get("path", ""))
+def _numbered(root, path, start, count):
+    target = _resolve(root, path)
     if not target.is_file():
         raise ToolError("Fichier introuvable.")
     lines = _read_text(target).splitlines()
-    start = max(1, int(args.get("start_line") or 1))
-    count = min(1000, max(1, int(args.get("max_lines") or 400)))
     chunk = lines[start - 1 : start - 1 + count]
     end = start + len(chunk) - 1
     body = "\n".join(f"{n:>5}│ {line}" for n, line in enumerate(chunk, start))
-    header = f"{workspace.relative(root, target)} — lignes {start} à {end} sur {len(lines)}"
-    return {"output": _truncate(f"{header}\n{body}")}
+    return f"{workspace.relative(root, target)} — lignes {start} à {end} sur {len(lines)}\n{body}"
+
+
+def read_paths(args):
+    """Fichiers demandés : « paths », ou une liste glissée dans « path » (un petit modèle le fait souvent)."""
+    paths = args.get("paths") or args.get("path") or []
+    if isinstance(paths, str) and paths.strip().startswith("["):
+        try:  # la liste arrive parfois en texte JSON
+            paths = json.loads(paths)
+        except ValueError:
+            pass
+    paths = [paths] if isinstance(paths, str) else paths if isinstance(paths, list) else []
+    return list(dict.fromkeys(str(p).strip() for p in paths if str(p).strip()))
+
+
+def prepare_read_file(root, args):
+    start = max(1, int(args.get("start_line") or 1))
+    count = min(1000, max(1, int(args.get("max_lines") or 400)))
+    paths = read_paths(args)
+    if not paths:
+        raise ToolError("Indique le fichier à lire (path), ou plusieurs fichiers (paths).")
+    if len(paths) == 1:
+        return {"output": _truncate(_numbered(root, paths[0], start, count))}
+    if len(paths) > MAX_READ_FILES:
+        raise ToolError(f"{MAX_READ_FILES} fichiers au plus par lecture : lis les autres dans un second appel.")
+    # La sortie se partage entre les fichiers ; un fichier en erreur n'empêche pas de lire les autres
+    budget = MAX_OUTPUT_CHARS // len(paths)
+    sections = []
+    for path in paths:
+        try:
+            text = _numbered(root, path, start, count)
+        except ToolError as exc:
+            text = f"{path} — {exc}"
+        if len(text) > budget:
+            text = text[:budget] + f"\n… (coupé : relis {path} seul, avec start_line, pour la suite)"
+        sections.append(context.FILE_SECTION + text)
+    return {"output": "\n\n".join(sections)}
 
 
 def prepare_find_files(root, args):
@@ -1299,12 +1334,15 @@ TOOLS = {t.name: t for t in [
     ),
     Tool(
         "read_file", "read",
-        "Lit un fichier texte avec numéros de ligne. Pour un gros fichier, lis-le par morceaux.",
+        "Lit un fichier texte avec numéros de ligne. Plusieurs fichiers à lire : un seul appel avec paths "
+        f"({MAX_READ_FILES} au plus). Pour un gros fichier, lis-le seul, par morceaux.",
         _schema({
             "path": _PATH,
+            "paths": {"type": "array", "items": {"type": "string"},
+                      "description": f"Plusieurs fichiers lus d'un coup, à la place de path ({MAX_READ_FILES} au plus)."},
             "start_line": {"type": "integer", "description": "Première ligne (à partir de 1).", "default": 1},
             "max_lines": {"type": "integer", "description": "Nombre de lignes (1000 max).", "default": 400},
-        }, ["path"]),
+        }, []),
         prepare_read_file, run_prepared_output,
     ),
     Tool(
