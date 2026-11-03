@@ -141,6 +141,8 @@ def _transcript(messages, skip=None):
                 lines.append(f"Assistant : {m['content']}")
             for tc in m.get("tool_calls") or []:
                 lines.append(f"[Appel d'outil {tc['function']['name']} {tc['function']['arguments'][:300]}]")
+        elif m["role"] == "verification":
+            lines.append(f"[Vérification automatique en échec] {shrink(m['content'], SUMMARY_TOOL_CHARS)}")
         elif m["role"] == "tool":
             status = m.get("status", "ok")
             lines.append(f"[Résultat {m.get('name', '?')} ({status})] {shrink(m['content'], SUMMARY_TOOL_CHARS)}")

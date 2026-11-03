@@ -135,6 +135,14 @@ remplit : c'est à l'utilisateur de le faire."""
 LOCKED_KINDS = {"write", "command", "screen_action", "mcp"}  # un outil MCP peut tout faire : bloqué comme une écriture
 # Au 3e appel identique (même outil, mêmes arguments), l'agent tourne en rond
 LOOP_LIMIT = 3
+# Vérification de fin de tâche (hooks « verifier ») : nombre de corrections demandées au modèle après un échec
+VERIFY_RETRIES = 2
+# La vérification ne passe pas au-dessus de la demande : un échec qui ne vient pas de l'agent se signale, sans y toucher
+VERIFY_FEEDBACK = ("Vérification automatique ({attempt}/{retries}) : elle échoue.\n\n{failures}\n\n"
+                   "Si l'échec vient de tes modifications, corrige-les, puis réponds à nouveau : la vérification sera "
+                   "relancée. S'il existait déjà ou sort de la demande de l'utilisateur, n'y touche pas : dis-le-lui "
+                   "dans ta réponse.")
+VERIFY_GAVE_UP = "La vérification automatique échoue encore ({commands}) : l'agent s'est arrêté sans la faire passer."
 
 # Qui l'emporte en cas de conflit (les protections d'Aria Pilote sont de toute façon appliquées par le code)
 PRIORITY_RULE = """Ordre de priorité en cas de conflit : 1) les règles de sécurité d'Aria Pilote ci-dessus, 2) tes règles
@@ -441,6 +449,39 @@ def _bg_running(cid, args):
         return False
 
 
+def _wrote(name, result):
+    """L'appel a modifié des fichiers : une écriture réussie, ou une délégation dont le sous-agent a écrit."""
+    if result.get("status") != "ok":
+        return False
+    steps = (result.get("subagent") or {}).get("steps") or []
+    return tool_kind(name) == "write" or any(tool_kind(s["name"]) == "write" and s["status"] == "ok" for s in steps)
+
+
+async def _verify(cid, root, run_ctx):
+    """Vérification de fin de tâche : les hooks « verifier » tournent si la tâche a modifié des fichiers depuis la
+    dernière fois. En échec, leur sortie repart au modèle (run_ctx["retry"]), VERIFY_RETRIES fois au plus."""
+    run_ctx["retry"] = False
+    if root and run_ctx["wrote"]:
+        run_ctx["wrote"] = False
+        outcomes = await hooks.run("verifier", root)
+        if not outcomes:
+            return
+        yield toolrun.hook_event("verifier", outcomes)
+        run_ctx["failing"] = [o for o in outcomes if o["code"] != 0] or None
+        if run_ctx["failing"] and run_ctx["verify_retries"] < VERIFY_RETRIES:
+            run_ctx["verify_retries"] += 1
+            failures = "\n\n".join(f"`{o['commande']}` a échoué (code {o['code']}) :\n{o['sortie']}" for o in run_ctx["failing"])
+            conversations.append_message(cid, {
+                "role": "verification", "results": run_ctx["failing"], "task_id": run_ctx["task_id"],
+                "content": VERIFY_FEEDBACK.format(attempt=run_ctx["verify_retries"], retries=VERIFY_RETRIES, failures=failures)})
+            run_ctx["retry"] = True
+            return
+    # Toujours en échec : relances épuisées, ou le modèle a conclu sans rien corriger (même vérification, même verdict)
+    if run_ctx["failing"]:
+        commands = ", ".join(f"`{o['commande']}`" for o in run_ctx["failing"])
+        yield chat.event({"type": "error", "message": VERIFY_GAVE_UP.format(commands=commands)})
+
+
 async def _execute(cid, root, call, run_ctx):
     """Exécute un appel d'outil ; émet tool_call, éventuellement approval, puis tool_result."""
     name = call["function"]["name"]
@@ -483,6 +524,8 @@ async def _execute(cid, root, call, run_ctx):
         async for ev in runner:
             yield ev
     result = holder["result"]
+    if _wrote(name, result):
+        run_ctx["wrote"] = True
     if name == "load_skill" and result.get("status") == "ok" and not args.get("file"):
         note = persona.register_note(persona.for_conversation(conversations.get(cid)),
                                      skills.normalize((args.get("name") or "").strip()), root)
@@ -596,7 +639,8 @@ async def _run(conv, preset, model_name, task_id):
         }
     allowed, schemas = task_tools(conv, root)
     run_ctx = {"preset": preset, "model": model_name, "allowed": allowed,
-               "seen": {}, "stuck": False, "planned": False, "asked": False, "task_id": task_id}
+               "seen": {}, "stuck": False, "planned": False, "asked": False, "task_id": task_id,
+               "wrote": False, "failing": None, "verify_retries": 0, "retry": False}
     calls_done = 0
     max_calls = config.get().get("max_tool_calls", MAX_TOOL_CALLS)
     retried = False
@@ -642,6 +686,10 @@ async def _run(conv, preset, model_name, task_id):
                 yield chat.event({"type": "error", "continuable": True, "message": (
                     f"Réponse coupée : le modèle a atteint la limite de {preset['max_tokens']} tokens par réponse "
                     "avant de finir. Tu peux le laisser continuer, ou augmenter « Max tokens » dans le preset.")})
+            async for ev in _verify(cid, root, run_ctx):
+                yield ev
+            if run_ctx["retry"]:
+                continue
             end = await hooks.run("fin_tache", root, result={"status": "ok", "output": (message or {}).get("content") or ""}) \
                 if root else []
             if end:

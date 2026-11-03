@@ -1,0 +1,5 @@
+{
+    "prompt": "Dans la médiathèque, les dates des emprunts (date_emprunt et date_retour de la classe Emprunt, dans mediatheque/modele.py) sont des chaînes « JJ/MM/AAAA ». Passe-les en objets datetime.date dans tout le projet : le chargement des CSV les convertit, emprunter et rendre reçoivent des dates. Les fichiers et les textes produits gardent le format JJ/MM/AAAA.",
+    "measures": "tâche longue sans consigne de test : changement de type sur 17 fichiers, cinq modules et la ligne de commande cassent sans bruit",
+    "verify": "python -X utf8 -m unittest -q"
+}

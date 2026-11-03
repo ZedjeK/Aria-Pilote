@@ -86,6 +86,9 @@ def build_messages(conv, system_prompt):
             if m.get("files"):
                 text = "\n\n".join(p for p in (text, attachments.for_model(m["files"])) if p)
             messages.append({"role": "user", "content": user_content(cid, text, m.get("images"))})
+        elif m["role"] == "verification":
+            # Échec de la vérification de fin de tâche : il parle au modèle comme un message, sans être ta demande
+            messages.append({"role": "user", "content": m["content"]})
         else:
             messages.append({"role": m["role"], "content": m["content"]})
     if pending:

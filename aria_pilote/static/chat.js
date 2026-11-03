@@ -646,8 +646,12 @@ const HOOK_LABELS = { avant_outil: "avant l'outil", apres_outil: "après l'outil
 
 function hookNote(ev) {
     const lines = ev.resultats.map((r) => `${r.source} · code ${r.code}${r.sortie ? " · " + r.sortie : ""}`);
-    const title = ev.bloque ? `⚓ Action bloquée par un hook (${HOOK_LABELS[ev.evenement]})` : `⚓ Hook ${HOOK_LABELS[ev.evenement]}`;
-    return el("details", { className: `hook-note${ev.bloque ? " blocked" : ""}`, open: ev.bloque },
+    // Vérification de fin de tâche : un échec repart au modèle, qui corrige
+    const failed = ev.evenement === "verifier" && ev.resultats.some((r) => r.code !== 0);
+    const title = ev.bloque ? `⚓ Action bloquée par un hook (${HOOK_LABELS[ev.evenement]})`
+        : ev.evenement === "verifier" ? `⚓ Vérification : ${failed ? "échec" : "réussie"}`
+        : `⚓ Hook ${HOOK_LABELS[ev.evenement]}`;
+    return el("details", { className: `hook-note${ev.bloque || failed ? " blocked" : ""}`, open: ev.bloque },
         el("summary", {}, title), el("pre", {}, lines.join("\n")));
 }
 
@@ -1383,6 +1387,8 @@ function renderMessages() {
         if (summary && index === summary.upto) nodes.push(summaryNode(summary, summary.upto));
         if (m.role === "tool") {
             nodes.push(toolNode(m, planPending && index === lastPlan, index === question));
+        } else if (m.role === "verification") {
+            nodes.push(hookNote({ evenement: "verifier", resultats: m.results || [] }));
         } else if (m.role === "assistant" && !m.content && !m.reasoning) {
             // simple appel d'outil : la carte de l'outil suffit
         } else {
