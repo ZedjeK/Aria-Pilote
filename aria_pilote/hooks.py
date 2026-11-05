@@ -9,7 +9,7 @@ Fichier hooks.json, global (dans l'appli) ou de projet (<dossier de travail>/.ar
         "verifier":    [{"commande": "python -m unittest discover -q"}]
     }
 La commande reçoit le contexte en JSON sur l'entrée standard et dans des variables d'environnement
-(ARIA_EVENEMENT, ARIA_OUTIL, ARIA_ARGS, ARIA_FICHIER, ARIA_STATUT). Pour « avant_outil », un code de
+(ARIA_EVENEMENT, ARIA_OUTIL, ARIA_ARGS, ARIA_FICHIER, ARIA_FICHIERS, ARIA_STATUT). Pour « avant_outil », un code de
 sortie 2 bloque l'action et sa sortie en donne la raison au modèle. « verifier » tourne quand l'agent
 annonce avoir fini une tâche qui a modifié des fichiers : un code non nul lui renvoie la sortie pour qu'il corrige.
 
@@ -128,6 +128,17 @@ def _rules(event, root):
     return [(source, rule) for source, data in sources for rule in data.get(event, [])]
 
 
+def _files(arguments):
+    """Fichiers visés par l'outil, un par ligne : multi_edit (files) et read_file (paths) en touchent plusieurs."""
+    files = arguments.get("files")
+    if isinstance(files, list):
+        return "\n".join(str(f.get("path", "")) for f in files if isinstance(f, dict))
+    paths = arguments.get("paths")
+    if isinstance(paths, list):
+        return "\n".join(str(p) for p in paths)
+    return str(arguments.get("path", ""))
+
+
 def _run_one(command, cwd, payload, timeout=TIMEOUT_S):
     env = {
         **os.environ,
@@ -135,6 +146,7 @@ def _run_one(command, cwd, payload, timeout=TIMEOUT_S):
         "ARIA_OUTIL": payload.get("outil") or "",
         "ARIA_ARGS": json.dumps(payload.get("arguments") or {}, ensure_ascii=False),
         "ARIA_FICHIER": str((payload.get("arguments") or {}).get("path", "")),
+        "ARIA_FICHIERS": _files(payload.get("arguments") or {}),
         "ARIA_STATUT": (payload.get("resultat") or {}).get("statut", ""),
     }
     # Sans la dernière ligne, un script PowerShell sort avec 0 même si sa dernière commande native (python, git…) a échoué

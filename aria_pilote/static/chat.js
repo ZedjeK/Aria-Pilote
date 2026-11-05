@@ -1041,8 +1041,9 @@ function shortText(text) {
 }
 
 function shortArgs(args) {
-    // Lecture groupée (read_file avec paths) : le nombre de fichiers, puis leurs noms
-    const files = Array.isArray(args?.paths) ? args.paths : Array.isArray(args?.path) ? args.path : null;
+    // Lecture ou écriture groupée (read_file avec paths, multi_edit avec files) : le nombre de fichiers, puis leurs noms
+    const files = Array.isArray(args?.paths) ? args.paths : Array.isArray(args?.path) ? args.path
+        : Array.isArray(args?.files) ? args.files.map((f) => f?.path) : null;
     if (files?.length) return shortText(files.length > 1 ? `${files.length} fichiers : ${files.join(", ")}` : String(files[0]));
     return shortText(String(args?.path ?? args?.pattern ?? args?.command ?? args?.query ?? args?.url ?? args?.name ?? args?.id ?? ""));
 }
@@ -1175,13 +1176,16 @@ function toolNode(m, pendingPlan = false, activeQuestion = false) {
     if (m.content) node.append(el("pre", {}, m.content));
     const shots = messageImages(m);  // capture de voir_ecran, avec ses repères numérotés
     if (shots) node.append(shots);
-    if (m.backup_id) {
+    // Une sauvegarde par fichier : une seule pour une écriture simple, plusieurs pour un multi_edit avec files
+    const saved = m.backup_id ? [m.backup_id] : (m.backups || []).map((b) => b.backup_id);
+    if (saved.length) {
         const actions = el("div", { className: "tool-actions" });
+        const left = saved.filter((id) => !(m.undone_backups || []).includes(id));
         if (m.undone) {
-            actions.append(el("span", { className: "muted small" }, "Modification annulée ↩"));
+            actions.append(el("span", { className: "muted small" }, saved.length > 1 ? "Modifications annulées ↩" : "Modification annulée ↩"));
         } else {
-            const undo = el("button", { className: "ghost" }, "↩ Annuler cette modif");
-            undo.addEventListener("click", () => undoChange(m.backup_id, undo));
+            const undo = el("button", { className: "ghost" }, left.length > 1 ? `↩ Annuler ces ${left.length} modifs` : "↩ Annuler cette modif");
+            undo.addEventListener("click", () => undoChange(left, undo));
             actions.append(undo);
         }
         node.append(actions);
@@ -1283,14 +1287,20 @@ function approvalNode(ev) {
     return box;
 }
 
-async function undoChange(backupId, button) {
-    if (!confirm("Remettre le fichier dans l'état d'avant cette modification ?")) return;
+async function undoChange(backupIds, button) {
+    // Une modification, ou toutes celles d'un multi_edit sur plusieurs fichiers
+    const ids = Array.isArray(backupIds) ? backupIds : [backupIds];
+    const question = ids.length > 1 ? `Remettre ces ${ids.length} fichiers dans l'état d'avant cette modification ?`
+        : "Remettre le fichier dans l'état d'avant cette modification ?";
+    if (!confirm(question)) return;
     button.disabled = true;
     try {
-        await api("/api/agent/undo", {
-            method: "POST",
-            body: JSON.stringify({ conversation_id: chat.current.id, backup_id: backupId }),
-        });
+        for (const id of ids) {
+            await api("/api/agent/undo", {
+                method: "POST",
+                body: JSON.stringify({ conversation_id: chat.current.id, backup_id: id }),
+            });
+        }
         await openConversation(chat.current.id);
     } catch (err) {
         button.disabled = false;
@@ -1380,7 +1390,7 @@ function renderMessages() {
     messages.forEach((m, index) => {
         if (!m.task_id) return;
         taskEnd[m.task_id] = index;
-        if (m.backup_id || m.name === "delegate") taskWrites.add(m.task_id);
+        if (m.backup_id || m.backups?.length || m.name === "delegate") taskWrites.add(m.task_id);
     });
     const undoneTasks = chat.current?.undone_tasks || {};
     messages.forEach((m, index) => {
@@ -1639,13 +1649,13 @@ async function send(content, answer, continueTask = false, pictures = [], planFi
                     chat.current.todo = { task_id: null, items: ev.todo };  // tâche en cours : affiché sans condition
                     renderPlanCard();
                 }
-                if (ev.backup_id) refreshChangesSoon();
+                if (ev.backup_id || ev.backups?.length) refreshChangesSoon();
                 const card = toolCards[ev.call_id];
                 // Commande lancée ou arrêtée en arrière-plan : l'onglet Arrière-plan suit
                 if ((card?.data.name === "run_command" && card.data.args?.background) || card?.data.name === "stop_command") {
                     refreshBackground();
                 }
-                Object.assign(card.data, { status: ev.status, content: ev.output, backup_id: ev.backup_id, syntax: ev.syntax, rule: ev.rule,
+                Object.assign(card.data, { status: ev.status, content: ev.output, backup_id: ev.backup_id, backups: ev.backups, syntax: ev.syntax, rule: ev.rule,
                     souvenir: ev.souvenir });
                 const fresh = toolNode(card.data);
                 card.node.replaceWith(fresh);

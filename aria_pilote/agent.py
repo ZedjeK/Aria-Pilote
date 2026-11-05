@@ -27,8 +27,9 @@ Méthode :
 {todo_rule}
 - Explore avant d'agir (list_dir, find_files, grep), lis un fichier avant de le modifier. Plusieurs
   fichiers à lire : un seul read_file avec paths, plutôt qu'un appel par fichier.
-- Préfère edit_file pour une modification ciblée, multi_edit pour plusieurs changements dans un même
-  fichier (un seul accord), write_file pour créer un fichier. replace_all sert aux renommages.
+- Préfère edit_file pour une modification ciblée, write_file pour créer un fichier. Plusieurs changements :
+  un seul multi_edit (un seul accord), avec files s'ils touchent plusieurs fichiers, plutôt qu'un appel par
+  changement. replace_all sert aux renommages.
 - run_command exécute du PowerShell : une commande à la fois, sans interaction. Pour un serveur ou une
   commande qui ne s'arrête pas seule, mets background à true, attends qu'elle soit prête avec command_output
   (wait_for), puis arrête-la avec stop_command une fois ton test fini.
@@ -160,13 +161,27 @@ ApprovalError = toolrun.ApprovalError
 resolve_approval = toolrun.resolve_approval
 
 
+def backup_ids(m):
+    """Sauvegardes d'un message d'écriture : une, ou une par fichier pour un multi_edit sur plusieurs fichiers."""
+    return [m["backup_id"]] if m.get("backup_id") else [b["backup_id"] for b in m.get("backups") or []]
+
+
+def _mark_undone(m, done):
+    """La carte passe en « annulé » quand toutes ses modifications le sont."""
+    ids = backup_ids(m)
+    if not ids or not set(ids) & done:
+        return
+    m["undone_backups"] = sorted(set(m.get("undone_backups") or []) | (set(ids) & done))
+    if set(m["undone_backups"]) >= set(ids):
+        m["undone"] = True
+
+
 def undo(cid, backup_id):
     meta = backups.restore(cid, backup_id)
 
     def mark(conv):
         for m in conv["messages"]:
-            if m.get("backup_id") == backup_id:
-                m["undone"] = True
+            _mark_undone(m, {backup_id})
 
     conversations.update(cid, mark)
     return meta
@@ -202,17 +217,19 @@ def task_preview(conv, task_id):
 
 def changes(conv):
     """Modifications de la conversation pour le panneau latéral, groupées par tâche, avec leur diff."""
-    by_backup = {m["backup_id"]: m for m in conv["messages"] if m.get("backup_id")}
+    by_backup = {b: m for m in conv["messages"] for b in backup_ids(m)}
     undone_tasks = conv.get("undone_tasks") or {}
     tasks, order = {}, []
     history = backups.history(conv["id"])
     known = {item["backup_id"] for item in history}
     # Sauvegardes expirées : la modification reste listée (d'après la conversation), sans diff
-    expired = [{"backup_id": m["backup_id"], "path": str(Path(conv["agent"]["workspace"]) / m["args"].get("path", "?"))
-                if (conv.get("agent") or {}).get("workspace") else m["args"].get("path", "?"),
+    root = (conv.get("agent") or {}).get("workspace")
+    written = [(m, m["backup_id"], m["args"].get("path", "?")) for m in conv["messages"] if m.get("backup_id")]
+    written += [(m, b["backup_id"], b["path"]) for m in conv["messages"] for b in m.get("backups") or []]
+    expired = [{"backup_id": b, "path": str(Path(root) / path) if root else path,
                 "task_id": m.get("task_id"), "created": False, "undone": bool(m.get("undone")),
                 "before": None, "after": None, "note": None}
-               for m in conv["messages"] if m.get("backup_id") and m["backup_id"] not in known]
+               for m, b, path in written if b not in known]
     for item in expired + history:
         rel = _relative(conv, item["path"])
         message = by_backup.get(item["backup_id"])
@@ -242,8 +259,7 @@ def undo_task(cid, task_id, force=False):
 
     def mark(conv):
         for m in conv["messages"]:
-            if m.get("backup_id") in done:
-                m["undone"] = True
+            _mark_undone(m, done)
         conv.setdefault("undone_tasks", {})[task_id] = {
             key: [_relative(conv, p) for p in paths] if key != "errors" else paths for key, paths in result.items()}
 
@@ -543,6 +559,8 @@ async def _execute(cid, root, call, run_ctx):
     }
     if result.get("backup_id"):
         message["backup_id"] = result["backup_id"]
+    if result.get("backups"):
+        message["backups"] = result["backups"]  # multi_edit sur plusieurs fichiers : une sauvegarde par fichier
     if result.get("subagent"):
         message["subagent"] = result["subagent"]  # étapes du sous-agent, pour l'affichage
     if result.get("syntax") is not None:
@@ -560,6 +578,7 @@ async def _execute(cid, root, call, run_ctx):
         "status": result["status"],
         "output": result["output"],
         "backup_id": result.get("backup_id"),
+        "backups": result.get("backups"),
         "syntax": result.get("syntax"),
         "rule": result.get("rule"),
         "todo": result.get("todo"),
