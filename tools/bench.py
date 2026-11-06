@@ -2,7 +2,8 @@
 
 Chaque tâche est un dossier de bench/tasks/ :
     task.json   demande, réponses aux questions de l'agent, mots pièges ; "folder": false pour une pure
-                discussion (aucun dossier attaché) ; "approve_plan": false pour ne pas approuver le plan proposé
+                discussion (aucun dossier attaché) ; "approve_plan": false pour ne pas approuver le plan proposé ;
+                "verify": commande de vérification de fin de tâche (hook « verifier » du projet, sauf --no-verify)
     fixture/    fichiers de départ, copiés dans un dossier temporaire neuf à chaque passage (facultatif sans dossier)
     check.py    check(ws, run) -> (ok, raison) : vérifie le résultat réel (fichiers, tests, réponse)
                 setup(ws) facultatif : prépare le dossier après la copie
@@ -188,6 +189,12 @@ def stream(client, task, run, body, deadline, allow_web):
                 client.post("/api/agent/approve", json={"approval_id": ev["approval_id"], "decision": decision})
             elif ev["type"] == "error":
                 run["errors"].append(ev["message"])
+            elif ev["type"] == "hook" and ev["evenement"] == "verifier":
+                run["verifs"].append(max(o["code"] for o in ev["resultats"]))
+            elif ev["type"] in ("context", "compacted"):
+                run["peak_ctx"] = max(run["peak_ctx"], ev.get("before") or 0, ev.get("used") or 0)
+                if ev["type"] == "compacted":
+                    run["compactions"] += 1
 
 
 def pending_question(conv):
@@ -220,6 +227,10 @@ def run_task(client, task, args):
         shutil.copytree(task["dir"] / "fixture", ws, dirs_exist_ok=True)
     if hasattr(task["check"], "setup"):
         task["check"].setup(ws)
+    verify = task.get("verify") and not args.no_verify
+    if verify:  # le hook du projet, écrit comme le ferait l'utilisateur (puis approuvé, plus bas)
+        (ws / ".aria").mkdir(exist_ok=True)
+        (ws / ".aria" / "hooks.json").write_text(json.dumps({"verifier": [{"commande": task["verify"]}]}), encoding="utf-8")
     snapshot = Path(tempfile.mkdtemp(prefix="aria-bench-ref-"))
     shutil.copytree(ws, snapshot, dirs_exist_ok=True)  # état de départ, pour les vérifications
 
@@ -230,8 +241,10 @@ def run_task(client, task, args):
     if task.get("folder", True):  # le dossier attaché donne les outils de fichiers ; sans lui, une discussion
         patch["agent"] = {"enabled": True, "workspace": str(ws)}
     client.patch(f"/api/conversations/{cid}", json=patch)
+    if verify:
+        client.post("/api/hooks/trust", json={"conversation_id": cid}, headers=ORIGIN).raise_for_status()
     run = {"calls": [], "sub_calls": [], "questions": [], "errors": [], "traps": [], "web_denied": 0,
-           "final": "", "start": snapshot, "plans": 0, "planner": 0}
+           "final": "", "start": snapshot, "plans": 0, "planner": 0, "compactions": 0, "peak_ctx": 0, "verifs": []}
     started = time.time()
     deadline = started + args.timeout
     body = {"conversation_id": cid, "content": task["prompt"]}
@@ -261,6 +274,9 @@ def run_task(client, task, args):
     assistants = [m for m in conv["messages"] if m["role"] == "assistant"]
     run["final"] = next((m["content"] for m in reversed(assistants) if m.get("content")), "")
     tokens = sum((m.get("stats") or {}).get("completion_tokens") or 0 for m in assistants)
+    # Tokens du prompt recalculés hors cache, et le temps passé à le faire (sous-agents non comptés)
+    prompt_eval = sum((m.get("stats") or {}).get("prompt_eval") or 0 for m in assistants)
+    prompt_s = sum((m.get("stats") or {}).get("prompt_s") or 0 for m in assistants)
     try:
         ok, reason = task["check"].check(ws, run)
     except Exception as exc:  # un vérificateur qui plante compte comme un échec, avec la raison
@@ -275,6 +291,9 @@ def run_task(client, task, args):
     return {
         "task": task["name"], "ok": bool(ok), "reason": reason, "duration_s": round(duration, 1),
         "calls": len(run["calls"]), "sub_calls": len(run["sub_calls"]), "tokens": tokens,
+        "prompt_eval": prompt_eval, "prompt_s": round(prompt_s, 1), "compactions": run["compactions"],
+        "peak_ctx": run["peak_ctx"], "steps": len(assistants),
+        "verifs": len(run["verifs"]), "verif_failed": sum(code != 0 for code in run["verifs"]),
         "tools": [c["name"] for c in run["calls"]], "questions": run["questions"],
         "plans": run["plans"], "planner": run["planner"],
         "incidents": incidents, "errors": run["errors"], "traps": run["traps"], "final": run["final"][:3000],
@@ -295,7 +314,8 @@ def score(passes):
 
 def print_model(name, tasks, before):
     print(f"\n--- {name}")
-    print(f"{'tâche':<28} {'réussite':>8} {'appels':>7} {'durée':>7} {'tokens':>7}  incidents / raison")
+    print(f"{'tâche':<28} {'réussite':>8} {'appels':>7} {'durée':>7} {'tokens':>7} {'recalc':>7} {'compact':>7} {'vérif':>7}"
+          "  incidents / raison")
     total = 0.0
     for task, passes in tasks.items():
         rate = score(passes)
@@ -305,13 +325,14 @@ def print_model(name, tasks, before):
         if old:
             diff = rate - score(old)
             delta = " ▲" if diff > 0 else " ▼" if diff < 0 else ""
-        mean = lambda key: sum(p[key] for p in passes) / len(passes)  # noqa: E731
+        mean = lambda key: sum(p.get(key) or 0 for p in passes) / len(passes)  # noqa: E731
         last = passes[-1]
         note = ", ".join(last["incidents"]) or ("" if last["ok"] else last["reason"])
         if last["ok"] and last["reason"] and last["reason"] != "ok":
             note = last["reason"]
         print(f"{task:<28} {rate:>7.0%}{delta:<2}{mean('calls'):>6.1f} {mean('duration_s'):>6.0f}s"
-              f" {mean('tokens'):>7.0f}  {note[:70]}")
+              f" {mean('tokens'):>7.0f} {mean('prompt_eval'):>7.0f} {mean('compactions'):>7.1f}"
+              f" {mean('verif_failed'):>3.1f}/{mean('verifs'):<3.1f}  {note[:70]}")
     print(f"{'score':<28} {total:>6.1f}/{len(tasks)}")
     runs = [p for passes in tasks.values() for p in passes]
     plans = sum(p.get("plans", 0) for p in runs)
@@ -330,6 +351,8 @@ def main():
     parser.add_argument("--timeout", type=int, default=600, help="délai par passage, en secondes (défaut : 600)")
     parser.add_argument("--web", action="store_true", help="autoriser l'accès web (refusé par défaut)")
     parser.add_argument("--keep", action="store_true", help="garder les conversations et dossiers de test")
+    parser.add_argument("--no-verify", action="store_true",
+                        help="sans la vérification de fin de tâche des tâches qui en ont une (mesure de référence)")
     args = parser.parse_args()
     sys.stdout.reconfigure(encoding="utf-8")
 

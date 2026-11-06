@@ -1,4 +1,5 @@
 {
     "prompt": "Le test test_stats.py échoue. Trouve et corrige le bug dans stats.py, sans modifier le test, puis vérifie que les tests passent.",
-    "measures": "modification ciblée"
+    "measures": "modification ciblée",
+    "verify": "python -X utf8 -m unittest -q"
 }

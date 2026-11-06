@@ -773,7 +773,8 @@ py -3.11 tools/build_portable.py</pre>
     "debut_tache": [{"commande": "git status --short"}]
 }'></textarea>
                     <p class="muted small">Événements : avant_outil (code de sortie 2 = action bloquée), apres_outil (sortie ajoutée au résultat),
-                        debut_tache (sortie donnée à l'agent), fin_tache. Variables : ARIA_OUTIL, ARIA_ARGS, ARIA_FICHIER, ARIA_STATUT.</p>
+                        debut_tache (sortie donnée à l'agent), fin_tache, verifier (quand l'agent a fini une tâche qui a modifié
+                        des fichiers : un code non nul lui renvoie la sortie, il corrige, 2 fois au plus). Variables : ARIA_OUTIL, ARIA_ARGS, ARIA_FICHIER, ARIA_FICHIERS (un fichier par ligne), ARIA_STATUT.</p>
                     <p id="hooks-error" class="error" hidden></p>
                     <div class="row">
                         <button id="btn-hooks-save" class="primary">Enregistrer les hooks</button>

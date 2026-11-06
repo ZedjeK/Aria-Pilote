@@ -9,7 +9,7 @@ import httpx
 from . import (background, backups, chat, config, context, conversations, hooks, mcp_client, persona, skills, souvenirs,
                subagents, toolrun, tools, workspace)
 
-MAX_TOOL_CALLS = 25  # par défaut ; réglable dans Réglages › Comportement (max_tool_calls)
+MAX_TOOL_CALLS = 30  # par défaut ; réglable dans Réglages › Comportement (max_tool_calls)
 # Une étape d'agent qui réfléchit puis écrit un fichier entier a besoin de place
 AGENT_MIN_TOKENS = 8192
 # Sans plafond, certains modèles réfléchissent des milliers de tokens sans jamais agir
@@ -25,9 +25,11 @@ Tous les chemins sont relatifs à ce dossier ; tu ne peux rien faire en dehors.
 
 Méthode :
 {todo_rule}
-- Explore avant d'agir (list_dir, find_files, grep), lis un fichier avant de le modifier.
-- Préfère edit_file pour une modification ciblée, multi_edit pour plusieurs changements dans un même
-  fichier (un seul accord), write_file pour créer un fichier. replace_all sert aux renommages.
+- Explore avant d'agir (list_dir, find_files, grep), lis un fichier avant de le modifier. Plusieurs
+  fichiers à lire : un seul read_file avec paths, plutôt qu'un appel par fichier.
+- Préfère edit_file pour une modification ciblée, write_file pour créer un fichier. Plusieurs changements :
+  un seul multi_edit (un seul accord), avec files s'ils touchent plusieurs fichiers, plutôt qu'un appel par
+  changement. replace_all sert aux renommages.
 - run_command exécute du PowerShell : une commande à la fois, sans interaction. Pour un serveur ou une
   commande qui ne s'arrête pas seule, mets background à true, attends qu'elle soit prête avec command_output
   (wait_for), puis arrête-la avec stop_command une fois ton test fini.
@@ -134,6 +136,14 @@ remplit : c'est à l'utilisateur de le faire."""
 LOCKED_KINDS = {"write", "command", "screen_action", "mcp"}  # un outil MCP peut tout faire : bloqué comme une écriture
 # Au 3e appel identique (même outil, mêmes arguments), l'agent tourne en rond
 LOOP_LIMIT = 3
+# Vérification de fin de tâche (hooks « verifier ») : nombre de corrections demandées au modèle après un échec
+VERIFY_RETRIES = 2
+# La vérification ne passe pas au-dessus de la demande : un échec qui ne vient pas de l'agent se signale, sans y toucher
+VERIFY_FEEDBACK = ("Vérification automatique ({attempt}/{retries}) : elle échoue.\n\n{failures}\n\n"
+                   "Si l'échec vient de tes modifications, corrige-les, puis réponds à nouveau : la vérification sera "
+                   "relancée. S'il existait déjà ou sort de la demande de l'utilisateur, n'y touche pas : dis-le-lui "
+                   "dans ta réponse.")
+VERIFY_GAVE_UP = "La vérification automatique échoue encore ({commands}) : l'agent s'est arrêté sans la faire passer."
 
 # Qui l'emporte en cas de conflit (les protections d'Aria Pilote sont de toute façon appliquées par le code)
 PRIORITY_RULE = """Ordre de priorité en cas de conflit : 1) les règles de sécurité d'Aria Pilote ci-dessus, 2) tes règles
@@ -151,13 +161,27 @@ ApprovalError = toolrun.ApprovalError
 resolve_approval = toolrun.resolve_approval
 
 
+def backup_ids(m):
+    """Sauvegardes d'un message d'écriture : une, ou une par fichier pour un multi_edit sur plusieurs fichiers."""
+    return [m["backup_id"]] if m.get("backup_id") else [b["backup_id"] for b in m.get("backups") or []]
+
+
+def _mark_undone(m, done):
+    """La carte passe en « annulé » quand toutes ses modifications le sont."""
+    ids = backup_ids(m)
+    if not ids or not set(ids) & done:
+        return
+    m["undone_backups"] = sorted(set(m.get("undone_backups") or []) | (set(ids) & done))
+    if set(m["undone_backups"]) >= set(ids):
+        m["undone"] = True
+
+
 def undo(cid, backup_id):
     meta = backups.restore(cid, backup_id)
 
     def mark(conv):
         for m in conv["messages"]:
-            if m.get("backup_id") == backup_id:
-                m["undone"] = True
+            _mark_undone(m, {backup_id})
 
     conversations.update(cid, mark)
     return meta
@@ -193,17 +217,19 @@ def task_preview(conv, task_id):
 
 def changes(conv):
     """Modifications de la conversation pour le panneau latéral, groupées par tâche, avec leur diff."""
-    by_backup = {m["backup_id"]: m for m in conv["messages"] if m.get("backup_id")}
+    by_backup = {b: m for m in conv["messages"] for b in backup_ids(m)}
     undone_tasks = conv.get("undone_tasks") or {}
     tasks, order = {}, []
     history = backups.history(conv["id"])
     known = {item["backup_id"] for item in history}
     # Sauvegardes expirées : la modification reste listée (d'après la conversation), sans diff
-    expired = [{"backup_id": m["backup_id"], "path": str(Path(conv["agent"]["workspace"]) / m["args"].get("path", "?"))
-                if (conv.get("agent") or {}).get("workspace") else m["args"].get("path", "?"),
+    root = (conv.get("agent") or {}).get("workspace")
+    written = [(m, m["backup_id"], m["args"].get("path", "?")) for m in conv["messages"] if m.get("backup_id")]
+    written += [(m, b["backup_id"], b["path"]) for m in conv["messages"] for b in m.get("backups") or []]
+    expired = [{"backup_id": b, "path": str(Path(root) / path) if root else path,
                 "task_id": m.get("task_id"), "created": False, "undone": bool(m.get("undone")),
                 "before": None, "after": None, "note": None}
-               for m in conv["messages"] if m.get("backup_id") and m["backup_id"] not in known]
+               for m, b, path in written if b not in known]
     for item in expired + history:
         rel = _relative(conv, item["path"])
         message = by_backup.get(item["backup_id"])
@@ -233,8 +259,7 @@ def undo_task(cid, task_id, force=False):
 
     def mark(conv):
         for m in conv["messages"]:
-            if m.get("backup_id") in done:
-                m["undone"] = True
+            _mark_undone(m, done)
         conv.setdefault("undone_tasks", {})[task_id] = {
             key: [_relative(conv, p) for p in paths] if key != "errors" else paths for key, paths in result.items()}
 
@@ -440,6 +465,39 @@ def _bg_running(cid, args):
         return False
 
 
+def _wrote(name, result):
+    """L'appel a modifié des fichiers : une écriture réussie, ou une délégation dont le sous-agent a écrit."""
+    if result.get("status") != "ok":
+        return False
+    steps = (result.get("subagent") or {}).get("steps") or []
+    return tool_kind(name) == "write" or any(tool_kind(s["name"]) == "write" and s["status"] == "ok" for s in steps)
+
+
+async def _verify(cid, root, run_ctx):
+    """Vérification de fin de tâche : les hooks « verifier » tournent si la tâche a modifié des fichiers depuis la
+    dernière fois. En échec, leur sortie repart au modèle (run_ctx["retry"]), VERIFY_RETRIES fois au plus."""
+    run_ctx["retry"] = False
+    if root and run_ctx["wrote"]:
+        run_ctx["wrote"] = False
+        outcomes = await hooks.run("verifier", root)
+        if not outcomes:
+            return
+        yield toolrun.hook_event("verifier", outcomes)
+        run_ctx["failing"] = [o for o in outcomes if o["code"] != 0] or None
+        if run_ctx["failing"] and run_ctx["verify_retries"] < VERIFY_RETRIES:
+            run_ctx["verify_retries"] += 1
+            failures = "\n\n".join(f"`{o['commande']}` a échoué (code {o['code']}) :\n{o['sortie']}" for o in run_ctx["failing"])
+            conversations.append_message(cid, {
+                "role": "verification", "results": run_ctx["failing"], "task_id": run_ctx["task_id"],
+                "content": VERIFY_FEEDBACK.format(attempt=run_ctx["verify_retries"], retries=VERIFY_RETRIES, failures=failures)})
+            run_ctx["retry"] = True
+            return
+    # Toujours en échec : relances épuisées, ou le modèle a conclu sans rien corriger (même vérification, même verdict)
+    if run_ctx["failing"]:
+        commands = ", ".join(f"`{o['commande']}`" for o in run_ctx["failing"])
+        yield chat.event({"type": "error", "message": VERIFY_GAVE_UP.format(commands=commands)})
+
+
 async def _execute(cid, root, call, run_ctx):
     """Exécute un appel d'outil ; émet tool_call, éventuellement approval, puis tool_result."""
     name = call["function"]["name"]
@@ -482,6 +540,8 @@ async def _execute(cid, root, call, run_ctx):
         async for ev in runner:
             yield ev
     result = holder["result"]
+    if _wrote(name, result):
+        run_ctx["wrote"] = True
     if name == "load_skill" and result.get("status") == "ok" and not args.get("file"):
         note = persona.register_note(persona.for_conversation(conversations.get(cid)),
                                      skills.normalize((args.get("name") or "").strip()), root)
@@ -499,6 +559,8 @@ async def _execute(cid, root, call, run_ctx):
     }
     if result.get("backup_id"):
         message["backup_id"] = result["backup_id"]
+    if result.get("backups"):
+        message["backups"] = result["backups"]  # multi_edit sur plusieurs fichiers : une sauvegarde par fichier
     if result.get("subagent"):
         message["subagent"] = result["subagent"]  # étapes du sous-agent, pour l'affichage
     if result.get("syntax") is not None:
@@ -516,6 +578,7 @@ async def _execute(cid, root, call, run_ctx):
         "status": result["status"],
         "output": result["output"],
         "backup_id": result.get("backup_id"),
+        "backups": result.get("backups"),
         "syntax": result.get("syntax"),
         "rule": result.get("rule"),
         "todo": result.get("todo"),
@@ -595,7 +658,8 @@ async def _run(conv, preset, model_name, task_id):
         }
     allowed, schemas = task_tools(conv, root)
     run_ctx = {"preset": preset, "model": model_name, "allowed": allowed,
-               "seen": {}, "stuck": False, "planned": False, "asked": False, "task_id": task_id}
+               "seen": {}, "stuck": False, "planned": False, "asked": False, "task_id": task_id,
+               "wrote": False, "failing": None, "verify_retries": 0, "retry": False}
     calls_done = 0
     max_calls = config.get().get("max_tool_calls", MAX_TOOL_CALLS)
     retried = False
@@ -641,6 +705,10 @@ async def _run(conv, preset, model_name, task_id):
                 yield chat.event({"type": "error", "continuable": True, "message": (
                     f"Réponse coupée : le modèle a atteint la limite de {preset['max_tokens']} tokens par réponse "
                     "avant de finir. Tu peux le laisser continuer, ou augmenter « Max tokens » dans le preset.")})
+            async for ev in _verify(cid, root, run_ctx):
+                yield ev
+            if run_ctx["retry"]:
+                continue
             end = await hooks.run("fin_tache", root, result={"status": "ok", "output": (message or {}).get("content") or ""}) \
                 if root else []
             if end:

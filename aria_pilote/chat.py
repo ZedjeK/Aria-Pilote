@@ -62,8 +62,11 @@ def build_messages(conv, system_prompt):
             if m.get("name") == "load_skill" and system_prompt and m["content"] in system_prompt:
                 # Compétence active : le prompt système la garde entière, même quand l'historique est rogné ou résumé
                 content = SKILL_IN_PROMPT.format(name=((m.get("args") or {}).get("name") or "").strip())
+            elif i in old_tools:
+                shrink = context.shrink_sections if m.get("name") == "read_file" else context.shrink
+                content = shrink(m["content"], limit)
             else:
-                content = context.shrink(m["content"], limit) if i in old_tools else m["content"]
+                content = m["content"]
             messages.append({"role": "tool", "tool_call_id": m["tool_call_id"], "content": content})
             if i in shots:
                 pending += m["images"]  # après le dernier résultat du lot : un message ne coupe pas les appels
@@ -83,6 +86,9 @@ def build_messages(conv, system_prompt):
             if m.get("files"):
                 text = "\n\n".join(p for p in (text, attachments.for_model(m["files"])) if p)
             messages.append({"role": "user", "content": user_content(cid, text, m.get("images"))})
+        elif m["role"] == "verification":
+            # Échec de la vérification de fin de tâche : il parle au modèle comme un message, sans être ta demande
+            messages.append({"role": "user", "content": m["content"]})
         else:
             messages.append({"role": m["role"], "content": m["content"]})
     if pending:
@@ -146,6 +152,8 @@ def _summarize(out, stopped):
         "completion_tokens": usage.get("completion_tokens") or timings.get("predicted_n"),
         # usage compte tout le prompt ; timings.prompt_n ne compte que la partie hors cache
         "prompt_tokens": usage.get("prompt_tokens") or timings.get("prompt_n"),
+        "prompt_eval": timings.get("prompt_n"),  # recalculés hors cache : ce que coûte vraiment l'étape
+        "prompt_s": round(timings["prompt_ms"] / 1000, 2) if timings.get("prompt_ms") else None,
         "tok_s": round(tok_s, 1) if tok_s else None,
         "ttft_s": round(first - out["started"], 2) if first else None,
         "duration_s": round(time.time() - out["started"], 1),

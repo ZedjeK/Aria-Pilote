@@ -1,0 +1,5 @@
+{
+    "prompt": "Les tests de test_alertes.py décrivent une nouvelle fonctionnalité : les seuils d'alerte de stock. Implémente-la sans modifier les tests, jusqu'à ce que toute la suite de tests passe.",
+    "measures": "tâche longue : fonctionnalité guidée par des tests, sur 4 fichiers (nouveau module, rapport, ligne de commande)",
+    "verify": "python -X utf8 -m unittest -q"
+}

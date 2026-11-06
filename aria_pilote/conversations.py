@@ -124,7 +124,7 @@ def add_user_message(conv, content, skill=None, images=None, files=None):
 
 def drop_trailing_assistant(conv):
     """Retire la dernière réponse, y compris les appels d'outils de l'agent."""
-    while conv["messages"] and conv["messages"][-1]["role"] in ("assistant", "tool"):
+    while conv["messages"] and conv["messages"][-1]["role"] in ("assistant", "tool", "verification"):
         conv["messages"].pop()
 
 

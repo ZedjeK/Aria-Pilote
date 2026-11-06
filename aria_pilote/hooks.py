@@ -5,11 +5,13 @@ Fichier hooks.json, global (dans l'appli) ou de projet (<dossier de travail>/.ar
         "avant_outil": [{"outils": ["run_command"], "commande": "..."}],
         "apres_outil": [{"outils": ["write_file", "edit_file", "multi_edit"], "commande": "..."}],
         "debut_tache": [{"commande": "git status --short"}],
-        "fin_tache":   [{"commande": "..."}]
+        "fin_tache":   [{"commande": "..."}],
+        "verifier":    [{"commande": "python -m unittest discover -q"}]
     }
 La commande reçoit le contexte en JSON sur l'entrée standard et dans des variables d'environnement
-(ARIA_EVENEMENT, ARIA_OUTIL, ARIA_ARGS, ARIA_FICHIER, ARIA_STATUT). Pour « avant_outil », un code de
-sortie 2 bloque l'action et sa sortie en donne la raison au modèle.
+(ARIA_EVENEMENT, ARIA_OUTIL, ARIA_ARGS, ARIA_FICHIER, ARIA_FICHIERS, ARIA_STATUT). Pour « avant_outil », un code de
+sortie 2 bloque l'action et sa sortie en donne la raison au modèle. « verifier » tourne quand l'agent
+annonce avoir fini une tâche qui a modifié des fichiers : un code non nul lui renvoie la sortie pour qu'il corrige.
 
 Les hooks d'un projet ne tournent qu'après approbation de leur contenu exact (empreinte SHA-256).
 """
@@ -25,10 +27,11 @@ from pathlib import Path
 from . import config, jobs, workspace
 from .tools import POWERSHELL
 
-EVENTS = ("avant_outil", "apres_outil", "debut_tache", "fin_tache")
+EVENTS = ("avant_outil", "apres_outil", "debut_tache", "fin_tache", "verifier")
 GLOBAL_PATH = config.ROOT / "hooks.json"
 PROJECT_REL = Path(".aria") / "hooks.json"
 TIMEOUT_S = 30
+VERIFY_TIMEOUT_S = 300  # une suite de tests prend plus de temps qu'un hook
 MAX_OUTPUT_CHARS = 4000
 BLOCK_CODE = 2
 
@@ -125,16 +128,30 @@ def _rules(event, root):
     return [(source, rule) for source, data in sources for rule in data.get(event, [])]
 
 
-def _run_one(command, cwd, payload):
+def _files(arguments):
+    """Fichiers visés par l'outil, un par ligne : multi_edit (files) et read_file (paths) en touchent plusieurs."""
+    files = arguments.get("files")
+    if isinstance(files, list):
+        return "\n".join(str(f.get("path", "")) for f in files if isinstance(f, dict))
+    paths = arguments.get("paths")
+    if isinstance(paths, list):
+        return "\n".join(str(p) for p in paths)
+    return str(arguments.get("path", ""))
+
+
+def _run_one(command, cwd, payload, timeout=TIMEOUT_S):
     env = {
         **os.environ,
         "ARIA_EVENEMENT": payload["evenement"],
         "ARIA_OUTIL": payload.get("outil") or "",
         "ARIA_ARGS": json.dumps(payload.get("arguments") or {}, ensure_ascii=False),
         "ARIA_FICHIER": str((payload.get("arguments") or {}).get("path", "")),
+        "ARIA_FICHIERS": _files(payload.get("arguments") or {}),
         "ARIA_STATUT": (payload.get("resultat") or {}).get("statut", ""),
     }
-    script = "[Console]::OutputEncoding = [System.Text.Encoding]::UTF8\n$ProgressPreference = 'SilentlyContinue'\n" + command
+    # Sans la dernière ligne, un script PowerShell sort avec 0 même si sa dernière commande native (python, git…) a échoué
+    script = ("[Console]::OutputEncoding = [System.Text.Encoding]::UTF8\n$ProgressPreference = 'SilentlyContinue'\n"
+              + command + "\nif ($LASTEXITCODE) { exit $LASTEXITCODE }")
     fd, path = tempfile.mkstemp(prefix="aria-hook-", suffix=".ps1")
     with os.fdopen(fd, "w", encoding="utf-8-sig") as f:
         f.write(script)
@@ -149,18 +166,18 @@ def _run_one(command, cwd, payload):
         )
         jobs.attach(proc)
         try:
-            stdout, _ = proc.communicate(json.dumps(payload, ensure_ascii=False).encode("utf-8"), timeout=TIMEOUT_S)
+            stdout, _ = proc.communicate(json.dumps(payload, ensure_ascii=False).encode("utf-8"), timeout=timeout)
             code = proc.returncode
         except subprocess.TimeoutExpired:
             proc.kill()
             stdout, _ = proc.communicate()
-            code, stdout = -1, stdout + f"\n(hook arrêté après {TIMEOUT_S} s)".encode("utf-8")
+            code, stdout = -1, stdout + f"\n(hook arrêté après {timeout} s)".encode("utf-8")
     finally:
         try:
             os.unlink(path)
         except OSError:
             pass
-    return code, stdout.decode("utf-8", errors="replace").strip()[:MAX_OUTPUT_CHARS]
+    return code, stdout.decode("utf-8", errors="replace").strip()
 
 
 async def run(event, root, tool=None, arguments=None, result=None):
@@ -172,7 +189,11 @@ async def run(event, root, tool=None, arguments=None, result=None):
             continue
         payload = {"evenement": event, "outil": tool, "arguments": arguments, "dossier": root,
                    "resultat": {"statut": result["status"], "sortie": result["output"][:MAX_OUTPUT_CHARS]} if result else None}
-        code, output = await asyncio.to_thread(_run_one, rule["commande"], root, payload)
+        verify = event == "verifier"
+        code, output = await asyncio.to_thread(_run_one, rule["commande"], root, payload,
+                                               VERIFY_TIMEOUT_S if verify else TIMEOUT_S)
+        # Une suite de tests conclut à la fin (échecs, résumé) : c'est la fin de sa sortie qui compte
+        output = output[-MAX_OUTPUT_CHARS:] if verify else output[:MAX_OUTPUT_CHARS]
         outcomes.append({"source": source, "commande": rule["commande"], "code": code, "sortie": output})
     return outcomes
 

@@ -8,6 +8,7 @@ Chaque outil a deux temps :
 import asyncio
 import difflib
 import fnmatch
+import json
 import os
 import re
 import shutil
@@ -17,14 +18,15 @@ import time
 from dataclasses import dataclass
 from typing import Awaitable, Callable
 
-from . import (background, backups, checks, config, conversations, github, images, jobs, screen, skills, souvenirs, web,
-               workspace)
+from . import (background, backups, checks, config, context, conversations, github, images, jobs, screen, skills,
+               souvenirs, web, workspace)
 from .server import manager
 
 SKIP_DIRS = {".git", ".hg", ".svn", "node_modules", ".venv", "venv", "__pycache__", ".mypy_cache", ".idea"}
 MAX_FILE_BYTES = 5 * 1024 * 1024
 MAX_GREP_FILE_BYTES = 2 * 1024 * 1024
 MAX_OUTPUT_CHARS = 20000
+MAX_READ_FILES = 8
 COMMAND_TIMEOUT_S = 120
 
 
@@ -127,18 +129,51 @@ def prepare_list_dir(root, args):
     return {"output": "\n".join(lines) or "(dossier vide)"}
 
 
-def prepare_read_file(root, args):
-    target = _resolve(root, args.get("path", ""))
+def _numbered(root, path, start, count):
+    target = _resolve(root, path)
     if not target.is_file():
         raise ToolError("Fichier introuvable.")
     lines = _read_text(target).splitlines()
-    start = max(1, int(args.get("start_line") or 1))
-    count = min(1000, max(1, int(args.get("max_lines") or 400)))
     chunk = lines[start - 1 : start - 1 + count]
     end = start + len(chunk) - 1
     body = "\n".join(f"{n:>5}│ {line}" for n, line in enumerate(chunk, start))
-    header = f"{workspace.relative(root, target)} — lignes {start} à {end} sur {len(lines)}"
-    return {"output": _truncate(f"{header}\n{body}")}
+    return f"{workspace.relative(root, target)} — lignes {start} à {end} sur {len(lines)}\n{body}"
+
+
+def read_paths(args):
+    """Fichiers demandés : « paths », ou une liste glissée dans « path » (un petit modèle le fait souvent)."""
+    paths = args.get("paths") or args.get("path") or []
+    if isinstance(paths, str) and paths.strip().startswith("["):
+        try:  # la liste arrive parfois en texte JSON
+            paths = json.loads(paths)
+        except ValueError:
+            pass
+    paths = [paths] if isinstance(paths, str) else paths if isinstance(paths, list) else []
+    return list(dict.fromkeys(str(p).strip() for p in paths if str(p).strip()))
+
+
+def prepare_read_file(root, args):
+    start = max(1, int(args.get("start_line") or 1))
+    count = min(1000, max(1, int(args.get("max_lines") or 400)))
+    paths = read_paths(args)
+    if not paths:
+        raise ToolError("Indique le fichier à lire (path), ou plusieurs fichiers (paths).")
+    if len(paths) == 1:
+        return {"output": _truncate(_numbered(root, paths[0], start, count))}
+    if len(paths) > MAX_READ_FILES:
+        raise ToolError(f"{MAX_READ_FILES} fichiers au plus par lecture : lis les autres dans un second appel.")
+    # La sortie se partage entre les fichiers ; un fichier en erreur n'empêche pas de lire les autres
+    budget = MAX_OUTPUT_CHARS // len(paths)
+    sections = []
+    for path in paths:
+        try:
+            text = _numbered(root, path, start, count)
+        except ToolError as exc:
+            text = f"{path} — {exc}"
+        if len(text) > budget:
+            text = text[:budget] + f"\n… (coupé : relis {path} seul, avec start_line, pour la suite)"
+        sections.append(context.FILE_SECTION + text)
+    return {"output": "\n\n".join(sections)}
 
 
 def prepare_find_files(root, args):
@@ -202,7 +237,8 @@ def prepare_write_file(root, args):
     return {"target": target, "content": content, "rel": rel, "preview": _diff(old, content, rel), "before": old if target.exists() else None}
 
 
-MAX_EDITS = 20
+MAX_EDITS = 20  # par fichier
+MAX_EDIT_FILES = MAX_READ_FILES  # fichiers par multi_edit
 
 
 def _replace(text, edit):
@@ -225,7 +261,7 @@ def _replace(text, edit):
     return text.replace(old_string, new_string, 1)
 
 
-def _prepare_edits(root, path, edits):
+def _prepare_edits(root, path, edits, grouped=False):
     target = _resolve(root, path)
     if not target.is_file():
         raise ToolError("Fichier introuvable.")
@@ -236,7 +272,7 @@ def _prepare_edits(root, path, edits):
         except ToolError as exc:
             # Tout ou rien : le fichier n'est jamais laissé à moitié modifié
             prefix = f"Remplacement n° {number} : " if len(edits) > 1 else ""
-            suffix = " Aucun remplacement n'a été appliqué." if len(edits) > 1 else ""
+            suffix = " Aucun remplacement n'a été appliqué." if len(edits) > 1 and not grouped else ""
             raise ToolError(f"{prefix}{exc}{suffix}")
     rel = workspace.relative(root, target)
     return {"target": target, "content": content, "rel": rel, "preview": _diff(text, content, rel), "before": text}
@@ -246,39 +282,103 @@ def prepare_edit_file(root, args):
     return _prepare_edits(root, args.get("path", ""), [args])
 
 
-def prepare_multi_edit(root, args):
-    edits = args.get("edits")
+def _check_edits(edits):
     if not isinstance(edits, list) or not edits:
         raise ToolError("« edits » doit être une liste de remplacements {old_string, new_string}.")
     if len(edits) > MAX_EDITS:
-        raise ToolError(f"{len(edits)} remplacements : {MAX_EDITS} au plus par appel. Au-delà, réécris le fichier "
+        raise ToolError(f"{len(edits)} remplacements : {MAX_EDITS} au plus par fichier. Au-delà, réécris le fichier "
                         "avec write_file.")
-    return _prepare_edits(root, args.get("path", ""), edits)
+
+
+def edit_groups(args):
+    """Fichiers à modifier, [(path, edits)] : « files », ou le fichier unique de « path » et « edits »."""
+    files = args.get("files")
+    if isinstance(files, str) and files.strip().startswith("["):
+        try:
+            files = json.loads(files)  # liste envoyée en texte JSON : un petit modèle le fait souvent
+        except ValueError:
+            pass
+    if not files:
+        return [(args.get("path", ""), args.get("edits"))]
+    if not isinstance(files, list) or not all(isinstance(f, dict) for f in files):
+        raise ToolError("« files » doit être une liste de {path, edits}.")
+    return [(f.get("path", ""), f.get("edits")) for f in files]
+
+
+def prepare_multi_edit(root, args):
+    groups = edit_groups(args)
+    if len(groups) == 1:
+        _check_edits(groups[0][1])
+        return _prepare_edits(root, groups[0][0], groups[0][1])
+    if len(groups) > MAX_EDIT_FILES:
+        raise ToolError(f"{len(groups)} fichiers : {MAX_EDIT_FILES} au plus par appel.")
+    prepared = []
+    for path, edits in groups:
+        # Tout ou rien sur tous les fichiers : chaque remplacement est validé avant l'accord et l'écriture
+        try:
+            _check_edits(edits)
+            one = _prepare_edits(root, path, edits, grouped=True)
+        except ToolError as exc:
+            raise ToolError(f"{path} : {exc} Aucun fichier n'a été modifié.")
+        if any(p["target"] == one["target"] for p in prepared):
+            raise ToolError(f"{path} apparaît deux fois : mets tous ses remplacements dans une seule entrée de files.")
+        prepared.append(one)
+    names = ", ".join(p["rel"] for p in prepared)
+    return {"files": prepared, "rel": f"{len(prepared)} fichiers : {names}",
+            "preview": "\n\n".join(p["preview"] for p in prepared)}
+
+
+def _write_one(prepared, cid):
+    target = prepared["target"]
+    backup_id = backups.save(cid, target)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    with open(target, "w", encoding="utf-8", newline="") as f:
+        f.write(prepared["content"])
+    backups.record_after(cid, backup_id, target)
+    return backup_id
+
+
+def _unchanged_since_preview(prepared):
+    # Le fichier a pu changer pendant que l'utilisateur lisait le diff
+    target = prepared["target"]
+    current = _read_text(target) if target.exists() else None
+    if current != prepared["before"]:
+        raise ToolError(f"{prepared['rel']} a changé depuis l'aperçu : relis-le avant de réessayer.")
+
+
+async def _saved(prepared):
+    """« fichier (N lignes) », puis la vérification automatique de la syntaxe : informe le modèle, ne bloque rien."""
+    line = f"{prepared['rel']} ({len(prepared['content'].splitlines())} lignes)."
+    verdict = await asyncio.to_thread(checks.check, prepared["target"])
+    return (line, None) if verdict is None else (f"{line}\n{verdict[0]}", verdict[1])
 
 
 async def run_write(prepared, cid):
+    if "files" in prepared:
+        return await _run_writes(prepared["files"], cid)
+
     def write():
-        target = prepared["target"]
-        # Le fichier a pu changer pendant que l'utilisateur lisait le diff
-        current = _read_text(target) if target.exists() else None
-        if current != prepared["before"]:
-            raise ToolError("Le fichier a changé depuis l'aperçu : relis-le avant de réessayer.")
-        backup_id = backups.save(cid, target)
-        target.parent.mkdir(parents=True, exist_ok=True)
-        with open(target, "w", encoding="utf-8", newline="") as f:
-            f.write(prepared["content"])
-        backups.record_after(cid, backup_id, target)
-        return backup_id
+        _unchanged_since_preview(prepared)
+        return _write_one(prepared, cid)
 
     backup_id = await asyncio.to_thread(write)
-    lines = len(prepared["content"].splitlines())
-    output = f"Fichier enregistré : {prepared['rel']} ({lines} lignes)."
-    # Vérification automatique de la syntaxe : informe le modèle, ne bloque rien
-    verdict = await asyncio.to_thread(checks.check, prepared["target"])
-    if verdict is None:
-        return _ok(output, backup_id=backup_id)
-    note, valid = verdict
-    return _ok(f"{output}\n{note}", backup_id=backup_id, syntax=valid)
+    line, valid = await _saved(prepared)
+    extra = {} if valid is None else {"syntax": valid}
+    return _ok(f"Fichier enregistré : {line}", backup_id=backup_id, **extra)
+
+
+async def _run_writes(files, cid):
+    def write():
+        for prepared in files:  # tous vérifiés avant la première écriture
+            _unchanged_since_preview(prepared)
+        return [_write_one(prepared, cid) for prepared in files]
+
+    ids = await asyncio.to_thread(write)
+    saved = [await _saved(prepared) for prepared in files]
+    output = f"{len(files)} fichiers enregistrés :\n" + "\n".join(f"- {line}" for line, _ in saved)
+    verdicts = [valid for _, valid in saved if valid is not None]
+    extra = {"syntax": all(verdicts)} if verdicts else {}
+    return _ok(output, backups=[{"backup_id": b, "path": p["rel"]} for b, p in zip(ids, files)], **extra)
 
 
 # --- commandes -------------------------------------------------------------------
@@ -1289,6 +1389,19 @@ async def run_web_search(prepared, cid):
 # --- registre --------------------------------------------------------------------
 
 _PATH = {"type": "string", "description": "Chemin relatif au dossier de travail."}
+_EDITS = {
+    "type": "array",
+    "maxItems": MAX_EDITS,
+    "items": {
+        "type": "object",
+        "properties": {
+            "old_string": {"type": "string", "description": "Texte exact à remplacer (unique, sauf replace_all)."},
+            "new_string": {"type": "string", "description": "Nouveau texte."},
+            "replace_all": {"type": "boolean", "default": False, "description": "Remplacer toutes les occurrences."},
+        },
+        "required": ["old_string", "new_string"],
+    },
+}
 
 TOOLS = {t.name: t for t in [
     Tool(
@@ -1299,12 +1412,15 @@ TOOLS = {t.name: t for t in [
     ),
     Tool(
         "read_file", "read",
-        "Lit un fichier texte avec numéros de ligne. Pour un gros fichier, lis-le par morceaux.",
+        "Lit un fichier texte avec numéros de ligne. Plusieurs fichiers à lire : un seul appel avec paths "
+        f"({MAX_READ_FILES} au plus). Pour un gros fichier, lis-le seul, par morceaux.",
         _schema({
             "path": _PATH,
+            "paths": {"type": "array", "items": {"type": "string"},
+                      "description": f"Plusieurs fichiers lus d'un coup, à la place de path ({MAX_READ_FILES} au plus)."},
             "start_line": {"type": "integer", "description": "Première ligne (à partir de 1).", "default": 1},
             "max_lines": {"type": "integer", "description": "Nombre de lignes (1000 max).", "default": 400},
-        }, ["path"]),
+        }, []),
         prepare_read_file, run_prepared_output,
     ),
     Tool(
@@ -1343,25 +1459,19 @@ TOOLS = {t.name: t for t in [
     ),
     Tool(
         "multi_edit", "write",
-        "Plusieurs remplacements dans un même fichier, en un seul appel et un seul accord. Appliqués dans "
-        f"l'ordre, chacun sur le résultat du précédent ; tout ou rien. {MAX_EDITS} au plus.",
+        "Plusieurs remplacements, dans un fichier (path et edits) ou dans plusieurs (files), en un seul appel et "
+        "un seul accord. Appliqués dans l'ordre, chacun sur le résultat du précédent ; tout ou rien. "
+        f"{MAX_EDITS} remplacements par fichier, {MAX_EDIT_FILES} fichiers au plus.",
         _schema({
             "path": _PATH,
-            "edits": {
+            "edits": _EDITS,
+            "files": {
                 "type": "array",
-                "maxItems": MAX_EDITS,
-                "items": {
-                    "type": "object",
-                    "properties": {
-                        "old_string": {"type": "string", "description": "Texte exact à remplacer (unique, sauf replace_all)."},
-                        "new_string": {"type": "string", "description": "Nouveau texte."},
-                        "replace_all": {"type": "boolean", "default": False,
-                                        "description": "Remplacer toutes les occurrences."},
-                    },
-                    "required": ["old_string", "new_string"],
-                },
+                "maxItems": MAX_EDIT_FILES,
+                "description": "Plusieurs fichiers : chacun avec son path et ses edits.",
+                "items": {"type": "object", "properties": {"path": _PATH, "edits": _EDITS}, "required": ["path", "edits"]},
             },
-        }, ["path", "edits"]),
+        }, []),
         prepare_multi_edit, run_write,
     ),
     Tool(

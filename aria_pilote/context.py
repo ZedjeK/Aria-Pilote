@@ -57,6 +57,19 @@ def shrink(text, limit):
             f"{text[-tail:]}")
 
 
+# Début de chaque fichier dans une lecture groupée (read_file avec paths) : une ligne de contenu commence
+# toujours par son numéro, elle ne peut pas être prise pour un début de section
+FILE_SECTION = "▸ "
+
+
+def shrink_sections(text, limit):
+    """Lecture groupée : chaque fichier est rogné comme s'il avait été lu seul, le lot se dégrade comme N lectures."""
+    if not text.startswith(FILE_SECTION):
+        return shrink(text, limit)
+    sections = text[len(FILE_SECTION):].split("\n\n" + FILE_SECTION)
+    return "\n\n".join(FILE_SECTION + shrink(section, limit) for section in sections)
+
+
 def reserve(preset, total):
     """Place gardée pour la réponse du modèle."""
     return min(preset.get("max_tokens") or 4096, total // 4)
@@ -128,6 +141,8 @@ def _transcript(messages, skip=None):
                 lines.append(f"Assistant : {m['content']}")
             for tc in m.get("tool_calls") or []:
                 lines.append(f"[Appel d'outil {tc['function']['name']} {tc['function']['arguments'][:300]}]")
+        elif m["role"] == "verification":
+            lines.append(f"[Vérification automatique en échec] {shrink(m['content'], SUMMARY_TOOL_CHARS)}")
         elif m["role"] == "tool":
             status = m.get("status", "ok")
             lines.append(f"[Résultat {m.get('name', '?')} ({status})] {shrink(m['content'], SUMMARY_TOOL_CHARS)}")
