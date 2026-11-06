@@ -9,7 +9,7 @@ import httpx
 from . import (background, backups, chat, config, context, conversations, hooks, mcp_client, persona, skills, souvenirs,
                subagents, toolrun, tools, workspace)
 
-MAX_TOOL_CALLS = 25  # par défaut ; réglable dans Réglages › Comportement (max_tool_calls)
+MAX_TOOL_CALLS = 30  # par défaut ; réglable dans Réglages › Comportement (max_tool_calls)
 # Une étape d'agent qui réfléchit puis écrit un fichier entier a besoin de place
 AGENT_MIN_TOKENS = 8192
 # Sans plafond, certains modèles réfléchissent des milliers de tokens sans jamais agir

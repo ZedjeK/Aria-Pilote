@@ -59,7 +59,7 @@ DEFAULTS = {
     # Serveurs MCP (déclarés dans mcp.json) : coupé, actif d'office, mode de chaque outil (ask, allow, off)
     "mcp": {"servers": {}},
     # Appels d'outils au plus par tâche de l'agent
-    "max_tool_calls": 25,
+    "max_tool_calls": 30,
     # GitHub (voir github.py) : compétences github-*, branches sans push direct, conventions données au modèle, et
     # lectures git/gh lancées sans demander (coupé tant que tu ne l'actives pas)
     "github": {"skills": True, "protected_branches": ["main", "master"], "feature_prefix": "feat/", "fix_prefix": "fix/",
