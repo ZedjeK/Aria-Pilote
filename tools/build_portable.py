@@ -154,7 +154,8 @@ def build_launcher(dest):
 ICON = ROOT / "tools" / "launcher" / "aria-pilote.ico"
 
 
-def compile_launcher(out):
+def compile_launcher(out, extra_sources=(), main=None):
+    """`extra_sources` et `main` : pour les tests, qui compilent le lanceur avec leur propre point d'entrée."""
     if not CSC.exists():
         sys.exit(f"Compilateur C# introuvable : {CSC}")
     subprocess.run([
@@ -164,7 +165,9 @@ def compile_launcher(out):
         "/reference:System.Windows.Forms.dll",
         "/reference:System.Drawing.dll",
         "/reference:System.IO.Compression.dll",
+        *([f"/main:{main}"] if main else []),
         str(ROOT / "tools" / "launcher" / "Launcher.cs"),
+        *map(str, extra_sources),
     ], check=True, stdout=subprocess.DEVNULL)
 
 

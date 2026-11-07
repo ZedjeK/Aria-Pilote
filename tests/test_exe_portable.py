@@ -168,6 +168,18 @@ class ExePortable(unittest.TestCase):
             self.assertIn("{secret}", zf.read("services/searxng/settings.yml.modele").decode())
         self.assertTrue(re.search(rb"PK\x05\x06", data[start:]))
 
+    def test_fenetre_fermee_pendant_l_attente(self):
+        """Fermer la fenêtre de démarrage ne fait que la masquer : le lanceur attend la fin (l'appli qui répond, ou le
+        délai) au lieu de conclure trop tôt « ne répond pas », et une fenêtre détruite ne le fait pas planter."""
+        essai = self.tmp / "essai_fenetre.exe"
+        if not essai.exists():
+            build_portable.compile_launcher(essai, [Path(__file__).with_name("essai_fenetre.cs")], main="EssaiFenetre")
+        for scenario, hidden in (("fermee", True), ("detruite", False)):
+            with self.subTest(scenario):
+                r = subprocess.run([str(essai), scenario], capture_output=True, text=True, timeout=60)
+                self.assertEqual(r.returncode, 0, r.stderr)
+                self.assertEqual(r.stdout.strip(), f"fini=True masquee={hidden} attendu=True")
+
 
 if __name__ == "__main__":
     unittest.main()
