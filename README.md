@@ -65,7 +65,7 @@ py -3.11 tools/build_portable.py --exe
 | --- | --- |
 | `install_engines.py` | Télécharge `llama-server` officiel et celui de PrismML (dernières builds, ou `--prism-tag` pour une version précise) avec le runtime CUDA ; même code que Réglages › Moteurs |
 | `install_searxng.py` | Télécharge SearXNG à une version épinglée, lui applique la retouche Windows et génère sa configuration (clé secrète aléatoire, `127.0.0.1` uniquement) |
-| `build_portable.py --exe` | Construit `..\Aria-Pilote-0.25.1.exe` : Python portable vérifié par SHA-256, code, moteurs et SearXNG dans une archive collée à la suite du lanceur. La configuration de SearXNG y est un modèle : chaque PC tire sa propre clé secrète au premier lancement. Sans `--exe`, l'ancien mode : un dossier `..\Aria-Pilote-0.25.1\` avec le lanceur `Aria-Pilote.exe` |
+| `build_portable.py --exe` | Construit `..\Aria-Pilote-0.26.0.exe` : Python portable vérifié par SHA-256, code, moteurs et SearXNG dans une archive collée à la suite du lanceur. La configuration de SearXNG y est un modèle : chaque PC tire sa propre clé secrète au premier lancement. Sans `--exe`, l'ancien mode : un dossier `..\Aria-Pilote-0.26.0\` avec le lanceur `Aria-Pilote.exe` |
 
 Lance ensuite l'exe, comme une version téléchargée (voir [Installer](#installer)).
 
