@@ -25,6 +25,7 @@ Usage : python tools/build_portable.py [--exe] [--no-engines] [--releases-dir DO
 
 import argparse
 import hashlib
+import json
 import os
 import re
 import shutil
@@ -138,10 +139,20 @@ def install_search(python, dest):
     dev_src = ROOT / "services" / "searxng" / "src"
     install_searxng.install(
         dest / "services" / "searxng",
+        commit=searxng_commit(dev_src),
         python=python,
         portable=True,
         src_from=dev_src if dev_src.is_dir() else None,
     )
+
+
+def searxng_commit(dev_src):
+    """Le commit du code réellement embarqué : celui de l'installation de dev quand on la recopie (elle a pu être
+    faite avec --commit), sinon celui épinglé dans install_searxng. C'est lui que cite l'offre de source (AGPL)."""
+    manifest = dev_src.parent / "service.json"
+    if dev_src.is_dir() and manifest.is_file():
+        return json.loads(manifest.read_text(encoding="utf-8"))["commit"]
+    return install_searxng.COMMIT
 
 
 def build_launcher(dest):

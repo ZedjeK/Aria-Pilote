@@ -103,6 +103,35 @@ def freeze_version(src_dir, commit):
     )
 
 
+SOURCE_NOTICE = "CODE-SOURCE.txt"
+
+SOURCE_NOTICE_TEXT = """SearXNG, moteur de recherche embarqué dans Aria Pilote
+====================================================
+
+SearXNG est un logiciel libre sous licence GNU Affero General Public License v3.0 (AGPL-3.0),
+distinct d'Aria Pilote (licence MIT). Le texte complet de sa licence est dans src\\LICENSE.
+
+Version embarquée : commit {commit} de {repo}
+Code source exact de cette version :
+  https://github.com/{repo}/tree/{commit}
+  https://codeload.github.com/{repo}/zip/{commit} (archive zip)
+
+Le code de SearXNG est livré en entier dans src\\, sous forme de code source Python. Aria Pilote y apporte deux
+modifications, faites par tools/install_searxng.py (https://github.com/ZedjeK/Aria-Pilote) :
+- searx/valkeydb.py : l'import Unix « pwd » rendu facultatif, pour tourner sous Windows ;
+- searx/version_frozen.py : ajouté, il fixe le numéro de version (le dossier n'est pas un dépôt git).
+Les bibliothèques Python dont SearXNG dépend (site-packages\\) gardent chacune leur licence, indiquée dans leur
+dossier *.dist-info.
+"""
+
+
+def write_source_notice(service_dir, src_dir, commit):
+    """L'offre de source de l'AGPL : version exacte, lien vers son code, retouches, et licence présente dans le paquet."""
+    if not (src_dir / "LICENSE").is_file():
+        sys.exit(f"Licence de SearXNG introuvable dans {src_dir} : elle doit être livrée avec son code (AGPL-3.0).")
+    (service_dir / SOURCE_NOTICE).write_text(SOURCE_NOTICE_TEXT.format(repo=REPO, commit=commit), encoding="utf-8")
+
+
 def install_dependencies(service_dir, src_dir, python, portable):
     print("[3/5] Dépendances Python…")
     env = {**os.environ, "PYTHONNOUSERSITE": "1", "PIP_DISABLE_PIP_VERSION_CHECK": "1", "PIP_NO_WARN_SCRIPT_LOCATION": "1"}
@@ -147,6 +176,7 @@ def install(service_dir, commit=COMMIT, python=sys.executable, portable=False, s
         download_source(src_dir, commit)
     patch_windows(src_dir)
     freeze_version(src_dir, commit)
+    write_source_notice(service_dir, src_dir, commit)
     install_dependencies(service_dir, src_dir, python, portable)
     write_settings(service_dir)
     manifest = {"repo": REPO, "commit": commit, "installed": date.today().isoformat(), "portable": portable}
