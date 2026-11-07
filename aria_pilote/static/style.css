@@ -1,21 +1,39 @@
 /* Palette de la famille Aria : cyan glacé (ce qui est bon, la marque), bleu roi (l'information),
    orange (les boutons d'action et ce qui demande ton attention) */
+/* Polices de la famille Aria, embarquées (licence SIL OFL 1.1, voir polices/OFL-*.txt). */
+@font-face { font-family: "Space Grotesk"; font-style: normal; font-weight: 500; font-display: swap; src: url("polices/space-grotesk-latin-500-normal.woff2") format("woff2"); unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD; }
+@font-face { font-family: "Space Grotesk"; font-style: normal; font-weight: 500; font-display: swap; src: url("polices/space-grotesk-latin-ext-500-normal.woff2") format("woff2"); unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF; }
+@font-face { font-family: "Space Grotesk"; font-style: normal; font-weight: 600; font-display: swap; src: url("polices/space-grotesk-latin-600-normal.woff2") format("woff2"); unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD; }
+@font-face { font-family: "Space Grotesk"; font-style: normal; font-weight: 600; font-display: swap; src: url("polices/space-grotesk-latin-ext-600-normal.woff2") format("woff2"); unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF; }
+@font-face { font-family: "Space Grotesk"; font-style: normal; font-weight: 700; font-display: swap; src: url("polices/space-grotesk-latin-700-normal.woff2") format("woff2"); unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD; }
+@font-face { font-family: "Space Grotesk"; font-style: normal; font-weight: 700; font-display: swap; src: url("polices/space-grotesk-latin-ext-700-normal.woff2") format("woff2"); unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF; }
+@font-face { font-family: "IBM Plex Mono"; font-style: normal; font-weight: 400; font-display: swap; src: url("polices/ibm-plex-mono-latin-400-normal.woff2") format("woff2"); unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD; }
+@font-face { font-family: "IBM Plex Mono"; font-style: normal; font-weight: 400; font-display: swap; src: url("polices/ibm-plex-mono-latin-ext-400-normal.woff2") format("woff2"); unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF; }
+@font-face { font-family: "IBM Plex Mono"; font-style: normal; font-weight: 500; font-display: swap; src: url("polices/ibm-plex-mono-latin-500-normal.woff2") format("woff2"); unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD; }
+@font-face { font-family: "IBM Plex Mono"; font-style: normal; font-weight: 500; font-display: swap; src: url("polices/ibm-plex-mono-latin-ext-500-normal.woff2") format("woff2"); unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF; }
+@font-face { font-family: "IBM Plex Mono"; font-style: normal; font-weight: 600; font-display: swap; src: url("polices/ibm-plex-mono-latin-600-normal.woff2") format("woff2"); unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD; }
+@font-face { font-family: "IBM Plex Mono"; font-style: normal; font-weight: 600; font-display: swap; src: url("polices/ibm-plex-mono-latin-ext-600-normal.woff2") format("woff2"); unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF; }
+
 :root {
-    --bg: #0a0f1e;
-    --panel: #0f1830;
-    --panel-2: #15213f;
-    --border: #22325c;
-    --deep: #060b17;
-    --text: #e8eefc;
-    --muted: #8a9bc4;
-    --accent: #5ee8ff;
-    --accent-2: #3d6bff;
-    --action: #ff8a1f;
-    --ok: #3ddc97;
-    --warn: #ffc857;
+    /* Palette de la famille Aria : mêmes valeurs qu'Aria Vault, Scope et Shield. */
+    --bg: #030812;
+    --panel: #06101f;     /* --surface de la famille */
+    --panel-2: #0b1a30;   /* --hover */
+    --border: #1a2d4d;    /* --line */
+    --deep: #040b17;      /* --surface-sunken */
+    --text: #ddebff;
+    --muted: #93a8c8;
+    --accent: #7df9ff;    /* actif, OK */
+    --accent-2: #5c8bff;  /* bleu du logo */
+    --action: #ff8a1f;    /* orange du logo : actions principales */
+    --on-action: #1a0b00;
+    --ok: var(--accent);
+    --warn: #ffd166;
     --err: #ff5c7a;
-    --mono: "Cascadia Code", "JetBrains Mono", Consolas, monospace;
-    --sans: "Segoe UI", system-ui, sans-serif;
+    --font-display: "Space Grotesk", system-ui, sans-serif;
+    --font-body: "IBM Plex Mono", ui-monospace, monospace;
+    --mono: var(--font-body);
+    --sans: var(--font-body);
 }
 
 * { box-sizing: border-box; }
@@ -47,9 +65,9 @@ button {
     cursor: pointer;
 }
 button:hover { border-color: var(--accent); }
-button.primary { background: var(--action); color: var(--bg); border: 0; font-weight: 600; }
+button.primary { background: var(--action); color: var(--on-action); border: 0; font-weight: 600; }
 button.primary:hover { box-shadow: 0 0 10px var(--action); }
-a.button.primary { background: var(--action); color: var(--bg); border: 0; font-weight: 600; }
+a.button.primary { background: var(--action); color: var(--on-action); border: 0; font-weight: 600; }
 a.button.primary:hover { box-shadow: 0 0 10px var(--action); }
 button.ghost { background: transparent; }
 /* Liens qui ont l'air de boutons (navigation : Réglages, Gérer…) */
@@ -83,7 +101,7 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--a
 .brand { font-weight: 700; font-size: 18px; }
 .brand small { margin-left: 6px; font: 11px var(--mono); color: var(--muted); }
 .brand { display: flex; align-items: center; }
-.brand-logo { width: 30px; height: 30px; margin-right: 8px; filter: drop-shadow(0 0 6px rgba(94, 232, 255, .35)); }
+.brand-logo { width: 30px; height: 30px; margin-right: 8px; filter: drop-shadow(0 0 6px rgba(125, 249, 255, .35)); }
 
 .brand span { margin-left: 4px; color: var(--accent); text-shadow: 0 0 12px var(--accent); }
 .actions { margin-left: auto; display: flex; gap: 8px; }
@@ -121,7 +139,7 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--a
 .settings-section[data-section="mes-modeles"] { max-width: 1320px; }
 .settings-section[data-section="mes-modeles"] .settings-split { grid-template-columns: minmax(230px, 300px) 1fr; }
 .set-card { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 14px 16px; display: grid; gap: 10px; }
-.set-card.focus { border-color: var(--accent); box-shadow: 0 0 12px rgba(94, 232, 255, .25); }
+.set-card.focus { border-color: var(--accent); box-shadow: 0 0 12px rgba(125, 249, 255, .25); }
 .set-card-title { font-weight: 600; }
 .set-card-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .set-card .row { display: flex; gap: 10px; flex-wrap: wrap; }
@@ -245,7 +263,7 @@ input.switch:disabled { opacity: .35; cursor: not-allowed; }
     border-radius: 8px;
     padding: 10px;
     font: 12px/1.45 var(--mono);
-    color: #b9c0dc;
+    color: var(--muted);
     white-space: pre-wrap;
     word-break: break-all;
 }
@@ -701,3 +719,8 @@ button.chip-on { border-color: var(--accent-2); color: var(--accent);
 .souvenir-chip button { padding: 2px 10px; }
 .souvenir-chip.undone { border-color: var(--border); background: transparent; }
 .souvenir-chip.undone > span:first-child { text-decoration: line-through; color: var(--muted); }
+
+/* Titres et nom de l'appli : police d'affichage de la famille Aria. */
+h1, h2, .brand {
+    font-family: var(--font-display);
+}

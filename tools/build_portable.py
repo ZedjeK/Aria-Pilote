@@ -56,7 +56,6 @@ LEGACY_EXE_NAMES = ("Aria Home.exe",)
 sys.path.insert(0, str(ROOT / "tools"))
 sys.path.insert(0, str(ROOT))
 import install_searxng  # noqa: E402
-import make_icon  # noqa: E402
 from aria_pilote import VERSION  # noqa: E402
 
 
@@ -150,16 +149,18 @@ def build_launcher(dest):
     compile_launcher(dest / EXE_NAME)
 
 
+# Icône du lanceur : le logo de la famille Aria (docs/logo.svg, boussole orange) rendu avec Chromium aux tailles
+# de Windows, versionné dans tools/launcher : la construction n'a rien à dessiner.
+ICON = ROOT / "tools" / "launcher" / "aria-pilote.ico"
+
+
 def compile_launcher(out):
     if not CSC.exists():
         sys.exit(f"Compilateur C# introuvable : {CSC}")
-    icon_dir = CACHE / "icon"
-    icon_dir.mkdir(parents=True, exist_ok=True)
-    (icon_dir / "aria.ico").write_bytes(make_icon.ico())
     subprocess.run([
         str(CSC), "/nologo", "/target:winexe", "/optimize+",
         f"/out:{out}",
-        f"/win32icon:{icon_dir / 'aria.ico'}",
+        f"/win32icon:{ICON}",
         "/reference:System.Windows.Forms.dll",
         "/reference:System.Drawing.dll",
         "/reference:System.IO.Compression.dll",
