@@ -143,6 +143,7 @@ function renderUpdate(u) {
     box.replaceChildren(line, when);
     $("#update-howto").hidden = !u.newer;
     if (u.changes_url) $("#update-changes").href = u.changes_url;
+    if (u.release_url) $("#update-release").href = u.release_url;
     renderUpdateBadge(u);
 }
 
@@ -1168,6 +1169,7 @@ $("#btn-preset-delete").addEventListener("click", async () => {
 const LOADERS = {
     general: loadGeneral,
     "modele-defaut": loadDefaultModel,
+    decouvrir: loadRecommended,
     "mes-modeles": loadModelsSection,
     persona: () => loadPersonaSection(),
     presets: () => loadPresetsSection(),

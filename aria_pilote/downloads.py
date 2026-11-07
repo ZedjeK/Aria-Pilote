@@ -4,6 +4,7 @@ import asyncio
 import hashlib
 import time
 import uuid
+from pathlib import Path
 
 import httpx
 
@@ -38,6 +39,8 @@ class Job:
         self.total_bytes = sum(f["size"] for f in files)
         self.speed = 0.0
         self.cancel_requested = False
+        self.model_id = None  # le modèle téléchargé, une fois scanné : pour le bouton « Charger maintenant »
+        self.notes = []  # ce qui a été fait pour lui (modèle par défaut, réglages de l'optimiseur)
 
     def to_dict(self):
         remaining = self.total_bytes - self.done_bytes
@@ -52,7 +55,16 @@ class Job:
             "total_bytes": self.total_bytes,
             "speed": round(self.speed),
             "eta_s": int(remaining / self.speed) if self.status == "downloading" and self.speed > 0 else None,
+            "model_id": self.model_id,
+            "notes": self.notes,
         }
+
+    def model_path(self):
+        """Chemin local du modèle lui-même (pas du projecteur vision ni d'un brouillon), ou None."""
+        for f in self.files:
+            if hub._role(f["path"].rsplit("/", 1)[-1]) == "model":
+                return str(hub.local_path(self.repo, f["path"]))
+        return None
 
 
 class DownloadManager:
@@ -60,6 +72,8 @@ class DownloadManager:
         self.jobs = {}
         self._queue = asyncio.Queue()
         self._worker = None
+        # Appelé avec le modèle téléchargé (ModelInfo) ; renvoie des notes à afficher. Branché par main.py.
+        self.on_model = None
 
     def _ensure_worker(self):
         if self._worker is None or self._worker.done():
@@ -104,6 +118,20 @@ class DownloadManager:
                 part.unlink()
         del self.jobs[job_id]
 
+    def _adopt(self, job):
+        """Le modèle arrivé : son identifiant, puis ce que main.py fait pour un nouveau venu."""
+        path = job.model_path()
+        target = Path(path).resolve() if path else None
+        model = next((m for m in models.scan() if Path(m.path).resolve() == target), None) if target else None
+        if model is None:
+            return
+        job.model_id = model.id
+        if self.on_model:
+            try:
+                job.notes = self.on_model(model) or []
+            except Exception as exc:  # le téléchargement a réussi : un raté ici ne doit pas le faire échouer
+                job.notes = [f"Réglages automatiques impossibles : {exc}"]
+
     def list(self):
         return [job.to_dict() for job in reversed(self.jobs.values())]
 
@@ -121,6 +149,7 @@ class DownloadManager:
                 await self._run(job)
                 job.status = "done"
                 models.scan(force=True)
+                self._adopt(job)
             except Cancelled:
                 job.status = "cancelled"
             except Exception as exc:  # le worker doit survivre à n'importe quel échec

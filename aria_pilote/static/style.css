@@ -49,6 +49,8 @@ button {
 button:hover { border-color: var(--accent); }
 button.primary { background: var(--action); color: var(--bg); border: 0; font-weight: 600; }
 button.primary:hover { box-shadow: 0 0 10px var(--action); }
+a.button.primary { background: var(--action); color: var(--bg); border: 0; font-weight: 600; }
+a.button.primary:hover { box-shadow: 0 0 10px var(--action); }
 button.ghost { background: transparent; }
 /* Liens qui ont l'air de boutons (navigation : Réglages, Gérer…) */
 a.button { display: inline-block; color: var(--text); text-decoration: none; border: 1px solid var(--border);
@@ -132,8 +134,6 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--a
     text-decoration: none; font-weight: 600; white-space: nowrap; }
 .update-new { color: var(--ok); font-weight: 600; }
 .update-howto { display: grid; gap: 8px; justify-items: start; }
-.update-cmds { margin: 0; padding: 8px 12px; background: var(--deep); border: 1px solid var(--border); border-radius: 8px;
-    font: 12px/1.6 var(--mono); user-select: all; }
 .ok-text { color: var(--ok); }
 .set-row .set-wide { width: min(420px, 50%); }
 .set-row .set-num { width: 110px; }
@@ -327,6 +327,16 @@ button.danger-text { color: var(--err); }
 .fit-gpu { color: var(--ok); }
 .fit-partial { color: var(--warn); }
 .fit-too_big { color: var(--err); }
+
+/* Modèles conseillés (Découvrir) et accueil du chat vide */
+.reco-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.reco-list li { display: flex; align-items: center; justify-content: space-between; gap: 12px;
+    padding: 8px 12px; border: 1px solid var(--border); border-radius: 10px; }
+.reco-list li.best { border-color: var(--accent); background: var(--panel-2); }
+.reco-list .title { font-weight: 600; }
+.reco-list .badges { margin-top: 4px; }
+.welcome { margin: auto; max-width: 460px; text-align: center; display: grid; gap: 10px; justify-items: center; }
+.welcome h3 { margin: 0; color: var(--text); text-transform: none; letter-spacing: 0; font-size: 18px; }
 
 .dl-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
 .dl-list li { border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; font-size: 13px; }

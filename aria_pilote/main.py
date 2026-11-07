@@ -430,17 +430,43 @@ def get_hardware():
     return hardware.scan()
 
 
-@app.post("/api/optimize")
-def optimize():
-    """Les trois choix (rapide, compromis, contexte) pour chaque modèle, d'après le matériel et la VRAM libre.
-
-    Rien n'est appliqué : c'est l'aperçu de la fenêtre « Optimiser mes modèles »."""
+def _budget():
+    """Matériel, VRAM utilisable par un modèle (None : pas de NVIDIA) et modèle chargé."""
     hw = hardware.scan()
     budget = sum(g["vram_free"] for g in hw["gpus"]) if hw["gpus"] else None
     loaded = manager.model if manager.state in ("loading", "ready") else None
     if budget is not None and loaded is not None:
         # La VRAM du modèle chargé redeviendra libre quand il sera rechargé avec les nouveaux réglages
         budget += optimizer.footprint(loaded, _meta_of(loaded), manager._settings or {})
+    return hw, budget, loaded
+
+
+def _adopt_downloaded(model):
+    """Un modèle qui vient d'arriver de Découvrir : modèle par défaut s'il n'y en avait pas, et réglages
+    « compromis » de l'optimiseur s'il n'a pas les siens. Renvoie ce qui a été fait, pour l'afficher."""
+    notes = []
+    if not config.get()["default_model"]:
+        config.update({"default_model": model.id})
+        notes.append("modèle par défaut")
+    if not config.has_model_settings(model.key):
+        hw, budget, _ = _budget()
+        settings = config.model_settings(model.key)
+        result = optimizer.plan(model, _meta_of(model), settings, budget, optimizer.DEFAULT_PROFILE, hw["cpu"]["cores"])
+        if result["changed"]:
+            config.save_model_settings(model.key, {**settings, **result["proposed"]})
+            notes.append(f"réglé par l'optimiseur : contexte {result['proposed']['ctx_size'] // 1024}k")
+    return notes
+
+
+downloads.manager.on_model = _adopt_downloaded
+
+
+@app.post("/api/optimize")
+def optimize():
+    """Les trois choix (rapide, compromis, contexte) pour chaque modèle, d'après le matériel et la VRAM libre.
+
+    Rien n'est appliqué : c'est l'aperçu de la fenêtre « Optimiser mes modèles »."""
+    hw, budget, loaded = _budget()
     # VRAM prise par les autres applications (ce qui reste une fois le modèle d'Aria compté comme libéré)
     others = None
     if hw["gpus"]:
@@ -688,7 +714,7 @@ def delete_conversation(cid: str):
 @app.post("/api/chat")
 async def chat_endpoint(req: ChatRequest):
     if manager.state != "ready":
-        raise HTTPException(409, "Aucun modèle prêt : charge un modèle dans l'onglet Modèles.")
+        raise HTTPException(409, "Aucun modèle prêt : choisis-en un dans le sélecteur du haut (ou Réglages › Découvrir pour en télécharger un).")
     conv = _conversation_or_404(req.conversation_id)
     preset = presets.resolve(req.preset_id or conv.get("preset_id") or config.get().get("default_preset"))
     if req.content is not None and not req.content.strip() and not req.images and not req.files:
@@ -1498,6 +1524,17 @@ async def hub_search(q: str):
         return await hub.search(q)
     except (hub.HubError, httpx.HTTPError) as exc:
         raise HTTPException(502, f"Recherche impossible : {exc}")
+
+
+@app.get("/api/hub/recommended")
+def hub_recommended():
+    data = hub.recommended()
+    # Déjà en file : le bouton reste grisé, même après un rechargement de la page
+    queued = {(j.repo, f["path"]) for j in downloads.manager.jobs.values()
+              if j.status in ("queued", "downloading", "verifying") for f in j.files}
+    for m in data["models"]:
+        m["queued"] = (m["repo"], m["file"]) in queued
+    return data
 
 
 @app.get("/api/hub/files")

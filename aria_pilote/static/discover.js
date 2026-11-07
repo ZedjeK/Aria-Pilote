@@ -30,6 +30,81 @@ function formatDuration(s) {
     return `${Math.floor(s / 3600)} h ${Math.floor((s % 3600) / 60)} min`;
 }
 
+// --- Modèles conseillés -----------------------------------------------------
+
+async function loadRecommended() {
+    const list = $("#reco-list");
+    try {
+        renderRecommended(await api("/api/hub/recommended"));
+    } catch (err) {
+        list.replaceChildren(el("li", { className: "error small" }, err.message));
+    }
+}
+
+function renderRecommended(data) {
+    const list = $("#reco-list");
+    const loadedId = ["loading", "ready"].includes(state.status?.state) ? state.status.model?.id : null;
+    list.replaceChildren(...data.models.map((m, i) => {
+        const badges = el("div", { className: "badges" },
+            el("span", { className: "badge" }, formatSize(m.size)),
+            el("span", { className: "badge" }, m.vram_gb ? `${m.vram_gb} Go de VRAM` : "sans carte graphique"));
+        if (m.fit !== "unknown") badges.append(el("span", { className: `badge fit-${m.fit}` }, FIT_LABELS[m.fit]));
+
+        const action = el("div", { className: "reco-action" });
+        if (m.model_id && m.model_id === loadedId) {
+            action.append(el("span", { className: "badge loaded" }, "chargé"));
+        } else if (m.downloaded) {
+            const button = el("button", { className: "primary" }, "▶ Charger");
+            button.addEventListener("click", () => loadNow(m.model_id, button));
+            action.append(button);
+        } else {
+            const button = el("button", { className: i === data.best ? "primary" : "ghost", disabled: m.queued },
+                m.queued ? "En file ✓" : "Télécharger");
+            button.addEventListener("click", () => downloadRecommended(m, button));
+            action.append(button);
+        }
+        return el("li", { className: i === data.best ? "best" : "" },
+            el("div", {},
+                el("div", { className: "title" }, `${i === data.best ? "⭐ " : ""}${m.name}`),
+                el("div", { className: "muted small" }, m.note),
+                badges),
+            action);
+    }));
+    if (!data.memory?.vram) {
+        $("#reco-intro").textContent = "Pas de carte NVIDIA détectée : le plus léger est conseillé, il tournera sur le processeur.";
+    }
+}
+
+async function downloadRecommended(model, button) {
+    button.disabled = true;
+    try {
+        await api("/api/downloads", {
+            method: "POST",
+            body: JSON.stringify({ repo: model.repo, paths: [model.file], label: `${model.name} · ${model.file}` }),
+        });
+        button.textContent = "En file ✓";
+        refreshDownloads();
+    } catch (err) {
+        button.disabled = false;
+        $("#hub-error").textContent = err.message;
+        $("#hub-error").hidden = false;
+    }
+}
+
+async function loadNow(modelId, button) {
+    // Le chargement continue en arrière-plan : on retourne au chat, où la barre du haut le suit
+    button.disabled = true;
+    try {
+        state.status = await api("/api/load", { method: "POST", body: JSON.stringify({ model_id: modelId }) });
+        renderStatus();
+        location.hash = "#/";
+    } catch (err) {
+        button.disabled = false;
+        $("#hub-error").textContent = err.message;
+        $("#hub-error").hidden = false;
+    }
+}
+
 // --- Recherche --------------------------------------------------------------
 
 $("#hub-form").addEventListener("submit", async (event) => {
@@ -203,12 +278,19 @@ async function refreshDownloads() {
             const label = job.status === "done" ? "Retirer" : "Abandonner";
             head.append(jobButton(label, () => api(`/api/downloads/${job.id}`, { method: "DELETE" })));
         }
+        const loadedId = ["loading", "ready"].includes(state.status?.state) ? state.status.model?.id : null;
+        if (job.status === "done" && job.model_id && job.model_id !== loadedId) {
+            const button = el("button", { className: "primary" }, "▶ Charger maintenant");
+            button.addEventListener("click", () => loadNow(job.model_id, button));
+            head.append(button);
+        }
 
         const pct = job.total_bytes ? (100 * job.done_bytes) / job.total_bytes : 0;
         const info = [STATUS_LABELS[job.status], `${formatSize(job.done_bytes)} / ${formatSize(job.total_bytes)}`, `${pct.toFixed(1)} %`];
         if (job.status === "downloading" && job.speed) info.push(`${(job.speed / 1024 ** 2).toFixed(1)} Mo/s`);
         if (job.eta_s != null) info.push(`reste ${formatDuration(job.eta_s)}`);
         if (job.current && job.status !== "done") info.push(job.current);
+        if (job.status === "done") info.push(...(job.notes || []));
 
         const item = el(
             "li",
@@ -221,9 +303,16 @@ async function refreshDownloads() {
         list.append(item);
     }
     if (finished) {
-        // Le backend a déjà rescanné : on rafraîchit l'onglet Modèles et les badges « déjà là »
+        // Le modèle arrivé a pu devenir le modèle par défaut (⭐ du sélecteur) : la config a changé côté serveur
+        try {
+            state.config = await api("/api/config");
+        } catch {
+            // la config d'avant reste affichée
+        }
+        // Le backend a déjà rescanné : on rafraîchit Mes modèles, les conseillés et les badges « déjà là »
         loadModels();
         if (hubState.repo) openRepo(hubState.repo);
+        loadRecommended();
     }
 }
 

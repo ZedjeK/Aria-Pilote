@@ -1364,12 +1364,69 @@ function taskFooterNode(taskId, undone) {
     return el("div", { className: "task-actions" }, button);
 }
 
+// Ce qu'il manque pour discuter : rien, un modèle à charger, ou un modèle à télécharger
+function modelReadiness() {
+    const s = state.status?.state;
+    if (s === "ready") return "ready";
+    if (s === "loading") return "loading";
+    const usable = (state.models || []).filter((m) => !m.error && !/mmproj/i.test(m.file));
+    return usable.length ? "idle" : "none";
+}
+
+function emptyChat() {
+    const readiness = modelReadiness();
+    if (readiness === "ready") return el("p", { className: "hint muted" }, "Pose ta première question 💬");
+    if (readiness === "loading") return el("p", { className: "hint muted" }, "Le modèle se charge… ⏳");
+    const go = el("button", { type: "button", className: "primary" });
+    if (readiness === "none") {
+        go.textContent = "🔎 Choisir un modèle";
+        go.addEventListener("click", () => { location.hash = "#/reglages/decouvrir"; });
+        return el("div", { className: "welcome" },
+            el("h3", {}, "Bienvenue dans Aria Pilote 👋"),
+            el("p", { className: "muted" }, "Pour discuter, il faut d'abord un modèle : un fichier de quelques Go que " +
+                "l'IA utilise pour réfléchir, et qui tourne entièrement sur ton PC. Découvrir t'en conseille un selon ta carte graphique."),
+            go);
+    }
+    const id = state.config?.default_model;
+    const preferred = state.models.find((m) => m.id === id && !m.error);
+    go.textContent = preferred ? `▶ Charger ${preferred.name}` : "Choisir un modèle";
+    go.addEventListener("click", async () => {
+        if (!preferred) {
+            $("#model-pick").focus();
+            $("#model-pick").showPicker?.();
+            return;
+        }
+        go.disabled = true;
+        try {
+            state.status = await api("/api/load", { method: "POST", body: JSON.stringify({ model_id: preferred.id }) });
+            renderStatus();
+        } catch (err) {
+            go.disabled = false;
+            showChatError(err.message);
+        }
+    });
+    return el("div", { className: "welcome" },
+        el("h3", {}, "Aucun modèle chargé"),
+        el("p", { className: "muted" }, preferred ? "Charge ton modèle par défaut pour commencer, ou choisis-en un autre dans le sélecteur du haut."
+            : "Choisis un modèle dans le sélecteur du haut pour commencer."),
+        go);
+}
+
+// Le chat vide suit l'état du modèle (téléchargé, chargé…) sans attendre un changement de conversation
+let lastReadiness = null;
+function refreshEmptyChat() {
+    const readiness = modelReadiness();
+    if (readiness === lastReadiness) return;
+    lastReadiness = readiness;
+    if (!(chat.current?.messages || []).length && !chat.controller) $("#messages").replaceChildren(emptyChat());
+}
+
 function renderMessages() {
     const box = $("#messages");
     const messages = chat.current?.messages || [];
     renderPlanCard({ reset: true });
     if (!messages.length) {
-        box.replaceChildren(el("p", { className: "hint muted" }, "Pose ta première question 💬"));
+        box.replaceChildren(emptyChat());
         return;
     }
     const nodes = [];
@@ -1443,6 +1500,23 @@ function showChatError(message, continuable = false) {
     box.hidden = false;
 }
 
+// Pas de modèle prêt : l'erreur dit quoi faire, avec le bouton qui y mène
+function showModelMissing() {
+    const readiness = modelReadiness();
+    if (readiness === "loading") {
+        showChatError("Le modèle se charge encore : renvoie ton message dès qu'il est prêt.");
+        return;
+    }
+    if (readiness === "none") {
+        showChatError("Aucun modèle installé : il en faut un pour discuter.");
+        const button = el("button", { type: "button", className: "primary continue" }, "🔎 Choisir un modèle");
+        button.addEventListener("click", () => { location.hash = "#/reglages/decouvrir"; });
+        $("#chat-error").append(" ", button);
+        return;
+    }
+    showChatError("Aucun modèle chargé : choisis-en un dans le sélecteur du haut.");
+}
+
 // --- Envoi et streaming -----------------------------------------------------
 
 function setBusy(busy) {
@@ -1483,7 +1557,7 @@ async function send(content, answer, continueTask = false, pictures = [], planFi
     if (chat.controller) return;
     $("#chat-error").hidden = true;
     if (state.status?.state !== "ready") {
-        showChatError("Aucun modèle prêt : choisis un modèle dans le sélecteur du haut.");
+        showModelMissing();
         return false;
     }
     if (!chat.current) {
@@ -1879,7 +1953,8 @@ setInterval(() => {
         : "Joindre une image, un fichier texte, du code ou un PDF (ou colle-le, ou glisse-le ici)";
     $("#chat-model").textContent = s?.state === "ready"
         ? `Modèle : ${s.model.name}`
-        : s?.state === "loading" ? "Chargement du modèle…" : "Aucun modèle chargé (sélecteur en haut)";
+        : s?.state === "loading" ? "Chargement du modèle…"
+            : modelReadiness() === "none" ? "Aucun modèle installé (Réglages › Découvrir)" : "Aucun modèle chargé (sélecteur en haut)";
     $("#chat-model").title = $("#chat-model").textContent;  // nom complet au survol quand il est tronqué
 }, 1000);
 

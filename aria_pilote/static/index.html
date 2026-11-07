@@ -250,11 +250,12 @@
                     </div>
                     <div id="update-info"></div>
                     <div id="update-howto" class="update-howto" hidden>
-                        <p class="muted small">Rien ne s'installe tout seul : depuis le dossier du code source, récupère la nouvelle
-                            version puis construis-la. Elle reprendra tes modèles, tes conversations et ta config.</p>
-                        <pre class="update-cmds">git pull
-py -3.11 tools/build_portable.py</pre>
-                        <a id="update-changes" class="button ghost" target="_blank" rel="noopener">Voir les changements ↗</a>
+                        <p class="muted small">Rien ne s'installe tout seul : télécharge l'exe de la nouvelle version, puis lance-le.
+                            Il met Aria Pilote à jour en gardant tes modèles, tes conversations et ta config.</p>
+                        <div class="row">
+                            <a id="update-release" class="button primary" target="_blank" rel="noopener">⬇ Page de la nouvelle version ↗</a>
+                            <a id="update-changes" class="button ghost" target="_blank" rel="noopener">Voir les changements ↗</a>
+                        </div>
                     </div>
                     <label class="set-row">
                         <div><div class="set-label">Rechercher au démarrage</div><div class="muted small">Une requête anonyme à GitHub (la liste des versions publiées), au plus une fois par jour. Rien d'autre n'est envoyé.</div></div>
@@ -498,6 +499,13 @@ py -3.11 tools/build_portable.py</pre>
             </section>
 
             <section class="settings-section" data-section="decouvrir" data-title="Découvrir" hidden>
+                <div class="set-card" id="reco-card">
+                    <div>
+                        <div class="set-card-title">Modèles conseillés</div>
+                        <div id="reco-intro" class="muted small">Un par taille de carte graphique. ⭐ : celui qui convient à ta machine.</div>
+                    </div>
+                    <ul id="reco-list" class="reco-list"></ul>
+                </div>
                 <div class="layout settings-split">
                 <section class="panel">
                     <form id="hub-form" class="hub-search">
