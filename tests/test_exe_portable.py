@@ -48,9 +48,15 @@ class ExePortable(unittest.TestCase):
         payload = build_portable.make_payload(staging, self.dir / f"payload-{version}.zip", version)
         return build_portable.write_exe(self.launcher, payload, self.dir / f"Aria-Pilote-{version}.exe")
 
-    def run_exe(self, exe):
-        return subprocess.run([str(exe), "--home", str(self.home), "--install-only"],
+    def run_exe(self, exe, *extra):
+        return subprocess.run([str(exe), "--home", str(self.home), "--install-only", *extra],
                               capture_output=True, text=True, encoding="utf-8", timeout=60)
+
+    def shortcut_target(self, lnk):
+        """Cible d'un raccourci, lue par le même objet COM que celui qui l'a écrit."""
+        command = f"(New-Object -ComObject WScript.Shell).CreateShortcut('{lnk}').TargetPath"
+        return subprocess.run(["powershell", "-NoProfile", "-Command", command], capture_output=True, text=True,
+                              timeout=60).stdout.strip()
 
     def write(self, name, text):
         path = self.home / name
@@ -81,6 +87,39 @@ class ExePortable(unittest.TestCase):
         self.assertRegex(settings, r'secret_key: "[0-9a-f]{64}"')
         self.assertNotIn("{secret}", settings)
         self.assertFalse((self.home / ".maj").exists() or (self.home / ".ancien").exists())
+        # Le petit lanceur, sans l'archive ; pas de raccourci pour une installation ailleurs (--home)
+        self.assertEqual((self.home / "Aria-Pilote.exe").read_bytes(), self.launcher.read_bytes())
+        self.assertLess((self.home / "Aria-Pilote.exe").stat().st_size, 1024 ** 2)
+        self.assertFalse((self.home / ".raccourcis").exists())
+
+    def test_raccourcis_une_seule_fois(self):
+        desktop, menu = self.dir / "Bureau", self.dir / "Menu"
+        dirs = ("--desktop", str(desktop), "--start-menu", str(menu))
+        r = self.run_exe(self.exe("0.24.0"), *dirs)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertEqual(r.stderr, "")
+        launcher = self.home / "Aria-Pilote.exe"
+        for folder in (desktop, menu):
+            self.assertEqual(Path(self.shortcut_target(folder / "Aria Pilote.lnk")), launcher)
+        # Raccourci du bureau supprimé par l'utilisateur : la mise à jour ne le recrée pas
+        (desktop / "Aria Pilote.lnk").unlink()
+        r = self.run_exe(self.exe("0.25.0"), *dirs)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertEqual(self.read(".version"), "0.25.0")
+        self.assertFalse((desktop / "Aria Pilote.lnk").exists())
+        self.assertTrue((menu / "Aria Pilote.lnk").exists())
+
+    def test_petit_lanceur_remis_en_place(self):
+        self.run_exe(self.exe("0.24.0"))
+        launcher = self.home / "Aria-Pilote.exe"
+        launcher.write_bytes(b"ancien lanceur")
+        r = self.run_exe(self.exe("0.25.0"))  # mise à jour : remplacé
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertEqual(launcher.read_bytes(), self.launcher.read_bytes())
+        launcher.unlink()
+        r = self.run_exe(self.exe("0.25.0"))  # même version, rien à installer : remis quand même
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertEqual(launcher.read_bytes(), self.launcher.read_bytes())
 
     def test_mise_a_jour_garde_tes_affaires(self):
         self.installed_0_23()

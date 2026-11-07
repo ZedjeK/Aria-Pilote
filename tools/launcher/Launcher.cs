@@ -6,12 +6,18 @@
 // de 16 octets (position de l'archive sur 8 octets, puis « ARIAPAK1 »). Au lancement, elle est installée ou mise à
 // jour dans %USERPROFILE%\.Aria-Pilote (--home DOSSIER pour un autre), sans jamais toucher à tes affaires (models,
 // data, config.json…) ni aux moteurs déjà installés. Sans archive, l'appli rangée à côté de l'exe est lancée.
+//
+// L'installation recopie aussi la seule partie lanceur (quelques dizaines de Ko, sans l'archive) dans
+// .Aria-Pilote\Aria-Pilote.exe, et la première crée un raccourci « Aria Pilote » sur le bureau et dans le menu Démarrer.
+// Le raccourci reste valable d'une version à l'autre, et l'exe téléchargé peut être supprimé après l'installation.
 
 using System;
 using System.Diagnostics;
 using System.IO;
 using System.IO.Compression;
 using System.Net;
+using System.Reflection;
+using System.Runtime.InteropServices;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.RegularExpressions;
@@ -25,6 +31,11 @@ static class Launcher
     const int StopTimeoutSeconds = 30;
     const string Magic = "ARIAPAK1";
     const string VersionFile = ".version";
+    const string LauncherName = "Aria-Pilote.exe";
+    const string ShortcutName = "Aria Pilote.lnk";
+    // Présent une fois les raccourcis créés : un raccourci que tu as supprimé n'est pas recréé à la mise à jour
+    const string ShortcutsDone = ".raccourcis";
+    const int NoteSeconds = 5;  // la fenêtre de démarrage reste au moins ce temps quand elle a quelque chose à dire
     // Le code de l'appli, remplacé à chaque mise à jour ; tout le reste du dossier t'appartient
     static readonly string[] CodeItems = { "python", "aria_pilote", "tools", "services", "requirements.txt" };
     // Gardés d'une version à l'autre, même à l'intérieur du code
@@ -38,6 +49,7 @@ static class Launcher
         string root = AppDomain.CurrentDomain.BaseDirectory;
         // --install-only : installe ou met à jour, sans fenêtre ni lancement (tests de build_portable)
         bool installOnly = Array.IndexOf(args, "--install-only") >= 0;
+        string note = null;
         try
         {
             using (var payload = Payload.Open(exe))
@@ -48,7 +60,16 @@ static class Launcher
                     using (var mutex = new Mutex(false, "AriaPiloteLanceur"))
                     {
                         mutex.WaitOne();
-                        try { Install(payload, root, !installOnly); }
+                        try
+                        {
+                            Version before = InstalledVersion(root);
+                            Install(payload, root, !installOnly);
+                            // Ni le petit lanceur ni les raccourcis ne doivent faire échouer une installation réussie
+                            string launcher = Quietly(() => PlaceLauncher(exe, payload.Start, root), installOnly);
+                            bool shortcuts = launcher != null
+                                && Quietly(() => CreateShortcuts(root, launcher, args), installOnly) == "créés";
+                            note = Note(before, payload.Version, shortcuts);
+                        }
                         finally { mutex.ReleaseMutex(); }
                     }
                 }
@@ -64,7 +85,39 @@ static class Launcher
             else Fail("Installation impossible :\n" + e.Message);
             return 1;
         }
-        return installOnly ? 0 : Start(root);
+        return installOnly ? 0 : Start(root, note);
+    }
+
+    static string Arg(string[] args, string name)
+    {
+        for (int i = 0; i + 1 < args.Length; i++)
+            if (args[i] == name) return args[i + 1];
+        return null;
+    }
+
+    // Une étape facultative : son échec est signalé (sur la sortie d'erreur avec --install-only), pas fatal
+    static string Quietly(Func<string> step, bool installOnly)
+    {
+        try { return step(); }
+        catch (Exception e)
+        {
+            if (installOnly)
+            {
+                using (var err = new StreamWriter(Console.OpenStandardError(), new UTF8Encoding(false)))
+                    err.WriteLine("avertissement : " + e.Message);
+            }
+            return null;
+        }
+    }
+
+    static string Note(Version before, Version installed, bool shortcuts)
+    {
+        if (before != null && before >= installed) return null;
+        string what = before == null
+            ? "Aria Pilote " + installed + " est installée."
+              + (shortcuts ? "\nRaccourcis « Aria Pilote » créés sur le bureau et dans le menu Démarrer." : "")
+            : "Aria Pilote est passée en version " + installed + ".";
+        return what + "\nTu peux supprimer l'exe téléchargé : il ne sert plus.";
     }
 
     static string HomeDir(string[] args)
@@ -74,7 +127,7 @@ static class Launcher
         return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".Aria-Pilote");
     }
 
-    static int Start(string root)
+    static int Start(string root, string note)
     {
         string url = Url(root);
         if (!IsAlive(url))
@@ -92,20 +145,105 @@ static class Launcher
             psi.EnvironmentVariables["PYTHONNOUSERSITE"] = "1";
             Process.Start(psi);
 
-            DateTime deadline = DateTime.Now.AddSeconds(StartTimeoutSeconds);
-            while (!IsAlive(url))
+            // Le démarrage prend de quelques secondes à une minute et demie : une fenêtre le dit, plutôt que rien
+            bool alive = false;
+            var form = new ProgressForm("Aria Pilote", note);
+            form.Shown += (s, e) =>
             {
-                if (DateTime.Now > deadline)
+                form.Report("Démarrage d'Aria Pilote…", -1);
+                new Thread(() =>
                 {
-                    Fail("Aria Pilote ne répond pas.\nRegarde le journal : " + Path.Combine(root, "data", "aria_pilote.log"));
-                    return 1;
-                }
-                Thread.Sleep(500);
+                    DateTime shown = DateTime.Now;
+                    DateTime deadline = shown.AddSeconds(StartTimeoutSeconds);
+                    while (!(alive = IsAlive(url)) && DateTime.Now < deadline) Thread.Sleep(500);
+                    if (note != null)
+                    {
+                        int left = NoteSeconds * 1000 - (int)(DateTime.Now - shown).TotalMilliseconds;
+                        if (alive && left > 0) Thread.Sleep(left);  // le temps de lire la note
+                    }
+                    form.BeginInvoke(new Action(form.Close));
+                }) { IsBackground = true }.Start();
+            };
+            Application.Run(form);
+            if (!alive)
+            {
+                Fail("Aria Pilote ne répond pas.\nRegarde le journal : " + Path.Combine(root, "data", "aria_pilote.log"));
+                return 1;
             }
         }
 
         Process.Start(new ProcessStartInfo(url) { UseShellExecute = true });
         return 0;
+    }
+
+    // --- Petit lanceur et raccourcis ---------------------------------------------------
+
+    // La partie lanceur de l'exe (tout ce qui précède l'archive) dans le dossier d'installation. Renvoie son chemin.
+    static string PlaceLauncher(string exe, long launcherLength, string home)
+    {
+        string target = Path.Combine(home, LauncherName);
+        var bytes = new byte[launcherLength];
+        using (var source = new FileStream(exe, FileMode.Open, FileAccess.Read, FileShare.Read))
+            Payload.ReadExactly(source, bytes);
+        if (File.Exists(target) && SameBytes(File.ReadAllBytes(target), bytes)) return target;
+        string fresh = target + ".neuf";
+        File.WriteAllBytes(fresh, bytes);
+        if (File.Exists(target)) File.Delete(target);
+        File.Move(fresh, target);
+        return target;
+    }
+
+    static bool SameBytes(byte[] a, byte[] b)
+    {
+        if (a.Length != b.Length) return false;
+        for (int i = 0; i < a.Length; i++)
+            if (a[i] != b[i]) return false;
+        return true;
+    }
+
+    // Une seule fois : sur le bureau et dans le menu Démarrer. Pas pour une installation ailleurs (--home), sauf
+    // dossiers donnés pour les tests (--desktop et --start-menu). Renvoie « créés », « déjà faits » ou « aucun ».
+    static string CreateShortcuts(string home, string launcher, string[] args)
+    {
+        string desktop = Arg(args, "--desktop"), startMenu = Arg(args, "--start-menu");
+        bool forTests = desktop != null && startMenu != null;
+        if (Arg(args, "--home") != null && !forTests) return "aucun";
+        string done = Path.Combine(home, ShortcutsDone);
+        if (File.Exists(done)) return "déjà faits";
+        if (!forTests)
+        {
+            desktop = Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory);
+            startMenu = Environment.GetFolderPath(Environment.SpecialFolder.Programs);
+        }
+        foreach (string folder in new[] { desktop, startMenu })
+        {
+            Directory.CreateDirectory(folder);
+            WriteShortcut(Path.Combine(folder, ShortcutName), launcher, home);
+        }
+        File.WriteAllText(done, desktop + "\n" + startMenu + "\n");
+        return "créés";
+    }
+
+    // Un .lnk par l'objet COM de Windows (WScript.Shell), sans dépendance à compiler
+    static void WriteShortcut(string path, string target, string workingDir)
+    {
+        Type type = Type.GetTypeFromProgID("WScript.Shell");
+        object shell = Activator.CreateInstance(type);
+        try
+        {
+            object link = type.InvokeMember("CreateShortcut", BindingFlags.InvokeMethod, null, shell, new object[] { path });
+            try
+            {
+                Type lt = link.GetType();
+                lt.InvokeMember("TargetPath", BindingFlags.SetProperty, null, link, new object[] { target });
+                lt.InvokeMember("WorkingDirectory", BindingFlags.SetProperty, null, link, new object[] { workingDir });
+                lt.InvokeMember("IconLocation", BindingFlags.SetProperty, null, link, new object[] { target + ",0" });
+                lt.InvokeMember("Description", BindingFlags.SetProperty, null, link, new object[] { "Lancer Aria Pilote" });
+                lt.InvokeMember("Save", BindingFlags.InvokeMethod, null, link, null);
+            }
+            finally { Marshal.FinalReleaseComObject(link); }
+        }
+        finally { Marshal.FinalReleaseComObject(shell); }
     }
 
     // --- Installation et mise à jour ---------------------------------------------------
@@ -322,10 +460,12 @@ sealed class Payload : IDisposable
     readonly FileStream file;
     readonly ZipArchive zip;
     public readonly Version Version;
+    public readonly long Start;  // où commence l'archive : c'est aussi la taille du lanceur
 
     Payload(FileStream file, long start, long length)
     {
         this.file = file;
+        Start = start;
         zip = new ZipArchive(new Window(file, start, length), ZipArchiveMode.Read);
         ZipArchiveEntry entry = zip.GetEntry("VERSION");
         if (entry == null) throw new InvalidDataException("archive embarquée sans numéro de version.");
@@ -397,6 +537,8 @@ sealed class Payload : IDisposable
         return e.FullName != "VERSION" && (engines || !e.FullName.StartsWith("engines/"));
     }
 
+    public static void ReadExactly(Stream s, byte[] buffer) { ReadFully(s, buffer); }
+
     static void ReadFully(Stream s, byte[] buffer)
     {
         int read = 0;
@@ -465,7 +607,7 @@ sealed class ProgressForm : Form
     readonly Label label;
     readonly ProgressBar bar;
 
-    public ProgressForm(string title)
+    public ProgressForm(string title, string note = null)
     {
         Text = title;
         FormBorderStyle = FormBorderStyle.FixedDialog;
@@ -478,6 +620,13 @@ sealed class ProgressForm : Form
         bar = new ProgressBar { Left = 16, Top = 44, Width = 388, Height = 22, Maximum = 100 };
         Controls.Add(label);
         Controls.Add(bar);
+        if (note != null)
+        {
+            // Ce qui vient d'être fait (installation, raccourcis) : sous la barre, sur deux ou trois lignes
+            var info = new Label { Left = 16, Top = 76, Width = 388, Height = 54, Text = note };
+            Controls.Add(info);
+            ClientSize = new System.Drawing.Size(420, 140);
+        }
     }
 
     // percent < 0 : barre animée, sans pourcentage
