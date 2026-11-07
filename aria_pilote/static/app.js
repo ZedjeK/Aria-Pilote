@@ -505,7 +505,7 @@ $("#btn-quit").addEventListener("click", async () => {
         el("div", { className: "goodbye" }, el("div", {},
             el("h1", {}, "À bientôt 👋"),
             el("p", {}, "Aria Pilote est arrêtée. Tu peux fermer cet onglet."),
-            el("p", { className: "small" }, "Pour la relancer : lance à nouveau l'exe d'Aria Pilote que tu as téléchargé."),
+            el("p", { className: "small" }, "Pour la relancer : le raccourci « Aria Pilote », sur le bureau ou dans le menu Démarrer."),
         ))
     );
 });
