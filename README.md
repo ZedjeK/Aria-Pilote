@@ -41,11 +41,11 @@
 
 ## Installer
 
-Télécharge `Aria-Pilote-X.Y.Z.exe` dans la [dernière release](https://github.com/ZedjeK/Aria-Pilote/releases/latest) (environ 1,5 Go, moteurs compris), range-le où tu veux et double-clique dessus. Au premier lancement, il installe l'appli dans `%USERPROFILE%\.Aria-Pilote` (une petite fenêtre suit la copie, moins d'une minute), puis ouvre l'interface dans ton navigateur ; les fois suivantes, il la lance directement.
+Télécharge `Aria-Pilote-X.Y.Z.exe` dans la [dernière release](https://github.com/ZedjeK/Aria-Pilote/releases/latest) (environ 1,5 Go, moteurs compris) et double-clique dessus. Il installe l'appli dans `%USERPROFILE%\.Aria-Pilote` (une petite fenêtre suit la copie, moins d'une minute), crée un raccourci « Aria Pilote » sur le bureau et dans le menu Démarrer, puis ouvre l'interface dans ton navigateur. Ensuite, lance Aria depuis ce raccourci : l'exe téléchargé ne sert plus, tu peux le supprimer.
 
 L'exe n'est pas signé : si Windows SmartScreen affiche « Windows a protégé votre ordinateur », clique sur « Informations complémentaires » puis « Exécuter quand même ».
 
-**Mettre à jour** : lance l'exe de la nouvelle version. Il arrête Aria si elle tourne, remplace son code, puis la relance. Tes modèles, tes conversations, ta config, tes compétences, tes serveurs MCP et les moteurs déjà installés ne sont jamais touchés ; si un fichier est encore utilisé, l'ancienne version reste en place et l'exe te le dit. Un exe plus ancien ne remplace jamais une version plus récente.
+**Mettre à jour** : lance l'exe de la nouvelle version, puis supprime-le. Il arrête Aria si elle tourne, remplace son code, puis la relance ; ton raccourci reste le même. Tes modèles, tes conversations, ta config, tes compétences, tes serveurs MCP et les moteurs déjà installés ne sont jamais touchés ; si un fichier est encore utilisé, l'ancienne version reste en place et l'exe te le dit. Un exe plus ancien ne remplace jamais une version plus récente.
 
 ## Compiler soi-même
 
