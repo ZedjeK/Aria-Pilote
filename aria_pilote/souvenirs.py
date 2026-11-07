@@ -333,8 +333,10 @@ def for_prompt(query, persona=None, register="naturel", folder=False):
     pool = [s for s in all_souvenirs() if not (folder and s.get("intime"))]
     ranked = search(query, persona, register, limit=len(pool), items=pool)
     found = {s["id"] for s in ranked}
-    ranked += sorted((s for s in pool if s["id"] not in found and visible(s, persona, register)),
-                     key=lambda s: s.get("modifie", 0), reverse=True)
+    # À date égale (horloge grossière, ajouts dans la même milliseconde), le dernier ajouté passe devant
+    others = [(s.get("modifie", 0), i, s) for i, s in enumerate(pool)
+              if s["id"] not in found and visible(s, persona, register)]
+    ranked += [s for _, _, s in sorted(others, key=lambda t: (t[0], t[1]), reverse=True)]
     chosen, size = [], 0
     for s in ranked:
         cost = len(line(s))

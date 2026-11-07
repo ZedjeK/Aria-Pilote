@@ -100,7 +100,8 @@ class ExePortable(unittest.TestCase):
         self.assertEqual(r.stderr, "")
         launcher = self.home / "Aria-Pilote.exe"
         for folder in (desktop, menu):
-            self.assertEqual(Path(self.shortcut_target(folder / "Aria Pilote.lnk")), launcher)
+            # resolve() : le dossier temporaire peut être donné en nom court (RUNNER~1), le raccourci en nom long
+            self.assertEqual(Path(self.shortcut_target(folder / "Aria Pilote.lnk")).resolve(), launcher.resolve())
         # Raccourci du bureau supprimé par l'utilisateur : la mise à jour ne le recrée pas
         (desktop / "Aria Pilote.lnk").unlink()
         r = self.run_exe(self.exe("0.25.0"), *dirs)
