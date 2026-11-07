@@ -148,23 +148,18 @@ static class Launcher
             // Le démarrage prend de quelques secondes à une minute et demie : une fenêtre le dit, plutôt que rien
             bool alive = false;
             var form = new ProgressForm("Aria Pilote", note);
-            form.Shown += (s, e) =>
+            form.Shown += (s, e) => form.Report("Démarrage d'Aria Pilote…", -1);
+            WithWindow(form, () =>
             {
-                form.Report("Démarrage d'Aria Pilote…", -1);
-                new Thread(() =>
+                DateTime shown = DateTime.Now;
+                DateTime deadline = shown.AddSeconds(StartTimeoutSeconds);
+                while (!(alive = IsAlive(url)) && DateTime.Now < deadline) Thread.Sleep(500);
+                if (note != null && !form.HiddenByUser)
                 {
-                    DateTime shown = DateTime.Now;
-                    DateTime deadline = shown.AddSeconds(StartTimeoutSeconds);
-                    while (!(alive = IsAlive(url)) && DateTime.Now < deadline) Thread.Sleep(500);
-                    if (note != null)
-                    {
-                        int left = NoteSeconds * 1000 - (int)(DateTime.Now - shown).TotalMilliseconds;
-                        if (alive && left > 0) Thread.Sleep(left);  // le temps de lire la note
-                    }
-                    form.BeginInvoke(new Action(form.Close));
-                }) { IsBackground = true }.Start();
-            };
-            Application.Run(form);
+                    int left = NoteSeconds * 1000 - (int)(DateTime.Now - shown).TotalMilliseconds;
+                    if (alive && left > 0) Thread.Sleep(left);  // le temps de lire la note
+                }
+            });
             if (!alive)
             {
                 Fail("Aria Pilote ne répond pas.\nRegarde le journal : " + Path.Combine(root, "data", "aria_pilote.log"));
@@ -174,6 +169,26 @@ static class Launcher
 
         Process.Start(new ProcessStartInfo(url) { UseShellExecute = true });
         return 0;
+    }
+
+    // Un travail dans un fil, accompagné de sa fenêtre de progression. On rend la main quand le travail est fini, jamais
+    // avant : fermer la fenêtre (Alt+F4, barre des tâches) ne fait que la masquer, et si elle disparaît quand même
+    // (arrêt de Windows…), on attend la fin du travail sans elle.
+    internal static void WithWindow(ProgressForm form, Action work)
+    {
+        Thread worker = null;
+        form.Shown += (s, e) =>
+        {
+            worker = new Thread(() =>
+            {
+                try { work(); }
+                finally { form.Finish(); }
+            }) { IsBackground = true };
+            worker.Start();
+        };
+        Application.Run(form);
+        if (worker != null) worker.Join();
+        else work();  // fenêtre fermée avant même d'être affichée
     }
 
     // --- Petit lanceur et raccourcis ---------------------------------------------------
@@ -266,14 +281,13 @@ static class Launcher
         }
         string title = (installed == null ? "Installation" : "Mise à jour") + " d'Aria Pilote " + payload.Version;
         Exception error = null;
+        // Fenêtre fermée en cours de copie : l'installation va quand même au bout, sans être coupée à mi-échange
         var form = new ProgressForm(title);
-        form.Shown += (s, e) => new Thread(() =>
+        WithWindow(form, () =>
         {
             try { Deploy(payload, home, engines, form.Report); }
             catch (Exception ex) { error = ex; }
-            form.BeginInvoke(new Action(form.Close));
-        }) { IsBackground = true }.Start();
-        Application.Run(form);
+        });
         if (error != null) throw error;
     }
 
@@ -629,10 +643,35 @@ sealed class ProgressForm : Form
         }
     }
 
+    // Vrai une fois la fenêtre fermée par l'utilisateur : elle n'est plus que masquée (voir Launcher.WithWindow)
+    public bool HiddenByUser { get { return hiddenByUser; } }
+    volatile bool hiddenByUser;
+    volatile bool finished;
+
+    protected override void OnFormClosing(FormClosingEventArgs e)
+    {
+        // Avant la fin du travail, la fermer ne fait que la masquer : le travail continue et dira lui-même comment il
+        // s'est terminé. Les autres fermetures (arrêt de Windows…) passent.
+        if (!finished && e.CloseReason == CloseReason.UserClosing)
+        {
+            e.Cancel = true;
+            hiddenByUser = true;
+            Hide();
+        }
+        base.OnFormClosing(e);
+    }
+
+    // Appelé par le fil de travail quand il a fini : ferme la fenêtre, ce qui rend la main à Application.Run
+    public void Finish()
+    {
+        finished = true;
+        Post(Close);
+    }
+
     // percent < 0 : barre animée, sans pourcentage
     public void Report(string text, int percent)
     {
-        BeginInvoke(new Action(() =>
+        Post(() =>
         {
             label.Text = text;
             if (percent < 0) bar.Style = ProgressBarStyle.Marquee;
@@ -641,6 +680,17 @@ sealed class ProgressForm : Form
                 bar.Style = ProgressBarStyle.Continuous;
                 bar.Value = Math.Min(100, percent);
             }
-        }));
+        });
+    }
+
+    // Depuis le fil de travail. La fenêtre a pu être détruite entre-temps : il n'y a plus rien à afficher, et surtout
+    // pas d'exception, qui ferait planter le lanceur depuis un fil d'arrière-plan.
+    void Post(Action action)
+    {
+        try
+        {
+            if (IsHandleCreated && !IsDisposed) BeginInvoke(action);
+        }
+        catch (InvalidOperationException) { }  // détruite entre le test et l'appel (ObjectDisposedException en dérive)
     }
 }

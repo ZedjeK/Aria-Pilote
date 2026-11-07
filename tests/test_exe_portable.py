@@ -100,7 +100,8 @@ class ExePortable(unittest.TestCase):
         self.assertEqual(r.stderr, "")
         launcher = self.home / "Aria-Pilote.exe"
         for folder in (desktop, menu):
-            self.assertEqual(Path(self.shortcut_target(folder / "Aria Pilote.lnk")), launcher)
+            # resolve() : le dossier temporaire peut être donné en nom court (RUNNER~1), le raccourci en nom long
+            self.assertEqual(Path(self.shortcut_target(folder / "Aria Pilote.lnk")).resolve(), launcher.resolve())
         # Raccourci du bureau supprimé par l'utilisateur : la mise à jour ne le recrée pas
         (desktop / "Aria Pilote.lnk").unlink()
         r = self.run_exe(self.exe("0.25.0"), *dirs)
@@ -167,6 +168,18 @@ class ExePortable(unittest.TestCase):
             self.assertNotIn("services/searxng/settings.yml", names)
             self.assertIn("{secret}", zf.read("services/searxng/settings.yml.modele").decode())
         self.assertTrue(re.search(rb"PK\x05\x06", data[start:]))
+
+    def test_fenetre_fermee_pendant_l_attente(self):
+        """Fermer la fenêtre de démarrage ne fait que la masquer : le lanceur attend la fin (l'appli qui répond, ou le
+        délai) au lieu de conclure trop tôt « ne répond pas », et une fenêtre détruite ne le fait pas planter."""
+        essai = self.tmp / "essai_fenetre.exe"
+        if not essai.exists():
+            build_portable.compile_launcher(essai, [Path(__file__).with_name("essai_fenetre.cs")], main="EssaiFenetre")
+        for scenario, hidden in (("fermee", True), ("detruite", False)):
+            with self.subTest(scenario):
+                r = subprocess.run([str(essai), scenario], capture_output=True, text=True, timeout=60)
+                self.assertEqual(r.returncode, 0, r.stderr)
+                self.assertEqual(r.stdout.strip(), f"fini=True masquee={hidden} attendu=True")
 
 
 if __name__ == "__main__":
