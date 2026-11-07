@@ -1,0 +1,42 @@
+[
+    {
+        "name": "Qwen3.5 4B",
+        "repo": "unsloth/Qwen3.5-4B-GGUF",
+        "file": "Qwen3.5-4B-Q4_K_M.gguf",
+        "size": 2740937888,
+        "vram_gb": 0,
+        "note": "Le plus léger : tourne même sans carte graphique, en plus lent."
+    },
+    {
+        "name": "Qwen3.5 9B",
+        "repo": "unsloth/Qwen3.5-9B-GGUF",
+        "file": "Qwen3.5-9B-Q4_K_M.gguf",
+        "size": 5680522464,
+        "vram_gb": 8,
+        "note": "Le bon départ pour une carte de 8 Go."
+    },
+    {
+        "name": "Gemma 4 12B",
+        "repo": "google/gemma-4-12B-it-qat-q4_0-gguf",
+        "file": "gemma-4-12b-it-qat-q4_0.gguf",
+        "size": 6975879296,
+        "vram_gb": 12,
+        "note": "Entraîné par Google pour la quantification Q4 : tient entier dans 12 Go."
+    },
+    {
+        "name": "Qwen3.8 27B (compact)",
+        "repo": "unsloth/Qwen3.8-27B-GGUF",
+        "file": "Qwen3.8-27B-UD-IQ3_XXS.gguf",
+        "size": 10934860704,
+        "vram_gb": 16,
+        "note": "Un grand modèle compressé pour tenir dans 16 Go, avec de la place pour le contexte."
+    },
+    {
+        "name": "Qwen3.8 27B",
+        "repo": "unsloth/Qwen3.8-27B-GGUF",
+        "file": "Qwen3.8-27B-UD-Q4_K_XL.gguf",
+        "size": 17559178144,
+        "vram_gb": 24,
+        "note": "La même famille, en meilleure qualité, pour 24 Go et plus."
+    }
+]

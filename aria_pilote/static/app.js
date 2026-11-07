@@ -54,6 +54,7 @@ async function loadModels(refresh = false) {
     renderList();
     renderDetail();
     renderPicker();
+    if (typeof refreshEmptyChat === "function") refreshEmptyChat();
 }
 
 // --- Sélecteur de modèle (barre du haut) -------------------------------------
@@ -342,6 +343,7 @@ function renderStatus() {
     $("#status-text").textContent = { loading: "chargement…", error: s.error || "erreur" }[s.state] || "";
     $("#btn-unload").hidden = !["loading", "ready"].includes(s.state);
     renderPicker();
+    if (typeof refreshEmptyChat === "function") refreshEmptyChat();  // chat.js est chargé après app.js
 }
 
 async function pollStatus() {
@@ -503,7 +505,7 @@ $("#btn-quit").addEventListener("click", async () => {
         el("div", { className: "goodbye" }, el("div", {},
             el("h1", {}, "À bientôt 👋"),
             el("p", {}, "Aria Pilote est arrêtée. Tu peux fermer cet onglet."),
-            el("p", { className: "small" }, "Pour la relancer : double-clic sur « Aria-Pilote.exe »."),
+            el("p", { className: "small" }, "Pour la relancer : lance à nouveau l'exe d'Aria Pilote que tu as téléchargé."),
         ))
     );
 });

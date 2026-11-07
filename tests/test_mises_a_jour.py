@@ -48,10 +48,13 @@ class Check(unittest.TestCase):
         self.assertTrue(u["newer"])
         self.assertEqual(u["latest"], "0.12.0")
         self.assertEqual(u["changes_url"], "https://github.com/ZedjeK/Aria-Pilote/compare/v0.11.0...v0.12.0")
+        # La carte renvoie à la page de la version, où se trouve l'exe qui met à jour
+        self.assertEqual(u["release_url"], "https://github.com/ZedjeK/Aria-Pilote/releases/tag/v0.12.0")
 
     def test_a_jour_et_version_de_dev(self):
         u, _ = self.run_check(["v0.11.0"])
         self.assertEqual((u["newer"], u["dev"]), (False, False))
+        self.assertIsNone(u["release_url"])
         u, _ = self.run_check(["v0.11.0"], force=True, version="0.12.0")
         self.assertEqual((u["newer"], u["dev"]), (False, True))
 

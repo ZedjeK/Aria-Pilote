@@ -238,7 +238,7 @@ SATURATED = ("La conversation dépasse le contexte chargé, même après résum�
 
 ENGINE_CRASHED = ("Le moteur s'est arrêté pendant la génération. Cause fréquente : un autre logiciel "
                   "(génération d'images, jeu…) a pris la mémoire de la carte graphique. "
-                  "Libère-la, puis recharge le modèle dans l'onglet Modèles.")
+                  "Libère-la, puis recharge le modèle depuis le sélecteur du haut.")
 
 
 async def failure_message(exc):

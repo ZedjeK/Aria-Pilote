@@ -1,11 +1,12 @@
 """Recherche de modèles GGUF sur Hugging Face et estimation de ce qui tient sur la machine."""
 
 import ctypes
+import json
 import re
 import subprocess
 import sys
 from functools import lru_cache
-from pathlib import PurePosixPath
+from pathlib import Path, PurePosixPath
 
 import httpx
 
@@ -17,6 +18,9 @@ REPO_RE = re.compile(r"^[\w.-]+/[\w.-]+$")
 # Modèles brouillons (décodage spéculatif) qui ne se chargent pas seuls. Un nom qui contient
 # juste « MTP » (ex. Bonsai PQ2_0-MTP) est un modèle complet avec tête MTP intégrée.
 DRAFT_RE = re.compile(r"^mtp[-_]|dflash", re.IGNORECASE)
+
+# Modèles conseillés en tête de Découvrir, un par palier de VRAM (tailles relevées sur Hugging Face)
+RECOMMENDED_PATH = Path(__file__).with_name("recommended.json")
 
 # Marge pour le cache KV (contexte 8k) et les buffers CUDA
 OVERHEAD_BYTES = int(1.5 * 1024**3)
@@ -65,6 +69,23 @@ def estimate_fit(size):
     if mem["ram"] and need <= mem["vram"] + mem["ram"] * 0.7:
         return "partial"
     return "too_big"
+
+
+def recommended():
+    """Les modèles conseillés, avec ce qui tient sur la machine et ce qui est déjà là. Sans réseau.
+
+    « best » : le plus grand qui tient entier sur le GPU ; à défaut (petite carte, pas de NVIDIA), le plus léger."""
+    picks = json.loads(RECOMMENDED_PATH.read_text(encoding="utf-8"))
+    installed = {Path(m.path).resolve(): m.id for m in models.scan()}
+    entries = []
+    for pick in picks:
+        local = local_path(pick["repo"], pick["file"])
+        model_id = installed.get(local.resolve())
+        entries.append({**pick, "fit": estimate_fit(pick["size"]), "downloaded": model_id is not None, "model_id": model_id})
+    fitting = [i for i, e in enumerate(entries) if e["fit"] == "gpu"]
+    best = max(fitting, key=lambda i: entries[i]["vram_gb"]) if fitting else min(
+        range(len(entries)), key=lambda i: entries[i]["size"])
+    return {"models": entries, "best": best, "memory": machine_memory()}
 
 
 def download_root():

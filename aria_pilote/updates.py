@@ -46,6 +46,8 @@ def status():
         "checked_at": _cache["checked_at"],
         "error": _cache["error"],
         "changes_url": f"{REPO_URL}/compare/v{VERSION}...v{latest}" if newer else None,
+        # La page de la version : son exe s'installe par-dessus en gardant modèles, conversations et config
+        "release_url": f"{REPO_URL}/releases/tag/v{latest}" if newer else None,
         "repo_url": REPO_URL,
     }
 
