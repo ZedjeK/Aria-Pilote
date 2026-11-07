@@ -101,7 +101,7 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--a
 .brand { font-weight: 700; font-size: 18px; }
 .brand small { margin-left: 6px; font: 11px var(--mono); color: var(--muted); }
 .brand { display: flex; align-items: center; }
-.brand-logo { width: 30px; height: 30px; margin-right: 8px; filter: drop-shadow(0 0 6px rgba(125, 249, 255, .35)); }
+.brand-logo { width: 48px; height: 48px; margin-right: 8px; filter: drop-shadow(0 0 6px rgba(125, 249, 255, .35)); }
 
 .brand span { margin-left: 4px; color: var(--accent); text-shadow: 0 0 12px var(--accent); }
 .actions { margin-left: auto; display: flex; gap: 8px; }
