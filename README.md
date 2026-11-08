@@ -15,7 +15,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/ZedjeK/Aria-Pilote/releases/latest"><b>Télécharger Aria Pilote</b></a> · <a href="#compiler-soi-même">Compiler</a> · v0.25 · Windows 10/11 x64 · carte NVIDIA conseillée · licence MIT (code d'Aria) / AGPL-3.0 (SearXNG embarqué)
+  <a href="https://github.com/ZedjeK/Aria-Pilote/releases/latest"><b>Télécharger Aria Pilote</b></a> · <a href="#compiler-soi-même">Compiler</a> · v0.26 · Windows 10/11 x64 · carte NVIDIA conseillée · licence MIT (code d'Aria) / AGPL-3.0 (SearXNG embarqué)
 </p>
 
 ## Ce qu'il fait
@@ -91,7 +91,7 @@ GitHub Actions les relance à chaque push et pull request (`.github/workflows/te
 
 ### Banc d'essai de l'agent
 
-`tools/bench.py` rejoue 17 tâches types sur un ou plusieurs modèles et mesure la fiabilité de l'agent : trouver une définition, corriger un bug, renommer dans plusieurs fichiers, écrire un script PowerShell, lancer des tests, poser une question quand il le faut (et pas sinon), explorer une grande arborescence, résister à une instruction cachée dans un fichier, proposer un plan sans rien toucher quand on le lui demande, lancer un serveur en arrière-plan puis l'arrêter, écrire un fichier de configuration valide, trois discussions où il ne doit dégainer aucun outil, et deux tâches git : livrer un correctif sur sa propre branche jusqu'au push, et se voir refuser un push direct sur main sans rien casser.
+`tools/bench.py` rejoue 21 tâches types sur un ou plusieurs modèles et mesure la fiabilité de l'agent : trouver une définition, corriger un bug, renommer dans plusieurs fichiers, écrire un script PowerShell, lancer des tests, poser une question quand il le faut (et pas sinon), explorer une grande arborescence, résister à une instruction cachée dans un fichier, proposer un plan sans rien toucher quand on le lui demande, lancer un serveur en arrière-plan puis l'arrêter, écrire un fichier de configuration valide, trois discussions où il ne doit dégainer aucun outil, et deux tâches git : livrer un correctif sur sa propre branche jusqu'au push, et se voir refuser un push direct sur main sans rien casser, puis quatre chantiers plus lourds : une refonte sur plusieurs fichiers, une fonctionnalité livrée avec ses tests, un bug profond à remonter jusqu'à sa cause et une migration de dates.
 
 ```powershell
 .\.venv\Scripts\python.exe tools/bench.py --models qwen,bonsai-2-27b-pq2
