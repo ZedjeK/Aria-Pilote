@@ -5,4 +5,4 @@ pyyaml>=6.0.3
 pillow>=10.0
 uiautomation>=2.0.29
 mcp>=2.3,<3
-pypdf>=5
+pypdf>=6.21.4
