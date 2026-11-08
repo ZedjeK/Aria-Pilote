@@ -1,0 +1,20 @@
+# Mises à jour automatiques : une PR par semaine et par écosystème, les petites montées groupées.
+# Désactivable en supprimant ce fichier.
+version: 2
+updates:
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+    groups:
+      mises-a-jour-mineures:
+        update-types: ["minor", "patch"]
+  - package-ecosystem: "pip"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+    groups:
+      mises-a-jour-mineures:
+        update-types: ["minor", "patch"]
