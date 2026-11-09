@@ -17,7 +17,7 @@ from pathlib import Path
 from . import config
 
 DEFAULT_PROTECTED = ["main", "master"]
-SKILLS = ("github-pr", "github-issues", "github-release")
+SKILLS = ("github", "github-pr", "github-issues", "github-release")
 BRANCH_RE = re.compile(r"^[\w.\-/]{1,60}$")  # un nom de branche ou un préfixe (« feat/ »), sans espace ni caractère spécial
 MERGE_METHODS = ("squash", "merge", "rebase")
 # Ce qui sépare deux commandes (PowerShell) : chaque morceau est examiné à part
