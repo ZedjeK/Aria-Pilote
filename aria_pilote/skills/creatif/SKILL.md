@@ -1,51 +1,48 @@
 ---
 name: creatif
-description: Trouver des idées, un nom ou un slogan, écrire une histoire ou un poème, jouer un jeu de rôle, construire un univers.
+description: Trouver des idées, un nom ou un slogan, écrire une histoire, jouer un jeu de rôle, construire un univers.
 registre: naturel
 ---
 # Créatif
 
 ## Objectif
-De la matière créative surprenante et cohérente, puis l'aide pour choisir.
+Beaucoup d'idées variées puis un tri par critères ; en fiction, un univers cohérent.
 
 ## Ne pas l'utiliser si
 - Un texte à envoyer à quelqu'un (mail, post, CV) : redaction.
 - Organiser la réalisation d'un projet créatif : projet.
 
 ## Méthode
-### Trouver des idées (noms, slogans, concepts)
-1. D'abord beaucoup d'idées et dans plusieurs directions, y compris surprenantes, sans juger.
-2. Ensuite, aide à trier : les trois plus fortes, et pourquoi.
-3. Pour un nom : précise que sa disponibilité (marque, nom de domaine) reste à vérifier.
-### Écrire une fiction (histoire, nouvelle, poème)
-1. Fixe ou demande le cadre : genre, ton, longueur, point de vue.
-2. Montre plutôt que dire : des actions, des détails, des dialogues, et un conflit qui fait avancer l'histoire.
-### Jeu de rôle
-1. Incarne ton personnage à fond, en restant cohérent avec ce qui a été établi.
-2. Réponds par des répliques et des actions en situation, puis laisse à l'utilisateur la décision suivante.
-3. Sors du rôle seulement sur demande (« stop », « hors jeu »), en le signalant clairement.
-### Construire un univers
-1. Fixe ses règles (géographie, magie ou technologie, factions, histoire) et tiens-les à jour en résumé quand elles s'accumulent.
-2. Vérifie que chaque nouvel élément respecte ce qui existe déjà.
+### Idées, nom, slogan
+1. Cadre : but, public, ton, contraintes ; pour un nom, ce qu'on nomme et ce qu'il doit évoquer.
+2. Diverge : beaucoup d'idées sans les juger, dont quelques-unes volontairement absurdes, dans au moins trois familles (descriptif, évocateur, inventé) ; carte mentale ou SCAMPER pour relancer ; jamais les clichés en premier.
+3. Converge : une grille courte de critères tirés du cadrage, trois favoris au maximum, avec la force et la faiblesse de chacun.
+4. Vérifie un nom ou un slogan : prononciation, mémorisation, sens gênant dans d'autres langues, homonyme, disponibilité (domaine, réseaux ; INPI ou EUIPO pour une vraie marque). Dis ce qui est vérifié et ce que l'utilisateur doit vérifier lui-même.
+### Fiction et jeu de rôle
+1. Les règles de l'univers d'abord : ce qui est possible, ce qui ne l'est pas, ce que ça coûte.
+2. Tiens une fiche d'univers (noms, lieux, règles, faits établis) : respectée et mise à jour.
+3. Schéma : situation de départ, déclencheur, péripéties, point culminant, dénouement.
+4. Personnages : ce qu'ils veulent, ce qui les en empêche, ce qu'ils risquent ; chacun sa voix.
+5. Approfondis plutôt qu'empiler, et montre par l'action et le dialogue plutôt que par l'explication.
 
 ## Format de la réponse
-- Idées : une liste courte et variée, puis le tri.
-- Fiction : de la prose.
-- Jeu de rôle : des répliques et des actions en situation.
+Brainstorming : listes numérotées par famille d'idées, puis aide au tri.
+Nom ou slogan : candidats, trois favoris argumentés, vérifications faites et à faire.
+Fiction : de la prose ; en jeu de rôle, des répliques en situation.
 
 ## Règles
 ### À faire toujours
-- La cohérence avec ce qui a été établi.
-- Suivre le réglage « contenu intime » du persona (autorisé ou non) ; sans persona, pas de contenu explicite.
+- Sortir du rôle immédiatement sur « stop ».
 ### À ne jamais faire
-- Un cliché d'emblée.
-- Une morale plaquée à la fin.
-- Reprendre la main sur la décision du joueur en jeu de rôle.
+- Juger pendant la phase où l'on génère des idées.
+- Une morale finale plaquée.
+- Contredire une règle de l'univers déjà posée sans le signaler.
+- Rester dans le rôle après « stop ».
 
 ## Vérifier avant de répondre
-- [ ] Au moins une proposition sort des sentiers battus.
-- [ ] Rien ne contredit ce qui a été établi.
+- [ ] Au moins trois familles d'idées, aucun cliché en premier.
+- [ ] Pour une fiction, aucune règle de l'univers contredite.
 
 ## Exemple
-> Demande : « Trouve un nom pour mon serveur Minecraft d'inspiration cyberpunk. »
-> Réponse attendue (résumé) : une dizaine de noms dans plusieurs directions (néons, argot de hacker, jeux de mots), puis les trois meilleurs et pourquoi, et un rappel de vérifier leur disponibilité.
+> Demande : « Trouve-moi un nom pour mon serveur de jeu »
+> Réponse attendue (résumé) : trois familles d'idées (descriptif, évocateur, inventé), trois favoris avec leur force et leur faiblesse, puis ce qu'il reste à vérifier (domaine, réseaux).
