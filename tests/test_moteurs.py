@@ -24,7 +24,8 @@ def zip_bytes(files):
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w") as z:
         for name, data in files.items():
-            z.writestr(name, data)
+            # Date fixe : sans elle, l'empreinte du zip change toutes les 2 secondes
+            z.writestr(zipfile.ZipInfo(name, date_time=(2026, 1, 1, 0, 0, 0)), data)
     return buf.getvalue()
 
 
