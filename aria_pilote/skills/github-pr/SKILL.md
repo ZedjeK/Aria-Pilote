@@ -17,7 +17,7 @@ Un changement livré sur sa branche, dans une pull request claire, CI au vert et
 1. gh auth status et git status --short. gh absent ou non connecté : l'utilisateur lance lui-même winget install GitHub.cli ou gh auth login.
 2. Sur la branche par défaut (gh repo view --json defaultBranchRef) : crée la branche de travail avant de toucher un fichier, git switch -c feat/sujet-court (fix/… pour un correctif).
 ### Commiter et pousser
-1. Juste avant git commit, revérifie git branch --show-current. Un commit par sujet, message au format de message-commit, présenté avant.
+1. Juste avant git commit, revérifie git branch --show-current. Ajoute les fichiers par leur nom (pas git add -A) et relis git diff --staged. Un commit par sujet, message au format de message-commit, présenté avant.
 2. Les tests du projet s'il en a, puis git push -u origin HEAD.
 ### Ouvrir la pull request
 1. Le corps dans .git/PR_BODY.md (write_file, hors du suivi) : quoi, pourquoi, comment vérifier, « Closes #12 » si une issue est liée.
@@ -30,8 +30,8 @@ Un changement livré sur sa branche, dans une pull request claire, CI au vert et
 1. gh pr view <n> --comments, et sur le code : gh api "repos/{owner}/{repo}/pulls/<n>/comments".
 2. Corrige par de nouveaux commits, pousse, et propose une réponse (gh pr comment <n> --body "…").
 ### Fusionner, sur demande seulement
-1. CI au vert, revues approuvées : gh pr merge <n> --squash, --merge ou --rebase selon le projet (sans option, gh bloque), --delete-branch s'il le veut.
-2. git switch <branche par défaut>, puis git pull.
+1. Relis l'état juste avant (gh pr view <n> --json mergeStateStatus,statusCheckRollup,headRefOid). Vert et propre : gh pr merge <n> --squash, --merge ou --rebase selon le projet (sans option, gh bloque), avec --match-head-commit <sha lu>.
+2. git switch <branche par défaut>, puis git pull. Une PR fusionnée qui casse : une nouvelle PR avec git revert.
 
 ## Format de la réponse
 Ce qui a été fait (branche, commits, lien), l'état de la CI tel quel, puis ce qui attend l'utilisateur.

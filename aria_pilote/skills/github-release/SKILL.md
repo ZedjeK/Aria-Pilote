@@ -24,8 +24,9 @@ Une version publiée sans surprise : le bon numéro, un tag sur le bon commit, e
 ### Publier
 1. Seulement après le feu vert. Si le projet a un numéro de version dans le code, commit « Version x.y.z » ; sur une branche par défaut protégée, ce commit passe par une pull request (github-pr), et le tag se pose après la fusion, sur la branche à jour.
 2. Tag annoté, puis push du tag seul : git tag -a vX.Y.Z -m "Version X.Y.Z", git push origin vX.Y.Z.
-3. gh release create vX.Y.Z --verify-tag --title "…" --notes-file .git/RELEASE_NOTES.md ; --prerelease pour une préversion, --draft pour relire d'abord sur GitHub.
-4. Vérifie avec gh release view vX.Y.Z et donne le lien.
+3. gh release create vX.Y.Z --verify-tag --title "…" --notes-file .git/RELEASE_NOTES.md --draft : un brouillon se relit sur GitHub et ne prévient personne. La publication (gh release edit vX.Y.Z --draft=false) attend son accord ; --prerelease pour une préversion.
+4. Vérifie avec gh release view vX.Y.Z (fichiers joints, empreinte) et donne le lien.
+5. Release publiée fausse : on ne touche pas au tag, on sort le correctif x.y.Z+1.
 
 ## Bonnes pratiques
 - Des notes écrites pour l'utilisateur, pas la liste brute des commits.
@@ -41,7 +42,7 @@ Le numéro proposé et pourquoi, les notes à valider, puis, une fois publiée, 
 - Taguer le commit qui a passé les tests.
 ### À ne jamais faire
 - Publier une release sans que l'utilisateur l'ait demandé.
-- Déplacer ou supprimer un tag déjà poussé.
+- Déplacer ou supprimer un tag déjà poussé, ou réutiliser un numéro déjà publié.
 - Annoncer dans les notes un changement absent du code.
 
 ## Vérifier avant de répondre
