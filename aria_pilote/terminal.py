@@ -8,6 +8,7 @@ dans le navigateur peut tenter de s'y connecter, et obtenir un shell. Trois verr
 - un jeton à usage unique, que seule l'interface peut obtenir (par un POST, lui-même protégé).
 """
 
+import re
 import secrets
 import threading
 import time
@@ -20,6 +21,20 @@ TOKEN_TTL_S = 30
 BUFFER_CHARS = 200_000  # ce qui est réaffiché après un rechargement de la page
 DEFAULT_SIZE = (24, 80)  # lignes, colonnes
 MIN_SIZE, MAX_SIZE = (2, 10), (500, 1000)
+
+# Ce que l'agent lit du terminal : du texte, sans les séquences d'affichage (titre de fenêtre, couleurs, curseur)
+CONTROL = re.compile(r"\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)"   # OSC : titre de fenêtre, liens
+                     r"|\x1b\[[0-9;?<=>!]*[ -/]*[@-~]"       # CSI : couleurs, déplacements, effacements
+                     r"|\x1b[@-Z\\^_=>78]"                   # autres séquences ESC
+                     r"|[\x00-\x08\x0b-\x1f\x7f]")           # caractères de contrôle, sauf tabulation et saut de ligne
+
+
+def clean(text):
+    """Sortie du terminal en texte lisible : séquences de contrôle retirées, lignes vides de fin enlevées."""
+    lines = [line.rstrip() for line in CONTROL.sub("", text.replace("\r\n", "\n")).split("\n")]
+    while lines and not lines[-1]:
+        lines.pop()
+    return "\n".join(lines)
 
 
 class TerminalError(Exception):
@@ -68,6 +83,15 @@ def refusal(headers):
 
 # --- Sessions ------------------------------------------------------------------------------------
 
+# Au démarrage du PowerShell : UTF-8 pour les programmes lancés d'ici ; pas de suggestions tirées de l'historique
+# (affichées en grisé, elles se mêleraient à ce que l'agent lit, et montreraient d'anciennes commandes) ; et les
+# lignes de repère de l'agent (MARKER) ne vont pas dans l'historique de l'utilisateur. Les try : PowerShell 5.1.
+MARKER = "aria-fin-"
+STARTUP = ("[Console]::OutputEncoding = [Console]::InputEncoding = [System.Text.Encoding]::UTF8; "
+           "try { Set-PSReadLineOption -PredictionSource None } catch {}; "
+           "try { Set-PSReadLineOption -AddToHistoryHandler { param($line) $line -notlike '*" + MARKER + "*' } } catch {}")
+
+
 class Session:
     """Un PowerShell dans un pseudo-terminal : sa sortie est gardée en tampon et diffusée aux pages connectées."""
 
@@ -77,11 +101,11 @@ class Session:
         self.cid, self.cwd = cid, str(cwd)
         self.size = _clamp(size)
         self._buffer, self._buffered = deque(), 0
+        self._total = 0  # caractères reçus depuis l'ouverture : sert de repère à l'agent
+        self._arrived = threading.Condition()
         self._listeners = set()
         self._lock = threading.Lock()
-        # -NoLogo : pas de bannière. L'UTF-8 est posé d'emblée pour les programmes lancés depuis ce terminal.
-        argv = [POWERSHELL, "-NoLogo", "-NoExit", "-Command",
-                "[Console]::OutputEncoding = [Console]::InputEncoding = [System.Text.Encoding]::UTF8"]
+        argv = [POWERSHELL, "-NoLogo", "-NoExit", "-Command", STARTUP]
         # Lancée sans console (pythonw, tâche de fond), Aria ignore Ctrl+C, et ses enfants en héritent : sans cette
         # ligne, Ctrl+C n'arrête pas un programme lancé dans le terminal (un ping -t, par exemple).
         import ctypes
@@ -104,21 +128,53 @@ class Session:
             with self._lock:
                 self._buffer.append(data)
                 self._buffered += len(data)
+                self._total += len(data)
                 while self._buffered > BUFFER_CHARS and len(self._buffer) > 1:
                     self._buffered -= len(self._buffer.popleft())
                 listeners = list(self._listeners)
             for listener in listeners:
                 listener(data)
+            with self._arrived:
+                self._arrived.notify_all()
         with self._lock:
             listeners = list(self._listeners)
         for listener in listeners:
             listener(None)  # fin du processus
+        with self._arrived:
+            self._arrived.notify_all()
 
     def subscribe(self, listener):
         """Abonne `listener(texte | None)` et renvoie ce qui a déjà été affiché, sans rien perdre entre les deux."""
         with self._lock:
             self._listeners.add(listener)
             return "".join(self._buffer)
+
+    def mark(self):
+        """Repère de la sortie à cet instant, pour lire ensuite ce qui est arrivé après."""
+        with self._lock:
+            return self._total
+
+    def since(self, mark=None):
+        """Sortie brute reçue depuis le repère (sans repère : tout ce que le tampon garde encore)."""
+        with self._lock:
+            text = "".join(self._buffer)
+            if mark is None:
+                return text
+            fresh = self._total - mark
+            return text[len(text) - fresh:] if 0 < fresh <= len(text) else ("" if fresh <= 0 else text)
+
+    def wait_for(self, marker, mark, timeout):
+        """Attend que `marker` apparaisse dans la sortie reçue depuis le repère. Renvoie (sortie, trouvé)."""
+        deadline = time.monotonic() + timeout
+        with self._arrived:
+            while True:
+                text = self.since(mark)
+                if marker in text:
+                    return text, True
+                left = deadline - time.monotonic()
+                if left <= 0 or not self.alive():
+                    return text, False
+                self._arrived.wait(min(left, 1.0))
 
     def unsubscribe(self, listener):
         with self._lock:

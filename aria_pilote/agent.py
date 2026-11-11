@@ -33,6 +33,8 @@ Méthode :
 - run_command exécute du PowerShell : une commande à la fois, sans interaction. Pour un serveur ou une
   commande qui ne s'arrête pas seule, mets background à true, attends qu'elle soit prête avec command_output
   (wait_for), puis arrête-la avec stop_command une fois ton test fini.
+- L'utilisateur a un terminal (onglet « >_ ») : terminal_read quand il parle de ce qu'il y voit, terminal_run
+  quand il te demande d'y lancer quelque chose. Pour ton propre travail, reste sur run_command.
 {web_rule}
 - Chaque modification, commande et accès web est validé par l'utilisateur ; s'il refuse, propose autre chose ou demande-lui.
 - S'il te manque une information indispensable que tu ne peux pas trouver toi-même (demande ambiguë,

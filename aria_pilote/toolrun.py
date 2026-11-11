@@ -9,7 +9,7 @@ from . import chat, conversations, github, hooks, mcp_client, permissions, tools
 # Types d'outils soumis à accord, et le drapeau qui les autorise pour toute la conversation
 # (None : jamais d'autorisation globale)
 APPROVAL_FLAGS = {"write": "auto_write", "web": "auto_web", "command": None, "screen_action": None, "mcp": None,
-                  "memory": None}  # souvenirs : demandés seulement avec « Me demander avant de retenir »
+                  "memory": None, "terminal": None}  # souvenirs : demandés seulement avec « Me demander avant de retenir »
 
 # Accords en attente : approval_id -> (future, conversation_id, type d'outil, dossier de travail, commande)
 _approvals = {}
