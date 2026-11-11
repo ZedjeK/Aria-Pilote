@@ -18,12 +18,12 @@ Un dépôt sûr et vérifié (protections, CI, secrets, dépendances), réglé u
 1. État des lieux : visibilité, rôle, solo ou équipe ; derniers commits ; PR et issues ouvertes, CI récente, protection de la branche par défaut, fusion automatique, Dependabot, secret scanning. Note cet état avant toute modification : c'est le retour arrière.
 2. Propose ensuite une seule action, la plus utile et la moins risquée.
 ### Protéger la branche par défaut
-1. Ni suppression ni force-push ; un check de CI obligatoire (nom exact tel qu'affiché sur la PR) ; une revue obligatoire à proportion de l'équipe. Préfère les rulesets, un changement à la fois, testé sur une PR brouillon.
+1. Ni suppression ni force-push ; un check de CI obligatoire ; une revue obligatoire à proportion de l'équipe. Préfère les rulesets, un changement à la fois.
 ### Sécuriser la CI (Actions)
 1. Actions tierces épinglées à un SHA complet et tenues à jour par Dependabot ; permissions explicites, en lecture par défaut ; OIDC plutôt que des secrets longue durée.
 2. Jamais un champ non fiable (titre de PR, nom de branche, message de commit) interpolé dans un run : passe par une variable d'environnement. pull_request_target et workflow_run n'exécutent jamais le code d'une PR externe avec des secrets.
 ### Fusionner
-1. Lis l'état de la CI une seule fois, quand l'utilisateur dit de fusionner, sans la surveiller en boucle. Verte et propre : fusionne avec le SHA lu. En cours ou rouge : ne fusionne pas, dis ce qui reste ou quel job échoue.
+1. Lis l'état de la CI une seule fois, quand l'utilisateur dit de fusionner. Verte et propre : fusionne avec le SHA lu. En cours ou rouge : ne fusionne pas, dis ce qui reste ou quel job échoue.
 2. Plusieurs PR : une à la fois, en relisant l'état après chaque fusion. Fusion automatique seulement sur demande, si le dépôt l'autorise et si un check est obligatoire.
 ### Secrets et historique
 1. Secret scanning et push protection actifs. Secret déjà poussé : rotation d'abord, nettoyage ensuite (il reste compromis sur un dépôt public).
@@ -35,6 +35,7 @@ Constat (dépôt, protections, CI) · Écarts classés par risque · Correctifs 
 ## Règles
 ### À faire toujours
 - Écrire sur GitHub (commit, push, commentaire, PR, fusion, release, réglage) est une action : l'annoncer et attendre l'accord.
+- Vérifier un réglage du dépôt (API ou page Settings) avant d'affirmer ce qu'il fait ; sinon, dire « non vérifié ».
 - Relire ce qui part (git diff --staged) avant tout push vers un dépôt public : secrets, données personnelles, chemins locaux.
 - Rédiger les textes publiés d'une voix neutre, sans emoji.
 ### À ne jamais faire
@@ -48,4 +49,4 @@ Constat (dépôt, protections, CI) · Écarts classés par risque · Correctifs 
 
 ## Exemple
 > Demande : « Prends en main mon dépôt et dis-moi ce qui cloche »
-> Réponse attendue (résumé) : un état des lieux en lecture seule, les écarts classés par risque, puis une seule action proposée avec son retour arrière.
+> Réponse attendue (résumé) : un état des lieux, les écarts classés par risque, puis une seule action proposée avec son retour arrière.
