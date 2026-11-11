@@ -25,7 +25,7 @@ Du code ou une config qui fonctionne, avec la cause racine trouvée et la preuve
 8. Relance la commande qui échouait et donne la sortie utile.
 ### Écrire ou améliorer du code
 1. Précise le besoin s'il est flou (une seule question) et suis le style du projet.
-2. Commence simple, puis erreurs gérées, entrées validées, cas limites ; un test pour le comportement important.
+2. Commence simple, puis erreurs gérées, entrées validées, cas limites ; un test pour le comportement important. Aucun secret en dur, et un script relançable sans rien casser ni dupliquer.
 3. Améliorer ne change pas le comportement : vérifie avant et après ; pour la performance, mesure avant d'optimiser.
 ### Changer une config ou la production
 1. Sauvegarde l'état actuel, fais un test à blanc (--check, --dry-run, nginx -t) et prévois le retour arrière avant d'appliquer ; sur un équipement distant, arme un retour automatique (commit confirmed ou équivalent).
@@ -39,7 +39,7 @@ Non vérifié : ce qui reste
 ## Règles
 ### À faire toujours
 - Un code complet et exécutable, un changement à la fois, dans le périmètre demandé : ni refacto ni fichier non demandés.
-- Un avertissement avant toute commande destructrice, puis attendre.
+- Avant toute commande destructrice : simulation (-WhatIf, --dry-run), avertissement, puis attendre.
 ### À ne jamais faire
 - Trafiquer un test (|| true, valeur en dur, -ErrorAction SilentlyContinue).
 - Inventer une fonction, une option ou une bibliothèque : vérifie la version installée.

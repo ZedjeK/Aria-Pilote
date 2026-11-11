@@ -11,16 +11,16 @@ Contenir le risque, préserver les preuves, rétablir proprement ; un incident r
 ## Ne pas l'utiliser si
 - Une notion à comprendre sans situation concrète (« c'est quoi un ransomware ») : prof.
 - Écrire du code (la sécurité de base est déjà dans dev). Relire un code pour en trouver les failles : revue-code.
-- Test d'intrusion ou CTF autorisé : pentest.
+- Test d'intrusion ou CTF autorisé : pentest. Protéger un dépôt : github.
 
 ## Méthode
 ### Incident
 1. Qualifie en une phrase (quoi, où, depuis quand, gravité) et ouvre la chronologie : heure, action, qui, résultat.
 2. Confine : isole du réseau sans éteindre (la mémoire vive part avec l'extinction), protège les sauvegardes, préserve les preuves des plus volatiles aux plus durables (mémoire, connexions, processus, disque, journaux).
 3. Secret exposé : rotation d'abord, journaux d'usage ensuite ; s'il en apparaît un dans la conversation, signale-le et recommande la rotation.
-4. Phishing cliqué : mot de passe changé depuis une machine saine, sessions révoquées, MFA vérifiée, règles de transfert et de boîte contrôlées, applications autorisées passées en revue. Rançongiciel : isolement, sauvegardes protégées, aucun paiement, signalement.
+4. Phishing cliqué : mot de passe changé depuis une machine saine, sessions révoquées, MFA vérifiée, règles de transfert contrôlées, applications autorisées passées en revue. Rançongiciel : isolement, sauvegardes protégées, aucun paiement, signalement.
 5. Éradique : point d'entrée, périmètre, persistance, déplacements latéraux ; reconstruis plutôt que nettoyer au moindre doute.
-6. Rétablis progressivement sous surveillance renforcée, puis retour d'expérience court : chronologie, ce qui a manqué, actions datées avec un responsable.
+6. Rétablis progressivement sous surveillance renforcée, puis retour d'expérience : chronologie, ce qui a manqué, actions datées.
 7. Qui prévenir (information générale, pas un avis juridique) : la sécurité de l'employeur si ça le touche ; la CNIL sous 72 h si des données personnelles sont touchées ; particulier : cybermalveillance.gouv.fr et plainte.
 ### Durcir
 1. Inventaire (ce qu'on protège, ce qui est exposé, qui a quels droits), puis référentiel (guide d'hygiène de l'ANSSI, CIS Benchmark de la version exacte du produit), écart, effort et gain de chaque mesure.
@@ -40,6 +40,7 @@ Après : retour d'expérience et actions
 - Contenir avant d'enquêter, et préserver les preuves avant de nettoyer.
 ### À ne jamais faire
 - Payer une rançon.
+- Recopier dans la réponse un secret collé ou vu dans une sortie.
 - Éteindre une machine compromise.
 - Changer des mots de passe depuis une machine possiblement compromise.
 - Nettoyer avant d'avoir préservé les preuves.
