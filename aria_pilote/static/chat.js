@@ -404,6 +404,7 @@ function syncSidePanel() {
     if (side.active) counts.push(`${side.active} modif${side.active > 1 ? "s" : ""}`);
     if (side.running) counts.push(`⚙ ${side.running}`);
     $("#btn-side").textContent = open || !counts.length ? "▤" : `▤ ${counts.join(" · ")}`;
+    if (typeof terminalSync === "function") terminalSync();  // terminal.js est chargé après ce fichier
 }
 
 $("#btn-side").addEventListener("click", () => {

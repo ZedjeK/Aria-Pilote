@@ -521,6 +521,12 @@ button.danger-text { color: var(--err); }
 .side-close { margin-left: auto; padding: 2px 8px; }
 .side-count:not(:empty) { margin-left: 4px; padding: 0 6px; border-radius: 10px; background: var(--accent-2); color: #fff; font-size: 11px; }
 .side-body { overflow: auto; display: grid; gap: 10px; align-content: start; }
+/* Terminal : il prend toute la hauteur du panneau, et c'est xterm.js qui défile */
+.side-body.side-terminal:not([hidden]) { display: flex; flex-direction: column; flex: 1; min-height: 0; overflow: hidden; }
+.terminal-bar { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.terminal-bar span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.terminal-host { flex: 1; min-height: 240px; padding: 6px; background: var(--deep); border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
+.terminal-host[hidden] { display: none; }
 .side-toggle.active { color: var(--accent); border-color: var(--accent); }
 .change-task { display: grid; gap: 6px; padding: 8px; border: 1px solid var(--border); border-radius: 8px; }
 .change-task-head { display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 600; }
