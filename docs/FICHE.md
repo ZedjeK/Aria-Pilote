@@ -61,7 +61,7 @@ avigateur\profil\` : à part, sans les cookies, mots de passe ni historique de l
 | `huggingface.co` et ses serveurs de fichiers | Recherche et téléchargement de modèles | Sur demande |
 | Moteurs de recherche configurés dans SearXNG | Recherche web de l'agent | Avec accord, si le web est activé |
 | Toute page publique | `web_fetch` de l'agent | Avec accord ; adresses locales et du réseau local refusées |
-| Toute page publique, et ce qu'elle charge | `naviguer` de l'agent, dans le Chromium embarqué | Avec accord ; chaque requête de la page (redirections, images, scripts, WebSocket) vers ta machine ou ton réseau local est bloquée |
+| Toute page publique, et ce qu'elle charge ou envoie | `naviguer` de l'agent, dans le Chromium embarqué, puis ses actions (`cliquer`, `taper`, `choisir`) qui peuvent envoyer un formulaire au site | Avec accord, action par action (les boutons sensibles toujours) ; chaque requête de la page (redirections, images, scripts, WebSocket) vers ta machine ou ton réseau local est bloquée |
 | Serveurs MCP distants | Outils ajoutés par l'utilisateur | Selon leur réglage (accord par défaut) |
 | GitHub par git et gh | Travail de l'agent sur un dépôt | Accord à chaque commande qui sort du PC |
 | `github.com/astral-sh/python-build-standalone`, `codeload.github.com` | Construction de l'exe seulement (Python portable, SearXNG) | Jamais par l'appli installée |
