@@ -557,6 +557,76 @@ async def _run_background(prepared, cid, script_path):
             "background_id": cmd.id}
 
 
+# --- terminal de l'utilisateur ---------------------------------------------------
+
+TERMINAL_LINES, TERMINAL_MAX_LINES = 60, 300
+TERMINAL_TIMEOUT_S, TERMINAL_MAX_TIMEOUT_S = 60, 300
+
+
+def prepare_terminal_read(root, args):
+    try:
+        lines = max(1, min(TERMINAL_MAX_LINES, int(args.get("lines") or TERMINAL_LINES)))
+    except (TypeError, ValueError):
+        raise ToolError("« lines » doit être un nombre de lignes.")
+    return {"lines": lines, "preview": f"Lire les {lines} dernières lignes du terminal.\n"
+                                       "L'agent verra ce qui y est affiché, y compris ce que tu y as tapé."}
+
+
+async def run_terminal_read(prepared, cid):
+    from . import terminal
+    session = terminal.get(cid)
+    if session is None:
+        raise ToolError("Aucun terminal ouvert dans cette conversation : l'utilisateur l'ouvre depuis l'onglet « >_ » "
+                        "du panneau latéral, ou terminal_run en ouvre un.")
+    lines = [line for line in terminal.clean(session.since()).split("\n") if terminal.MARKER not in line]
+    lines = lines[-prepared["lines"]:]
+    return _ok(_truncate("\n".join(lines)) or "(terminal vide)")
+
+
+def prepare_terminal_run(root, args):
+    prepared = prepare_run_command(root, {"command": args.get("command")})  # mêmes refus que run_command
+    if "\n" in prepared["command"] or "\r" in prepared["command"]:
+        raise ToolError("Une seule ligne par appel dans le terminal : enchaîne avec « ; » ou fais plusieurs appels.")
+    try:
+        timeout = max(1.0, min(TERMINAL_MAX_TIMEOUT_S, float(args.get("timeout") or TERMINAL_TIMEOUT_S)))
+    except (TypeError, ValueError):
+        raise ToolError("« timeout » doit être un nombre de secondes.")
+    return {"command": prepared["command"], "cwd": prepared["cwd"], "timeout": timeout,
+            "preview": prepared["command"] + "\n\n# >_ dans ton terminal : elle y reste visible"}
+
+
+async def run_terminal_run(prepared, cid):
+    import secrets
+
+    from . import terminal
+    try:
+        session = await asyncio.to_thread(terminal.open_session, cid, prepared["cwd"])
+    except terminal.TerminalError as exc:
+        raise ToolError(str(exc))
+    # La fin se repère à un marqueur que PowerShell calcule : l'écho de ce qui est tapé ne le contient pas
+    nonce = secrets.token_hex(4)
+    marker = f"{terminal.MARKER}{nonce}"
+    mark = session.mark()
+    # Une seule ligne : tapé à part, le marqueur resterait en file si la commande attend une saisie, et l'utilisateur
+    # le verrait arriver dans son terminal une fois qu'il aurait répondu
+    await asyncio.to_thread(session.write,
+                            f"{prepared['command']}; '{terminal.MARKER}' + '{nonce}:' + $LASTEXITCODE\r")
+    raw, found = await asyncio.to_thread(session.wait_for, marker, mark, prepared["timeout"])
+    text = terminal.clean(raw)
+    code = None
+    if found:
+        text, _, tail = text.partition(marker)
+        code = tail.lstrip(":").split("\n")[0].strip() or None
+    # La ligne tapée pour le marqueur n'apprend rien au modèle
+    kept = [line for line in text.split("\n") if f"'{nonce}:'" not in line]
+    output = _truncate("\n".join(kept).strip()) or "(aucune sortie)"
+    if not found:
+        note = (f"Pas terminée après {prepared['timeout']:.0f} s : elle tourne peut-être encore dans le terminal, ou "
+                "attend une saisie. Relis-le avec terminal_read." if session.alive() else "Le terminal s'est arrêté.")
+        return _ok(f"{output}\n\n{note}")
+    return _ok(output + (f"\n\nCode de sortie du dernier programme : {code}" if code not in (None, "0") else ""))
+
+
 def prepare_command_output(root, args):
     command_id = str(args.get("id") or "").strip()
     if not command_id:
@@ -1473,6 +1543,23 @@ TOOLS = {t.name: t for t in [
             },
         }, []),
         prepare_multi_edit, run_write,
+    ),
+    Tool(
+        "terminal_run", "command",
+        "Tape une commande dans le terminal de l'utilisateur (onglet « >_ »), où elle reste visible et garde son "
+        "état (dossier courant, environnement activé). À utiliser quand il le demande ; sinon run_command.",
+        _schema({
+            "command": {"type": "string", "description": "Une seule ligne PowerShell."},
+            "timeout": {"type": "number", "default": TERMINAL_TIMEOUT_S,
+                        "description": f"Secondes d'attente de la fin ({TERMINAL_MAX_TIMEOUT_S} au plus)."},
+        }, ["command"]),
+        prepare_terminal_run, run_terminal_run,
+    ),
+    Tool(
+        "terminal_read", "terminal",
+        "Lit les dernières lignes du terminal de l'utilisateur (ce qu'il y a lancé, une erreur qu'il y voit).",
+        _schema({"lines": {"type": "integer", "default": TERMINAL_LINES}}, []),
+        prepare_terminal_read, run_terminal_read,
     ),
     Tool(
         "run_command", "command",

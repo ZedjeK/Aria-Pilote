@@ -404,6 +404,7 @@ function syncSidePanel() {
     if (side.active) counts.push(`${side.active} modif${side.active > 1 ? "s" : ""}`);
     if (side.running) counts.push(`⚙ ${side.running}`);
     $("#btn-side").textContent = open || !counts.length ? "▤" : `▤ ${counts.join(" · ")}`;
+    if (typeof terminalSync === "function") terminalSync();  // terminal.js est chargé après ce fichier
 }
 
 $("#btn-side").addEventListener("click", () => {
@@ -1195,7 +1196,7 @@ function toolNode(m, pendingPlan = false, activeQuestion = false) {
 
 function diffNode(text, kind) {
     const pre = el("pre", { className: "diff" });
-    if (kind === "command" || kind === "screen_action" || kind === "mcp" || kind === "memory") {
+    if (kind === "command" || kind === "screen_action" || kind === "mcp" || kind === "memory" || kind === "terminal") {
         pre.textContent = text;
         return pre;
     }
@@ -1218,6 +1219,7 @@ function approvalNode(ev) {
         screen_action: "🖱 L'agent veut agir sur ton écran (une action à l'écran ne s'annule pas) :",
         mcp: "🔌 L'agent veut utiliser un outil MCP :",
         memory: "🧠 L'agent veut toucher à ses souvenirs :",
+        terminal: "L'agent veut lire ton terminal :",
     }[ev.kind];
     const buttons = el("div", { className: "row" });
     const decide = async (decision, label, rule = null) => {

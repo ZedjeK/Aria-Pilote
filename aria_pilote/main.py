@@ -7,7 +7,7 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 
 import httpx
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
@@ -15,6 +15,7 @@ from pydantic import BaseModel, Field
 from . import (VERSION, agent, attachments, background, backups, chat, config, context, conversations, downloads,
                engines, github, hardware, hooks, hub, images, mcp_client, models, optimizer, permissions, persona,
                pick_folder, presets, screen, searxng, skills, souvenirs, subagents, tools, trial, updates, workspace)
+from . import terminal
 from .server import EngineMissing, manager
 
 STATIC_DIR = Path(__file__).parent / "static"
@@ -49,6 +50,7 @@ async def lifespan(app):
     idle.cancel()
     if update:
         update.cancel()
+    await asyncio.to_thread(terminal.stop_all)
     await asyncio.to_thread(background.stop_all)  # le job object les tuerait de toute façon : ici, proprement
     await manager.shutdown()
     await searxng.manager.stop()
@@ -703,6 +705,7 @@ def patch_conversation(cid: str, patch: ConversationPatch):
 def delete_conversation(cid: str):
     _conversation_or_404(cid)
     background.stop_conversation(cid)
+    terminal.close(cid)
     conversations.delete(cid)
     try:
         backups.delete_conversation(cid)  # ses sauvegardes partent à la corbeille avec elle
@@ -1514,6 +1517,87 @@ def undo_task(req: UndoTaskRequest):
     _conversation_or_404(req.conversation_id)
     _task_or_409(req.conversation_id, req.task_id)
     return agent.undo_task(req.conversation_id, req.task_id, req.force)
+
+
+# --- Terminal intégré -------------------------------------------------------------
+
+class TerminalRequest(BaseModel):
+    conversation_id: str
+
+
+def _terminal_cwd(cid):
+    """Dossier de travail de la conversation : le terminal s'y ouvre, et n'existe pas sans lui."""
+    conv = _conversation_or_404(cid)
+    root = (conv.get("agent") or {}).get("workspace")
+    if not root:
+        raise HTTPException(409, "Attache d'abord un dossier à la conversation : le terminal s'ouvre dedans.")
+    try:
+        return workspace.validate_root(root)
+    except workspace.WorkspaceError as exc:
+        raise HTTPException(409, str(exc))
+
+
+@app.post("/api/terminal/token")
+def terminal_token(req: TerminalRequest):
+    """Jeton à usage unique pour le WebSocket du terminal (cette requête passe, elle, par local_only)."""
+    _terminal_cwd(req.conversation_id)
+    return {"token": terminal.issue_token(req.conversation_id), "running": terminal.get(req.conversation_id) is not None}
+
+
+@app.post("/api/terminal/close")
+def terminal_close(req: TerminalRequest):
+    _conversation_or_404(req.conversation_id)
+    return {"closed": terminal.close(req.conversation_id)}
+
+
+@app.websocket("/api/terminal/ws")
+async def terminal_ws(ws: WebSocket):
+    # Tout est vérifié avant d'accepter : hôte, origine, puis jeton (voir terminal.py)
+    if terminal.refusal(ws.headers) is not None:
+        await ws.close(code=1008)
+        return
+    cid = terminal.redeem_token(ws.query_params.get("token"))
+    if cid is None:
+        await ws.close(code=1008)
+        return
+    try:
+        cwd = _terminal_cwd(cid)
+        size = (ws.query_params.get("rows"), ws.query_params.get("cols"))
+        session = await asyncio.to_thread(terminal.open_session, cid, cwd, size)
+    except (HTTPException, terminal.TerminalError) as exc:
+        await ws.accept()
+        await ws.send_json({"t": "error", "d": getattr(exc, "detail", None) or str(exc)})
+        await ws.close()
+        return
+    await ws.accept()
+    loop = asyncio.get_running_loop()
+    queue = asyncio.Queue()
+    listener = lambda data: loop.call_soon_threadsafe(queue.put_nowait, data)  # noqa: E731 (appelé par le fil lecteur)
+    replay = session.subscribe(listener)
+
+    async def pump():
+        if replay:
+            await ws.send_json({"t": "out", "d": replay})
+        while True:
+            data = await queue.get()
+            if data is None:
+                await ws.send_json({"t": "exit"})
+                return
+            await ws.send_json({"t": "out", "d": data})
+
+    sender = asyncio.create_task(pump())
+    try:
+        while True:
+            message = await ws.receive_json()
+            if message.get("t") == "in" and isinstance(message.get("d"), str):
+                await asyncio.to_thread(session.write, message["d"])
+            elif message.get("t") == "size":
+                await asyncio.to_thread(session.resize, message.get("rows"), message.get("cols"))
+    except (WebSocketDisconnect, ValueError, RuntimeError):
+        pass  # page fermée ou message illisible : le terminal, lui, continue de tourner
+    finally:
+        session.unsubscribe(listener)
+        sender.cancel()
 
 
 # --- Hugging Face et téléchargements ---------------------------------------------

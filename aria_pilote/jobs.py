@@ -73,6 +73,21 @@ def attach(proc):
     return bool(kernel32.AssignProcessToJobObject(job, int(proc._handle)))
 
 
+def attach_pid(pid):
+    """Comme attach, pour un processus dont on n'a que le numéro (le PowerShell d'un pseudo-terminal)."""
+    if _JOB is None:
+        return False
+    kernel32, job = _JOB
+    kernel32.OpenProcess.restype = ctypes.c_void_p
+    handle = kernel32.OpenProcess(0x0100 | 0x0001, False, int(pid))  # PROCESS_SET_QUOTA | PROCESS_TERMINATE
+    if not handle:
+        return False
+    try:
+        return bool(kernel32.AssignProcessToJobObject(job, ctypes.c_void_p(handle)))
+    finally:
+        kernel32.CloseHandle(ctypes.c_void_p(handle))
+
+
 # Variables ajoutées aux commandes de l'agent : la sortie est relue en UTF-8 (wrapper PowerShell),
 # alors qu'un Python redirigé écrirait en cp1252 et abîmerait les accents.
 COMMAND_ENV = {"PYTHONUTF8": "1"}
