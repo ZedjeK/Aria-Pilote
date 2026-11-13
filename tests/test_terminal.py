@@ -1,6 +1,7 @@
 """Terminal intégré : le WebSocket n'accepte que l'interface d'Aria Pilote (hôte, origine, jeton à usage unique),
 et un vrai PowerShell tourne dans le dossier de travail de la conversation."""
 
+import asyncio
 import shutil
 import sys
 import time
@@ -9,7 +10,7 @@ import unittest
 from base import BASE_URL, ORIGIN, client, new_conversation, workspace
 from starlette.websockets import WebSocketDisconnect
 
-from aria_pilote import jobs, terminal
+from aria_pilote import jobs, terminal, tools
 
 HOST = BASE_URL.removeprefix("http://")
 GOOD = {"host": HOST, "origin": BASE_URL}
@@ -157,6 +158,45 @@ class RealTerminal(unittest.TestCase):
         # Déjà rattaché à l'ouverture ; le refaire ne doit ni planter ni échouer
         self.assertTrue(jobs.attach_pid(terminal.get(self.cid).pid))
         self.assertFalse(jobs.attach_pid(0))
+
+
+@unittest.skipUnless(sys.platform == "win32", "pseudo-terminal Windows (ConPTY)")
+class AgentTerminalRun(unittest.TestCase):
+    """terminal_run : l'agent tape une commande dans le terminal de l'utilisateur."""
+
+    CID = "terminal-run-agent"
+
+    def setUp(self):
+        self.root = workspace()
+        self.addCleanup(shutil.rmtree, self.root, ignore_errors=True)
+        self.addCleanup(terminal.stop_all)
+
+    def run_tool(self, command, timeout):
+        prepared = {"command": command, "cwd": str(self.root), "timeout": timeout}
+        return asyncio.run(tools.run_terminal_run(prepared, self.CID))
+
+    def test_commande_terminee_rend_sa_sortie_sans_le_marqueur(self):
+        result = self.run_tool("Write-Output ('ok-' + (6*7))", timeout=20)
+        self.assertEqual(result["status"], "ok")
+        self.assertIn("ok-42", result["output"])
+        self.assertNotIn("Pas terminée", result["output"])
+        self.assertNotIn(terminal.MARKER, result["output"])
+
+    def test_saisie_attendue_ne_laisse_rien_tape_dans_le_terminal(self):
+        # La commande attend une saisie : l'agent rend la main, puis l'utilisateur répond lui-même
+        result = self.run_tool("$r = Read-Host 'saisie'; \"recu=[$r]\"", timeout=3)
+        self.assertIn("Pas terminée", result["output"])
+        session = terminal.get(self.CID)
+        session.write("bonjour\r")
+        deadline, text = time.time() + 15, ""
+        while "recu=[bonjour]" not in text and time.time() < deadline:
+            time.sleep(0.2)
+            text = terminal.clean(session.since())
+        self.assertIn("recu=[bonjour]", text)
+        time.sleep(1.5)  # laisse le temps à une ligne restée en file d'apparaître
+        after = terminal.clean(session.since()).split("recu=[bonjour]", 1)[1]
+        # Aucune ligne de l'agent ne doit être tapée après coup dans le terminal de l'utilisateur
+        self.assertNotIn("'" + terminal.MARKER + "'", after)
 
 
 if __name__ == "__main__":

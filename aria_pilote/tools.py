@@ -607,8 +607,10 @@ async def run_terminal_run(prepared, cid):
     nonce = secrets.token_hex(4)
     marker = f"{terminal.MARKER}{nonce}"
     mark = session.mark()
-    await asyncio.to_thread(session.write, prepared["command"] + "\r")
-    await asyncio.to_thread(session.write, f"'{terminal.MARKER}' + '{nonce}:' + $LASTEXITCODE\r")
+    # Une seule ligne : tapé à part, le marqueur resterait en file si la commande attend une saisie, et l'utilisateur
+    # le verrait arriver dans son terminal une fois qu'il aurait répondu
+    await asyncio.to_thread(session.write,
+                            f"{prepared['command']}; '{terminal.MARKER}' + '{nonce}:' + $LASTEXITCODE\r")
     raw, found = await asyncio.to_thread(session.wait_for, marker, mark, prepared["timeout"])
     text = terminal.clean(raw)
     code = None
