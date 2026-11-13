@@ -41,6 +41,7 @@ class Navigateur:
         self._context = None
         self._pages = {}  # conversation -> son onglet
         self.vues = {}  # conversation -> dernière lecture de son onglet (adresse, numéros des éléments)
+        self.evenements = {}  # conversation -> ce que le site a tenté (alertes, choix de fichier) depuis la dernière action
         self.bloquees = []  # dernières requêtes refusées par la garde du réseau local
 
     @property
@@ -114,7 +115,25 @@ class Navigateur:
         blank = [p for p in context.pages if id(p) not in taken and not p.is_closed() and p.url == "about:blank"]
         current = blank[0] if blank else await context.new_page()
         self._pages[cid] = current
+        self._watch(cid, current)
         return current
+
+    def _watch(self, cid, page):
+        """Alertes et confirmations du site : refermées sans accepter. Choix de fichier : rien n'est envoyé (avec un
+        écouteur, Playwright n'ouvre pas la fenêtre de Windows). L'agent en est prévenu après son action."""
+        def noted(text):
+            self.evenements.setdefault(cid, []).append(text)
+            del self.evenements[cid][:-10]
+
+        async def dialog(d):
+            noted(f"fenêtre « {d.type} » du site refermée sans l'accepter : {d.message[:300]}")
+            try:
+                await d.dismiss()
+            except Exception:  # déjà refermée
+                pass
+
+        page.on("dialog", lambda d: asyncio.ensure_future(dialog(d)))
+        page.on("filechooser", lambda _: noted("le site a demandé un fichier : refusé, l'agent n'envoie aucun fichier"))
 
     def page_ouverte(self, cid):
         """L'onglet de la conversation s'il est encore ouvert, sans rien ouvrir ; None sinon."""
@@ -125,6 +144,7 @@ class Navigateur:
         """Ferme l'onglet de la conversation (conversation supprimée) ; le navigateur reste ouvert pour les autres."""
         current = self._pages.pop(cid, None)
         self.vues.pop(cid, None)
+        self.evenements.pop(cid, None)
         if current is not None and not current.is_closed():
             try:
                 await current.close()
@@ -155,6 +175,7 @@ class Navigateur:
     async def _stop(self):
         self._pages.clear()
         self.vues.clear()
+        self.evenements.clear()
         context, self._context = self._context, None
         if context is not None:
             try:

@@ -1196,7 +1196,7 @@ function toolNode(m, pendingPlan = false, activeQuestion = false) {
 
 function diffNode(text, kind) {
     const pre = el("pre", { className: "diff" });
-    if (kind === "command" || kind === "screen_action" || kind === "mcp" || kind === "memory" || kind === "terminal") {
+    if (kind === "command" || kind === "screen_action" || kind === "page_action" || kind === "mcp" || kind === "memory" || kind === "terminal") {
         pre.textContent = text;
         return pre;
     }
@@ -1220,6 +1220,7 @@ function approvalNode(ev) {
         mcp: "🔌 L'agent veut utiliser un outil MCP :",
         memory: "🧠 L'agent veut toucher à ses souvenirs :",
         terminal: "L'agent veut lire ton terminal :",
+        page_action: "🌐 L'agent veut agir dans la page du navigateur (une action sur un site ne s'annule pas) :",
     }[ev.kind];
     const buttons = el("div", { className: "row" });
     const decide = async (decision, label, rule = null) => {
@@ -1246,10 +1247,12 @@ function approvalNode(ev) {
         session.addEventListener("click", () => decide("allow_session", "Autorisé pour cette conversation ✓"));
         buttons.append(session);
     }
-    if (ev.kind === "screen_action" && ev.ordinary) {
+    if ((ev.kind === "screen_action" || ev.kind === "page_action") && ev.ordinary) {
         // Clics, frappe, défilement : sans redemander jusqu'à la fin de la tâche (jamais les boutons sensibles,
         // raccourcis à risque ou ouvertures d'appli, qui redemandent toujours)
-        const task = el("button", { className: "ghost", title: "Les boutons sensibles, raccourcis à risque et ouvertures d'appli te seront toujours demandés" },
+        const title = ev.kind === "page_action" ? "Les boutons sensibles (envoyer, payer, supprimer, publier…) te seront toujours demandés"
+            : "Les boutons sensibles, raccourcis à risque et ouvertures d'appli te seront toujours demandés";
+        const task = el("button", { className: "ghost", title },
             "Autoriser les actions ordinaires pour cette tâche");
         task.addEventListener("click", () => decide("allow_task", "Autorisé, ainsi que les actions ordinaires de cette tâche ✓"));
         buttons.append(task);

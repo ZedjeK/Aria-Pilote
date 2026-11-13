@@ -50,7 +50,6 @@ def _clip(text):
 def compact(snapshot):
     """Lignes de texte compact, et les références des éléments numérotés : ({numéro: « eNN »}, lignes)."""
     lines, refs = [], {}
-    pending_placeholder = None
     for raw in snapshot.splitlines():
         prop = PROP_RE.match(raw)
         if prop:
@@ -99,6 +98,19 @@ def compact(snapshot):
                                "caption", "status", "alert", "dialog", "figure", "blockquote", "code"):
             lines.append(_clip(name))
     return refs, _dedupe(lines)
+
+
+def roles(snapshot):
+    """Rôle de chaque élément numéroté : {numéro: « textbox », « button »…}."""
+    found = {}
+    for raw in snapshot.splitlines():
+        m = LINE_RE.match(raw)
+        if not m or m["role"] not in INTERACTIVE:
+            continue
+        ref = dict(ATTR_RE.findall(m["attrs"] or "")).get("ref")
+        if ref and ref[1:].isdigit():
+            found[int(ref[1:])] = m["role"]
+    return found
 
 
 def _dedupe(lines):

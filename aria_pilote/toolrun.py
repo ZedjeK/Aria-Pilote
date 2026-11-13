@@ -9,7 +9,10 @@ from . import chat, conversations, github, hooks, mcp_client, permissions, tools
 # Types d'outils soumis à accord, et le drapeau qui les autorise pour toute la conversation
 # (None : jamais d'autorisation globale)
 APPROVAL_FLAGS = {"write": "auto_write", "web": "auto_web", "command": None, "screen_action": None, "mcp": None,
-                  "memory": None, "terminal": None}  # souvenirs : demandés seulement avec « Me demander avant de retenir »
+                  "memory": None, "terminal": None, "page_action": None}  # souvenirs : demandés seulement avec « Me demander avant de retenir »
+
+# « Autoriser les actions ordinaires pour cette tâche » : la clé de la conversation qui retient la tâche concernée
+TASK_FLAGS = {"screen_action": "screen_auto_task", "page_action": "page_auto_task"}
 
 # Accords en attente : approval_id -> (future, conversation_id, type d'outil, dossier de travail, commande)
 _approvals = {}
@@ -35,10 +38,12 @@ def resolve_approval(approval_id, decision, rule=None):
         except permissions.RuleError as exc:
             raise ApprovalError(str(exc))
     if decision == "allow_task":
-        # « Autoriser les actions ordinaires pour cette tâche » : à l'écran seulement, et la tâche suivante redemande
-        if kind != "screen_action":
-            raise ApprovalError("Seules les actions à l'écran s'autorisent pour toute une tâche.")
-        conversations.update(cid, lambda c: c.__setitem__("screen_auto_task", c.get("task_id")))
+        # « Autoriser les actions ordinaires pour cette tâche » : à l'écran ou dans la page, chacun sa clé, et la
+        # tâche suivante redemande
+        flag = TASK_FLAGS.get(kind)
+        if flag is None:
+            raise ApprovalError("Seules les actions à l'écran ou dans le navigateur s'autorisent pour toute une tâche.")
+        conversations.update(cid, lambda c: c.__setitem__(flag, c.get("task_id")))
     if decision == "allow_session":
         flag = APPROVAL_FLAGS[kind]
         if flag is None:
@@ -111,7 +116,10 @@ async def run_tool(cid, root, name, args, call_id, out, allowed=None, parent_id=
                    and (pc_mode or (conv_now.get("task_id") and conv_now.get("screen_auto_task") == conv_now.get("task_id"))))
     # Lecture git ou gh (git status, gh pr checks…) : sans demander si c'est activé dans Réglages › GitHub
     read_auto = bool(command) and rule is None and github.settings()["read_auto"] and github.read_only(command)
-    auto = auto or screen_auto or read_auto
+    # Action ordinaire dans le navigateur : si tu l'as permis pour cette tâche (jamais d'office)
+    page_auto = (tool.kind == "page_action" and prepared.get("ordinary") and conv_now.get("task_id")
+                 and conv_now.get("page_auto_task") == conv_now.get("task_id"))
+    auto = auto or screen_auto or read_auto or page_auto
     if tool.kind in APPROVAL_FLAGS and rule is None and not auto and not settings.get(APPROVAL_FLAGS[tool.kind] or "", False):
         approval_id = uuid.uuid4().hex[:12]
         future = asyncio.get_running_loop().create_future()
@@ -127,7 +135,7 @@ async def run_tool(cid, root, name, args, call_id, out, allowed=None, parent_id=
             "command": command,
             "rule_prefix": permissions.suggest_prefix(command) if command and not outward else None,
             "outward": outward,
-            "ordinary": bool(prepared.get("ordinary")) if tool.kind == "screen_action" else None,
+            "ordinary": bool(prepared.get("ordinary")) if tool.kind in TASK_FLAGS else None,
         })
         try:
             decision = await future
@@ -147,6 +155,8 @@ async def run_tool(cid, root, name, args, call_id, out, allowed=None, parent_id=
     elif screen_auto:
         out["result"]["rule"] = ("action ordinaire, autorisée d'office en mode PC entier" if pc_mode
                                  else "action ordinaire autorisée pour cette tâche")
+    elif page_auto:
+        out["result"]["rule"] = "action ordinaire autorisée pour cette tâche"
     elif read_auto:
         out["result"]["rule"] = "lecture git ou GitHub, autorisée d'office (Réglages › GitHub)"
     elif auto and prepared.get("auto_reason"):

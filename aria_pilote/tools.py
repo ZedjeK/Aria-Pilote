@@ -1479,11 +1479,42 @@ def prepare_naviguer(root, args):
     return {"url": url, "preview": f"Ouvrir dans le navigateur d'Aria : {url}"}
 
 
+PASSWORD_LINE = "[{n}] champ mot de passe (contenu masqué : l'agent ne le lit ni ne le remplit jamais)"
+MAX_TEXTBOXES = 200  # au-delà, les champs restants sont traités comme des mots de passe : masqués, jamais remplis
+
+
+async def _password_fields(page, refs, roles):
+    """Numéros des champs mot de passe. L'instantané de Playwright montre leur contenu en clair : on demande son type
+    à chaque champ de texte, et un champ qui ne répond pas est traité comme un mot de passe."""
+    numbers = sorted(n for n, role in roles.items() if role == "textbox")
+
+    async def kind(n):
+        try:
+            return n, await page.locator(f"aria-ref={refs[n]}").evaluate("e => e.type", timeout=2000)
+        except Exception:
+            return n, "password"
+
+    checked = await asyncio.gather(*(kind(n) for n in numbers[:MAX_TEXTBOXES]))
+    return {n for n, t in checked if t == "password"} | set(numbers[MAX_TEXTBOXES:])
+
+
 async def _snapshot(cid, page, boxes=False):
-    """Texte compact de la page (ses numéros sont gardés pour les actions) ; avec `boxes`, l'instantané brut aussi."""
+    """Texte compact de la page (ses numéros sont gardés pour les actions) ; avec `boxes`, l'instantané brut aussi.
+    Le contenu des champs mot de passe est masqué avant tout : il n'atteint jamais le modèle."""
     snap = await page.aria_snapshot(mode="ai", boxes=boxes)
     refs, lines = page_texte.compact(snap)
-    navigateur.manager.vues[cid] = {"url": page.url, "refs": refs}
+    roles = page_texte.roles(snap)
+    passwords = await _password_fields(page, refs, roles)
+    labels = {}
+    for i, line in enumerate(lines):
+        n = _line_number(line)
+        if n is None:
+            continue
+        if n in passwords:
+            lines[i] = PASSWORD_LINE.format(n=n)
+        labels[n] = lines[i]
+    navigateur.manager.vues[cid] = {"url": page.url, "refs": refs, "roles": roles, "labels": labels,
+                                    "passwords": passwords}
     return lines, snap
 
 
@@ -1566,7 +1597,10 @@ async def run_chercher_page(prepared, cid):
 
 
 def prepare_voir_page(root, args):
-    return {"preview": "Capture de la page ouverte, avec ses éléments numérotés"}
+    element = args.get("element")
+    if element in (None, ""):
+        return {"element": None, "preview": "Capture de la page ouverte, avec ses éléments numérotés"}
+    return {"element": _element(element), "preview": f"Capture de la page ouverte, autour de l'élément [{element}]"}
 
 
 def _line_number(line):
@@ -1581,6 +1615,15 @@ async def run_voir_page(prepared, cid):
     from PIL import Image
 
     page = _open_page(cid)
+    if prepared.get("element") is not None:
+        vue = _current_view(cid, page)
+        ref = vue["refs"].get(prepared["element"])
+        if ref is None:
+            raise ToolError(f"Pas d'élément [{prepared['element']}] dans ta dernière lecture de la page.")
+        try:
+            await page.locator(f"aria-ref={ref}").scroll_into_view_if_needed(timeout=5000)
+        except Exception as exc:
+            raise ToolError(f"Impossible d'aller jusqu'à l'élément [{prepared['element']}] : {_first_line(exc)}")
     lines, snap = await _snapshot(cid, page, boxes=True)
     refs = navigateur.manager.vues[cid]["refs"]
     width, height = await page.evaluate("[window.innerWidth, window.innerHeight]")
@@ -1601,6 +1644,124 @@ async def run_voir_page(prepared, cid):
                                     "disponible. Utilise lire_page."))
     return _ok(_truncate(text + "\n\nLa capture est jointe juste après ce résultat (les cadres numérotés "
                                 "correspondent à la liste)."), images=[images.store(cid, small, "png")])
+
+
+# --- actions dans la page -------------------------------------------------------------------------------
+# Comme pour l'écran : chaque action est demandée, « Autoriser les actions ordinaires pour cette tâche » laisse
+# passer clics, saisies et choix, et un bouton sensible est toujours demandé. L'agent n'agit que sur ce qu'il vient de
+# lire : si la page a changé d'adresse depuis, il doit la relire.
+
+ACTION_TIMEOUT_MS = 10000
+TYPABLE = {"textbox", "searchbox", "combobox", "spinbutton"}
+CHOOSABLE = {"combobox", "listbox"}
+ACTION_VERBS = {"cliquer": "Cliquer sur", "taper": "Taper dans", "choisir": "Choisir dans"}
+
+
+def _element(value):
+    try:
+        number = int(str(value).strip().strip("[]e"))
+    except (TypeError, ValueError):
+        raise ToolError("« element » doit être le numéro d'un élément de la page, par exemple 37.")
+    if number <= 0:
+        raise ToolError("« element » doit être le numéro d'un élément de la page, par exemple 37.")
+    return number
+
+
+def _current_view(cid, page=None):
+    vue = navigateur.manager.vues.get(cid)
+    if vue is None:
+        raise ToolError("Lis d'abord la page (naviguer, lire_page ou voir_page) : tu n'agis que sur ce que tu as lu.")
+    if page is not None and page.url != vue["url"]:
+        raise ToolError("La page a changé d'adresse depuis ta dernière lecture : relis-la (lire_page) avant d'agir.")
+    return vue
+
+
+def _prepare_page_action(action, args, **extra):
+    return {"action": action, "element": _element(args.get("element")), **extra}
+
+
+def prepare_cliquer(root, args):
+    return _prepare_page_action("cliquer", args)
+
+
+def prepare_taper(root, args):
+    text = args.get("texte")
+    if not isinstance(text, str):
+        raise ToolError("« texte » doit être le texte à taper.")
+    if len(text) > screen.MAX_TEXT:
+        raise ToolError(f"Texte trop long ({len(text)} caractères, {screen.MAX_TEXT} au plus).")
+    return _prepare_page_action("taper", args, texte=text, valider=bool(args.get("valider")))
+
+
+def prepare_choisir(root, args):
+    option = (args.get("option") or "").strip()
+    if not option:
+        raise ToolError("« option » doit être le libellé de l'option à choisir.")
+    return _prepare_page_action("choisir", args, option=option)
+
+
+def bind_page_action(prepared, cid):
+    """Cible résolue sur la dernière lecture de la page, avant la demande d'accord : aperçu, refus d'office et
+    caractère sensible (toujours demandé)."""
+    vue = _current_view(cid)
+    n = prepared["element"]
+    ref = vue["refs"].get(n)
+    if ref is None:
+        raise ToolError(f"Pas d'élément [{n}] dans ta dernière lecture de la page : relis-la.")
+    role, label = vue["roles"].get(n), vue["labels"].get(n, f"[{n}]")
+    if n in vue["passwords"]:
+        raise ToolError("Champ mot de passe : l'agent ne le remplit jamais. Demande à l'utilisateur de le faire.")
+    if prepared["action"] == "taper" and role not in TYPABLE:
+        raise ToolError(f"L'élément [{n}] n'est pas un champ où taper ({label}).")
+    if prepared["action"] == "choisir" and role not in CHOOSABLE:
+        raise ToolError(f"L'élément [{n}] n'est pas une liste où choisir ({label}).")
+    warnings = []
+    if _is_sensitive(label) or (prepared["action"] == "taper" and prepared["valider"] and vue["passwords"]):
+        warnings.append("⚠ action sensible (envoi, paiement, suppression, publication…) : toujours demandée")
+    elif prepared["action"] == "cliquer" and role == "button" and vue["passwords"]:
+        warnings.append("⚠ bouton d'une page qui contient un mot de passe : toujours demandé")
+    detail = {"taper": lambda p: f"\nTexte : {p['texte']}" + ("\nPuis Entrée" if p["valider"] else ""),
+              "choisir": lambda p: f"\nOption : {p['option']}"}.get(prepared["action"], lambda p: "")(prepared)
+    preview = f"{ACTION_VERBS[prepared['action']]} {label}{detail}\nPage : {vue['url']}"
+    if warnings:
+        preview += "\n" + "\n".join(warnings)
+    return {**prepared, "ref": ref, "label": label, "ordinary": not warnings, "preview": preview}
+
+
+async def run_page_action(prepared, cid):
+    page = _open_page(cid)
+    _current_view(cid, page)
+    locator = page.locator(f"aria-ref={prepared['ref']}")
+    if await locator.count() == 0:
+        raise ToolError(f"L'élément [{prepared['element']}] a disparu de la page : relis-la.")
+    navigateur.manager.evenements.pop(cid, None)
+    url_before = page.url
+    try:
+        if prepared["action"] == "cliquer":
+            await locator.click(timeout=ACTION_TIMEOUT_MS)
+        elif prepared["action"] == "taper":
+            await locator.fill(prepared["texte"], timeout=ACTION_TIMEOUT_MS)
+            if prepared["valider"]:
+                await locator.press("Enter", timeout=ACTION_TIMEOUT_MS)
+        else:
+            await locator.select_option(label=prepared["option"], timeout=ACTION_TIMEOUT_MS)
+    except Exception as exc:
+        raise ToolError(f"Action impossible sur {prepared['label']} : {_first_line(exc)}")
+    for state, timeout in (("domcontentloaded", ACTION_TIMEOUT_MS), ("networkidle", SETTLE_MS)):
+        try:
+            await page.wait_for_load_state(state, timeout=timeout)
+        except Exception:
+            pass
+    lines, _ = await _snapshot(cid, page)  # nouveaux numéros pour l'action suivante
+    events = navigateur.manager.evenements.pop(cid, [])
+    notes = "".join(f"\n{e}" for e in events)
+    done = f"Fait : {ACTION_VERBS[prepared['action']].lower()} {prepared['label']}.{notes}"
+    if page.url != url_before:
+        chunks = page_texte.parts(lines)
+        return _ok(_truncate(f"{done}\n\nNouvelle page :\n{await _header(page, 1, len(chunks))}\n\n{PAGE_NOTE}\n\n"
+                             f"{chunks[0]}"))
+    return _ok(f"{done}\nMême adresse ({page.url}) : relis la page (lire_page, chercher_page ou voir_page) pour voir "
+               "ce qui a changé ; les numéros des éléments ont été mis à jour.")
 
 
 # --- registre --------------------------------------------------------------------
@@ -1882,9 +2043,30 @@ TOOLS = {t.name: t for t in [
     Tool(
         "voir_page", "page",
         "Capture de ce qui est visible dans la page ouverte par naviguer, avec les éléments numérotés dessinés dessus "
-        "(mêmes numéros que lire_page) : pour la mise en page, les images ou une page mal décrite en texte.",
-        _schema({}, []),
+        "(mêmes numéros que lire_page) : pour la mise en page, les images ou une page mal décrite en texte. Avec "
+        "« element », la page défile d'abord jusqu'à cet élément.",
+        _schema({"element": {"type": "integer", "description": "Facultatif : numéro d'un élément à montrer."}}, []),
         prepare_voir_page, run_voir_page,
+    ),
+    Tool(
+        "cliquer", "page_action",
+        "Clique sur un élément numéroté de ta dernière lecture de la page (lien, bouton, case…).",
+        _schema({"element": {"type": "integer", "description": "Numéro de l'élément, par exemple 37."}}, ["element"]),
+        prepare_cliquer, run_page_action, bind=bind_page_action,
+    ),
+    Tool(
+        "taper", "page_action",
+        "Remplace le contenu d'un champ numéroté de la page par ce texte ; « valider » appuie ensuite sur Entrée. "
+        "Jamais dans un champ mot de passe.",
+        _schema({"element": {"type": "integer"}, "texte": {"type": "string"},
+                 "valider": {"type": "boolean", "default": False}}, ["element", "texte"]),
+        prepare_taper, run_page_action, bind=bind_page_action,
+    ),
+    Tool(
+        "choisir", "page_action",
+        "Choisit une option, par son libellé, dans une liste déroulante numérotée de la page.",
+        _schema({"element": {"type": "integer"}, "option": {"type": "string"}}, ["element", "option"]),
+        prepare_choisir, run_page_action, bind=bind_page_action,
     ),
 ]}
 
