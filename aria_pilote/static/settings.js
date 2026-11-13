@@ -815,6 +815,59 @@ $("#btn-sx-toggle").addEventListener("click", async () => {
     }
 });
 
+// --- Navigateur piloté ------------------------------------------------------------------
+
+function showNavError(message) {
+    $("#nav-error").textContent = message || "";
+    $("#nav-error").hidden = !message;
+}
+
+async function loadNavigateur() {
+    showNavError("");
+    $("#set-nav-locaux").value = (state.config.navigateur?.locaux_autorises || []).join(", ");
+    renderNavigateur(await api("/api/navigateur"));
+}
+
+function renderNavigateur(s) {
+    $("#nav-state").textContent = !s.installe ? "non installé" : s.ouvert ? "ouvert" : "fermé";
+    $("#nav-state").className = `badge${s.ouvert ? " loaded" : ""}`;
+    $("#nav-detail").textContent = !s.installe
+        ? "Lance tools/install_navigateur.py pour l'installer (version de dev)."
+        : `${s.chromium}${s.ouvert ? ` · ${s.onglets} onglet${s.onglets > 1 ? "s" : ""}` : " · s'ouvre quand l'agent en a besoin"}`;
+    $("#btn-nav-close").hidden = !s.ouvert;
+    $("#btn-nav-clear").disabled = s.ouvert || !s.profil_existe;
+    $("#btn-nav-clear").title = s.ouvert ? "Ferme d'abord le navigateur" : s.profil_existe ? "" : "Profil déjà vide";
+}
+
+async function navAction(path, button) {
+    button.disabled = true;
+    showNavError("");
+    try {
+        renderNavigateur(await api(path, { method: "POST" }));
+    } catch (err) {
+        showNavError(err.message);
+        loadNavigateur();
+    }
+}
+
+$("#btn-nav-close").addEventListener("click", (e) => navAction("/api/navigateur/fermer", e.currentTarget));
+$("#btn-nav-clear").addEventListener("click", (e) => {
+    if (confirm("Envoyer le profil du navigateur d'Aria à la corbeille (cookies, historique, cache) ?")) {
+        navAction("/api/navigateur/vider-profil", e.currentTarget);
+    }
+});
+
+// La liste tapée « 127.0.0.1:3000, 192.168.1.20:8080 » est découpée et vérifiée par le serveur
+$("#set-nav-locaux").addEventListener("change", async (event) => {
+    showNavError("");
+    try {
+        await saveConfig({ navigateur: { locaux_autorises: event.target.value } });
+    } catch (err) {
+        showNavError(err.message);
+    }
+    $("#set-nav-locaux").value = (state.config.navigateur?.locaux_autorises || []).join(", ");
+});
+
 // --- GitHub ---------------------------------------------------------------------------
 
 async function loadGithub() {
@@ -1184,6 +1237,7 @@ const LOADERS = {
     web: () => {
         fillConfigFields($('.settings-section[data-section="web"]'));
         loadSearx();
+        loadNavigateur();
     },
     donnees: loadData,
 };

@@ -1472,11 +1472,15 @@ def prepare_naviguer(root, args):
     url = (args.get("url") or "").strip()
     if not url.startswith(("http://", "https://")):
         raise ToolError("« url » doit commencer par http:// ou https://.")
-    try:
-        web.check_public(url)
-    except web.WebError as exc:
-        raise ToolError(str(exc))
-    return {"url": url, "preview": f"Ouvrir dans le navigateur d'Aria : {url}"}
+    local = navigateur.exception_url(url)  # une de tes exceptions locales (Réglages › Web)
+    if not local:
+        try:
+            web.check_public(url)
+        except web.WebError as exc:
+            raise ToolError(f"{exc} (une appli de ton réseau peut être ajoutée aux exceptions du navigateur, dans "
+                            "Réglages › Web et navigateur).")
+    note = " (exception locale de tes réglages)" if local else ""
+    return {"url": url, "preview": f"Ouvrir dans le navigateur d'Aria : {url}{note}"}
 
 
 PASSWORD_LINE = "[{n}] champ mot de passe (contenu masqué : l'agent ne le lit ni ne le remplit jamais)"

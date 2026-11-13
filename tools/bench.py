@@ -3,7 +3,8 @@
 Chaque tâche est un dossier de bench/tasks/ :
     task.json   demande, réponses aux questions de l'agent, mots pièges ; "folder": false pour une pure
                 discussion (aucun dossier attaché) ; "approve_plan": false pour ne pas approuver le plan proposé ;
-                "verify": commande de vérification de fin de tâche (hook « verifier » du projet, sauf --no-verify)
+                "verify": commande de vérification de fin de tâche (hook « verifier » du projet, sauf --no-verify) ;
+                "site": true pour servir site/ en local au navigateur piloté (voir local_site)
     fixture/    fichiers de départ, copiés dans un dossier temporaire neuf à chaque passage (facultatif sans dossier)
     check.py    check(ws, run) -> (ok, raison) : vérifie le résultat réel (fichiers, tests, réponse)
                 setup(ws) facultatif : prépare le dossier après la copie
@@ -18,14 +19,17 @@ et approuve les plans proposés (sauf si la tâche dit le contraire).
 
 import argparse
 import contextlib
+import http.server
 import importlib.util
 import json
 import shutil
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 from datetime import datetime
+from urllib.parse import parse_qs, urlsplit
 from pathlib import Path
 
 import httpx
@@ -90,6 +94,54 @@ def start_app(client):
         time.sleep(0.5)
     proc.kill()
     sys.exit("L'appli de dev ne démarre pas : regarde data/aria_pilote.log.")
+
+
+@contextlib.contextmanager
+def local_site(client, task, ws):
+    """Le dossier site/ de la tâche servi sur 127.0.0.1, pour le navigateur piloté : son adresse est ajoutée aux
+    exceptions locales le temps de la tâche, puis la liste est remise comme avant. Chaque requête reçue (chemin et
+    paramètres) est notée dans requetes.json du dossier de la tâche : le vérificateur lit ce que le site a vraiment
+    reçu, pas ce que dit le modèle."""
+    if not task.get("site"):
+        yield None
+        return
+    root, log = task["dir"] / "site", ws / "requetes.json"
+    received = []
+
+    class Handler(http.server.SimpleHTTPRequestHandler):
+        def __init__(self, *a, **k):
+            super().__init__(*a, directory=str(root), **k)
+
+        def do_GET(self):
+            parts = urlsplit(self.path)
+            received.append({"chemin": parts.path, "parametres": parse_qs(parts.query, keep_blank_values=True)})
+            log.write_text(json.dumps(received, ensure_ascii=False, indent=1), encoding="utf-8")
+            if parts.path == "/envoi":  # la réponse d'un formulaire : une page de confirmation
+                body = "<title>Demande reçue</title><h1>Demande reçue</h1><p>Merci, ta demande est enregistrée.</p>"
+                data = body.encode("utf-8")
+                self.send_response(200)
+                self.send_header("Content-Type", "text/html; charset=utf-8")
+                self.send_header("Content-Length", str(len(data)))
+                self.end_headers()
+                self.wfile.write(data)
+                return
+            super().do_GET()
+
+        def log_message(self, *a):
+            pass
+
+    server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    address = f"127.0.0.1:{server.server_address[1]}"
+    before = client.get("/api/config").json().get("navigateur", {}).get("locaux_autorises", [])
+    try:
+        client.put("/api/config", json={"navigateur": {"locaux_autorises": before + [address]}},
+                   headers=ORIGIN).raise_for_status()
+        yield f"http://{address}/"
+    finally:
+        client.put("/api/config", json={"navigateur": {"locaux_autorises": before}}, headers=ORIGIN)
+        server.shutdown()
+        server.server_close()
 
 
 def find_model(client, pattern):
@@ -245,19 +297,28 @@ def run_task(client, task, args):
         client.post("/api/hooks/trust", json={"conversation_id": cid}, headers=ORIGIN).raise_for_status()
     run = {"calls": [], "sub_calls": [], "questions": [], "errors": [], "traps": [], "web_denied": 0,
            "final": "", "start": snapshot, "plans": 0, "planner": 0, "compactions": 0, "peak_ctx": 0, "verifs": []}
+    with local_site(client, task, ws) as site:
+        duration = play(client, task, args, cid, run, site)
+    return finish(client, task, args, cid, ws, snapshot, run, duration)
+
+
+def play(client, task, args, cid, run, site):
+    """Le dialogue avec l'agent : la demande, puis ses questions et ses plans, jusqu'à la fin ou au délai."""
     started = time.time()
     deadline = started + args.timeout
-    body = {"conversation_id": cid, "content": task["prompt"]}
+    # Le site local n'est pas Internet : l'accès web y est permis (Internet reste refusé, sauf --web)
+    allow_web = args.web or bool(site)
+    body = {"conversation_id": cid, "content": task["prompt"].replace("{site}", site or "")}
     if args.preset:
         body["preset_id"] = args.preset
-    stream(client, task, run, body, deadline, args.web)
+    stream(client, task, run, body, deadline, allow_web)
     while time.time() < deadline:
         current = client.get(f"/api/conversations/{cid}").json()
         question = pending_question(current)
         if question is not None and len(run["questions"]) < MAX_ANSWERS:
             answer = answer_for(task, question, len(run["questions"]))
             run["questions"].append({**question["args"], "answer": answer})
-            stream(client, task, run, {"conversation_id": cid, "answer": answer}, deadline, args.web)
+            stream(client, task, run, {"conversation_id": cid, "answer": answer}, deadline, allow_web)
         elif plan_pending(current):
             run["plans"] += 1
             if not task.get("approve_plan", True) or run["plans"] > MAX_PLANS:
@@ -265,11 +326,14 @@ def run_task(client, task, args):
             # Comme le bouton « Approuver et exécuter » : le verrou se lève, la même tâche continue
             client.post("/api/agent/plan/approve", json={"conversation_id": cid}, headers=ORIGIN)
             stream(client, task, run, {"conversation_id": cid, "content": PLAN_APPROVED, "continue_task": True},
-                   deadline, args.web)
+                   deadline, allow_web)
         else:
             break
-    duration = time.time() - started
+    return time.time() - started
 
+
+def finish(client, task, args, cid, ws, snapshot, run, duration):
+    """Lecture du résultat, vérification et ménage."""
     conv = client.get(f"/api/conversations/{cid}").json()
     assistants = [m for m in conv["messages"] if m["role"] == "assistant"]
     run["final"] = next((m["content"] for m in reversed(assistants) if m.get("content")), "")

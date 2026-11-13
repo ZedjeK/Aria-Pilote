@@ -1,0 +1,6 @@
+{
+    "prompt": "Ouvre {site} dans le navigateur et trouve dans quelle baie est installé le switch de cœur du bâtiment B. Réponds avec le numéro de la baie.",
+    "measures": "navigateur : lecture d'une longue page, information enfouie loin du début",
+    "folder": false,
+    "site": true
+}

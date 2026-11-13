@@ -151,7 +151,7 @@
             <a href="#/reglages/competences" data-section="competences">📚 Compétences et sous-agents</a>
             <a href="#/reglages/hooks" data-section="hooks">🪝 Hooks</a>
             <a href="#/reglages/mcp" data-section="mcp">🔌 Serveurs MCP</a>
-            <a href="#/reglages/web" data-section="web">🌐 Web et SearXNG</a>
+            <a href="#/reglages/web" data-section="web">🌐 Web et navigateur</a>
             <div class="nav-group">Système</div>
             <a href="#/reglages/donnees" data-section="donnees">💾 Données</a>
         </nav>
@@ -851,7 +851,7 @@
                     </div>
                 </details>
             </section>
-            <section class="settings-section" data-section="web" data-title="Web et SearXNG" hidden>
+            <section class="settings-section" data-section="web" data-title="Web et navigateur" hidden>
                 <div class="set-card">
                     <div class="set-card-title">Recherche web</div>
                     <label class="set-row">
@@ -896,6 +896,24 @@
                         <input type="number" class="set-num" min="0" max="1440" step="5" data-config="searxng_idle_minutes">
                     </label>
                     <p id="sx-error" class="error" hidden></p>
+                </div>
+                <div class="set-card">
+                    <div class="set-card-title">Navigateur piloté</div>
+                    <div class="set-row">
+                        <div><div class="set-label">État</div><div id="nav-detail" class="muted small"></div></div>
+                        <span id="nav-state" class="badge"></span>
+                        <button id="btn-nav-close" class="ghost">⏹ Fermer</button>
+                    </div>
+                    <div class="set-row">
+                        <div><div class="set-label">Profil du navigateur</div><div class="muted small">Cookies, historique et cache du navigateur d'Aria (jamais ceux de ton navigateur). Vider l'envoie à la corbeille ; possible navigateur fermé.</div></div>
+                        <button id="btn-nav-clear" class="ghost">🗑 Vider le profil</button>
+                    </div>
+                    <label class="set-row">
+                        <div><div class="set-label">Exceptions locales</div><div class="muted small">Adresses de ta machine ou de ton réseau que ses pages peuvent joindre, port obligatoire, séparées par des virgules : 127.0.0.1:3000, 192.168.1.20:8080. Les ports d'Aria Pilote sont toujours refusés.</div></div>
+                        <input id="set-nav-locaux" class="mono set-wide" placeholder="aucune">
+                    </label>
+                    <p class="muted small">🔒 Sans exception, toute requête d'une page vers ta machine ou ton réseau local est bloquée : redirections, images et scripts compris.</p>
+                    <p id="nav-error" class="error" hidden></p>
                 </div>
             </section>
 
