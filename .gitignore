@@ -12,6 +12,9 @@ models/
 engines/
 .build_cache/
 
+# Chromium du navigateur piloté (tools/install_navigateur.py)
+/chromium/
+
 # SearXNG : code téléchargé, dépendances et configuration (contient une clé secrète)
 services/searxng/src/
 services/searxng/.venv/

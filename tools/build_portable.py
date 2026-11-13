@@ -14,7 +14,8 @@ Le dossier contient :
 - python\\            CPython 3.11 portable (python-build-standalone), vérifié par SHA-256 ;
 - aria_pilote\\, tools\\ le code de l'appli ;
 - engines\\           les moteurs llama.cpp, en liens physiques vers ceux du code source (sauf --no-engines) ;
-- services\\searxng\\  SearXNG et ses dépendances dans un site-packages à part.
+- services\\searxng\\  SearXNG et ses dépendances dans un site-packages à part ;
+- chromium\\          le Chromium du navigateur piloté, celui qui va avec la version de Playwright installée.
 
 --exe construit à la place un seul ..\\Aria-Pilote-X.Y.Z.exe, qui embarque tout cela (moteurs compris, sauf
 --no-engines) : à son lancement, il installe ou met à jour l'appli dans %USERPROFILE%\\.Aria-Pilote, sans jamais
@@ -56,6 +57,7 @@ LEGACY_EXE_NAMES = ("Aria Home.exe",)
 
 sys.path.insert(0, str(ROOT / "tools"))
 sys.path.insert(0, str(ROOT))
+import install_navigateur  # noqa: E402
 import install_searxng  # noqa: E402
 from aria_pilote import VERSION  # noqa: E402
 
@@ -132,6 +134,16 @@ def copy_engines(dest):
             continue
         shutil.copytree(src, dest / "engines" / name, copy_function=link_or_copy)
         print(f"  lié : {name}")
+
+
+def install_browser(python, dest):
+    step("Chromium du navigateur piloté")
+    # Téléchargé par le Playwright de la version construite, donc à la bonne version ; gardé dans le cache de
+    # construction, il n'est retéléchargé que quand Playwright change de version
+    cache = install_navigateur.install(CACHE / "chromium", python)
+    shutil.copytree(cache, dest / "chromium", copy_function=link_or_copy,
+                    ignore=shutil.ignore_patterns(".links"))
+    print(f"  lié : {', '.join(sorted(p.name for p in (dest / 'chromium').iterdir()))}")
 
 
 def install_search(python, dest):
@@ -350,6 +362,7 @@ def main():
     if not args.no_engines:
         copy_engines(staging)
     install_search(python, staging)
+    install_browser(python, staging)
     if args.exe:
         exe = build_exe(staging, releases_dir)
         shutil.rmtree(staging)
@@ -368,7 +381,7 @@ def main():
         point_dev_config(release)
 
     step("Terminé")
-    for part in ("python", "aria_pilote", "engines", "services", "models"):
+    for part in ("python", "aria_pilote", "engines", "services", "chromium", "models"):
         if (release / part).exists():
             print(f"  {part:<10} {folder_size(release / part) / 1024**2:8.0f} Mo")
     print(f"\nVersion installée : {release}\nLancement : double-clic sur « Aria-Pilote.exe »")

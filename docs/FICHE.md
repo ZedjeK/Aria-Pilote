@@ -1,6 +1,6 @@
 # Fiche projet : Aria Pilote
 
-Relevé du code au 13/11/2026, version 0.26.0. Une ligne « à renseigner » est une décision qui reste à prendre.
+Relevé du code au 13/11/2026, version 0.26.0, puis mis à jour avec le navigateur piloté. Une ligne « à renseigner » est une décision qui reste à prendre.
 
 ## Identité
 
@@ -31,6 +31,9 @@ Relevé du code au 13/11/2026, version 0.26.0. Une ligne « à renseigner » est
 | Conversations, presets, journaux, sauvegardes de l'agent, souvenirs | `data\` |
 | Modèles | `models\` |
 | Moteurs et SearXNG | `engines\`, `services\` |
+| Chromium du navigateur piloté | `chromium\` : fait partie du code, remplacé à chaque mise à jour (il doit aller avec la version de Playwright) |
+| Profil du navigateur piloté | `data
+avigateur\profil\` : à part, sans les cookies, mots de passe ni historique de l'utilisateur ; « vider » l'envoie à la corbeille |
 | Compétences et sous-agents personnels | `skills\`, `agents\` |
 | Clé de llama-server | `data\llama.key` : tirée au hasard à chaque chargement, effacée à l'arrêt, en clair le temps de la session |
 | Clé secrète de SearXNG | `services\searxng\settings.yml` : tirée au hasard au premier lancement, en clair |
@@ -61,6 +64,7 @@ Relevé du code au 13/11/2026, version 0.26.0. Une ligne « à renseigner » est
 | Serveurs MCP distants | Outils ajoutés par l'utilisateur | Selon leur réglage (accord par défaut) |
 | GitHub par git et gh | Travail de l'agent sur un dépôt | Accord à chaque commande qui sort du PC |
 | `github.com/astral-sh/python-build-standalone`, `codeload.github.com` | Construction de l'exe seulement (Python portable, SearXNG) | Jamais par l'appli installée |
+| `cdn.playwright.dev` (et ses miroirs `playwright.download.prss.microsoft.com`) | Construction de l'exe et version de dev : Chromium du navigateur piloté | Jamais par l'appli installée |
 
 ## Composants tiers embarqués
 
@@ -70,6 +74,9 @@ Relevé du code au 13/11/2026, version 0.26.0. Une ligne « à renseigner » est
 | SearXNG, au commit épinglé dans `tools/install_searxng.py` | AGPL-3.0 |
 | python-build-standalone | Voir sa licence (plusieurs composants) |
 | xterm.js et son module fit | MIT |
+| Playwright (paquet Python et son pilote Node.js) | Apache-2.0 |
+| Chromium (build « Chrome for Testing » fournie par Playwright) | BSD-3-Clause, et les licences de ses composants (fichier `ABOUT` livré avec lui) |
+| FFmpeg et winldd, téléchargés par Playwright avec Chromium | FFmpeg : LGPL-2.1 (`COPYING.LGPLv2.1` livré avec lui) ; winldd : outil de Playwright |
 | Space Grotesk, IBM Plex Mono | SIL OFL 1.1 |
 | Paquets Python de `requirements.txt` | Chacun la sienne |
 

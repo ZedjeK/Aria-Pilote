@@ -135,6 +135,19 @@ class ExePortable(unittest.TestCase):
                            "engines/llama.cpp/llama-server.exe": "mon moteur"}.items():
             self.assertEqual(self.read(name), text, name)
 
+    def test_mise_a_jour_remplace_chromium(self):
+        # Chromium fait partie du code : il doit suivre la version de Playwright, contrairement aux moteurs
+        self.installed_0_23()
+        self.write("chromium/chromium-1000/chrome-win64/chrome.exe", "ancien chromium")
+        files = {"python/pythonw.exe": "faux python", "aria_pilote/__init__.py": 'VERSION = "0.24.0"',
+                 "tools/outil.py": "", "requirements.txt": "", "services/searxng/settings.yml": "port: 8888",
+                 "chromium/chromium-2000/chrome-win64/chrome.exe": "nouveau chromium"}
+        r = self.run_exe(self.exe("0.24.0", files))
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertEqual(self.read("chromium/chromium-2000/chrome-win64/chrome.exe"), "nouveau chromium")
+        self.assertFalse((self.home / "chromium/chromium-1000").exists())
+        self.assertEqual(self.read("engines/llama.cpp/llama-server.exe"), "mon moteur")
+
     def test_meme_version_ou_plus_recente_non_touchee(self):
         self.installed_0_23()
         self.write(".version", "0.25.0")

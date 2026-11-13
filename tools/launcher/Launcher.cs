@@ -37,7 +37,7 @@ static class Launcher
     const string ShortcutsDone = ".raccourcis";
     const int NoteSeconds = 5;  // la fenêtre de démarrage reste au moins ce temps quand elle a quelque chose à dire
     // Le code de l'appli, remplacé à chaque mise à jour ; tout le reste du dossier t'appartient
-    static readonly string[] CodeItems = { "python", "aria_pilote", "tools", "services", "requirements.txt" };
+    static readonly string[] CodeItems = { "python", "aria_pilote", "tools", "services", "chromium", "requirements.txt" };
     // Gardés d'une version à l'autre, même à l'intérieur du code
     static readonly string[] KeptFiles = { @"services\searxng\settings.yml" };
     const string SettingsModel = @"services\searxng\settings.yml.modele";
