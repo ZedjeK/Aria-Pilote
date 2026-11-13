@@ -15,7 +15,7 @@ from pydantic import BaseModel, Field
 from . import (VERSION, agent, attachments, background, backups, chat, config, context, conversations, downloads,
                engines, github, hardware, hooks, hub, images, mcp_client, models, optimizer, permissions, persona,
                pick_folder, presets, screen, searxng, skills, souvenirs, subagents, tools, trial, updates, workspace)
-from . import terminal
+from . import navigateur, terminal
 from .server import EngineMissing, manager
 
 STATIC_DIR = Path(__file__).parent / "static"
@@ -51,6 +51,7 @@ async def lifespan(app):
     if update:
         update.cancel()
     await asyncio.to_thread(terminal.stop_all)
+    await navigateur.manager.fermer()
     await asyncio.to_thread(background.stop_all)  # le job object les tuerait de toute façon : ici, proprement
     await manager.shutdown()
     await searxng.manager.stop()

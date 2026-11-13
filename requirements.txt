@@ -8,3 +8,5 @@ mcp>=2.3,<3
 pypdf>=6.21.4
 pywinpty>=3.0.5
 wsproto>=1.3.2
+# Navigateur piloté : version exacte, car le Chromium embarqué (tools/install_navigateur.py) doit aller avec
+playwright==1.65.1
