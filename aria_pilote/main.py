@@ -6,6 +6,7 @@ import re
 from contextlib import asynccontextmanager
 from pathlib import Path
 
+import anyio
 import httpx
 from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse, StreamingResponse
@@ -707,6 +708,8 @@ def delete_conversation(cid: str):
     _conversation_or_404(cid)
     background.stop_conversation(cid)
     terminal.close(cid)
+    # Son onglet du navigateur : fermé dans la boucle de l'appli (cette route tourne dans un thread à part)
+    anyio.from_thread.run(navigateur.manager.fermer_page, cid)
     conversations.delete(cid)
     try:
         backups.delete_conversation(cid)  # ses sauvegardes partent à la corbeille avec elle
