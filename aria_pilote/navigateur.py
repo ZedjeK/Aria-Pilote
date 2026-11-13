@@ -10,6 +10,7 @@
 
 import asyncio
 import os
+import re
 
 from . import config, jobs, trash
 
@@ -50,8 +51,9 @@ class Navigateur:
 
     def status(self):
         exe = executable()
+        tabs = sum(1 for p in self._pages.values() if not p.is_closed()) if self.ouvert else 0
         return {"installe": exe is not None, "ouvert": self.ouvert, "profil": str(PROFILE_DIR),
-                "chromium": exe.parts[-3] if exe else None}
+                "profil_existe": PROFILE_DIR.exists(), "chromium": exe.parts[-3] if exe else None, "onglets": tabs}
 
     async def ouvrir(self):
         """Ouvre le navigateur s'il ne l'est pas déjà ; renvoie son contexte (onglets, cookies du profil)."""
@@ -210,6 +212,82 @@ manager = Navigateur()
 # l'API d'Aria refuse de toute façon un hôte qui n'est pas le sien.
 
 CACHE_S = 60
+# Ports d'Aria Pilote, version installée et version de dev : jamais une exception, même écrite à la main dans
+# config.json (une page pourrait sinon appeler l'API d'Aria, ou son moteur)
+ARIA_PORTS = {8700, 8701, 8888, 8710, 8711, 8898}
+MAX_EXCEPTIONS = 20
+EXCEPTION_RE = re.compile(r"^(?:\[(?P<ip6>[0-9a-f:.]+)\]|(?P<host>[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?)):(?P<port>\d{1,5})$",
+                          re.IGNORECASE)
+
+
+def aria_ports():
+    """Ports d'Aria : ceux de la config en cours, plus ceux des deux versions par défaut."""
+    from urllib.parse import urlsplit
+
+    cfg = config.get()
+    ports = set(ARIA_PORTS) | {cfg.get("app_port"), cfg.get("llama_port")}
+    try:
+        ports.add(urlsplit(cfg.get("searxng_url") or "").port)
+    except ValueError:
+        pass
+    return {p for p in ports if p}
+
+
+def _parse_exception(entry):
+    """(hôte, port) d'une entrée « adresse:port », ou ValueError avec un message lisible."""
+    m = EXCEPTION_RE.match(entry.strip())
+    if not m:
+        raise ValueError(f"« {entry} » : écris une adresse suivie de son port, par exemple 127.0.0.1:3000 ou "
+                         "192.168.1.20:8080.")
+    port = int(m["port"])
+    if not 1 <= port <= 65535:
+        raise ValueError(f"« {entry} » : port invalide.")
+    if port in aria_ports():
+        raise ValueError(f"« {entry} » : le port {port} est celui d'Aria Pilote, jamais ouvert au navigateur.")
+    return (m["ip6"] or m["host"]).lower(), port
+
+
+def check_settings(patch):
+    """Réglages du navigateur vérifiés : ValueError avec un message lisible si une valeur ne va pas."""
+    out = dict(patch)
+    entries = out.get("locaux_autorises")
+    if entries is not None:
+        if isinstance(entries, str):  # « 127.0.0.1:3000, 192.168.1.20:8080 » tapé dans le champ
+            entries = re.split(r"[\s,;]+", entries)
+        cleaned = []
+        for entry in (e for e in entries if e and e.strip()):
+            host, port = _parse_exception(entry)
+            cleaned.append(f"[{host}]:{port}" if ":" in host else f"{host}:{port}")
+        cleaned = list(dict.fromkeys(cleaned))
+        if len(cleaned) > MAX_EXCEPTIONS:
+            raise ValueError(f"{MAX_EXCEPTIONS} exceptions au plus.")
+        out["locaux_autorises"] = cleaned
+    return out
+
+
+def exception_locale(host, port):
+    """L'adresse:port est dans tes exceptions (et n'est pas un port d'Aria, relu à chaque fois)."""
+    if not host or not port or port in aria_ports():
+        return False
+    allowed = set()
+    for entry in (config.get().get("navigateur") or {}).get("locaux_autorises") or []:
+        try:
+            allowed.add(_parse_exception(entry))
+        except ValueError:  # une entrée abîmée à la main dans config.json : ignorée
+            continue
+    return (host.lower(), port) in allowed
+
+
+def exception_url(url):
+    """L'adresse visée par `url` est une de tes exceptions locales."""
+    from urllib.parse import urlsplit
+
+    try:
+        parts = urlsplit(url)
+        port = parts.port or {"http": 80, "ws": 80, "https": 443, "wss": 443}.get(parts.scheme)
+    except ValueError:
+        return False
+    return exception_locale(parts.hostname, port)
 _verdicts = {}  # (hôte, port) -> (échéance, raison du refus ou None)
 NON_RESEAU = ("data:", "blob:", "about:")  # contenu fabriqué par la page elle-même, sans requête réseau
 
@@ -229,6 +307,8 @@ async def refus_reseau(url):
         key = (parts.hostname, parts.port)
     except ValueError:
         return "adresse invalide"
+    if exception_url(url):  # avant le cache : retirer une exception prend effet tout de suite
+        return None
     now = asyncio.get_running_loop().time()
     cached = _verdicts.get(key)
     if cached and cached[0] > now:

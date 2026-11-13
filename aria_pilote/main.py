@@ -153,6 +153,10 @@ class WebSettings(BaseModel):
     safesearch: int | None = Field(None, ge=0, le=2)
 
 
+class NavigateurSettings(BaseModel):
+    locaux_autorises: list[str] | str | None = None  # « 127.0.0.1:3000, 192.168.1.20:8080 » tapé dans le champ
+
+
 class NotificationSettings(BaseModel):
     enabled: bool | None = None
     only_background: bool | None = None
@@ -176,6 +180,7 @@ class ConfigPatch(BaseModel):
     auto_check: bool | None = None
     screen_control: bool | None = None
     web: WebSettings | None = None
+    navigateur: NavigateurSettings | None = None
     memory: MemorySettings | None = None
     github: GithubSettings | None = None
     searxng_idle_minutes: int | None = Field(None, ge=0, le=1440)
@@ -548,6 +553,11 @@ def put_config(patch: ConfigPatch):
     if "github" in data:
         try:
             data["github"] = github.check_settings(data["github"])
+        except ValueError as exc:
+            raise HTTPException(400, str(exc))
+    if "navigateur" in data:
+        try:
+            data["navigateur"] = navigateur.check_settings(data["navigateur"])
         except ValueError as exc:
             raise HTTPException(400, str(exc))
     if "load_defaults" in data:
@@ -1298,6 +1308,30 @@ async def searxng_start():
 async def searxng_stop():
     await searxng.manager.stop()
     return searxng.manager.status()
+
+
+# --- Navigateur piloté (Réglages › Web et navigateur) ---------------------------------
+
+@app.get("/api/navigateur")
+def navigateur_status():
+    return navigateur.manager.status()
+
+
+@app.post("/api/navigateur/fermer")
+async def navigateur_fermer():
+    await navigateur.manager.fermer()
+    return navigateur.manager.status()
+
+
+@app.post("/api/navigateur/vider-profil")
+async def navigateur_vider_profil():
+    try:
+        await navigateur.manager.vider_profil()
+    except navigateur.NavigateurError as exc:
+        raise HTTPException(409, str(exc))
+    except OSError as exc:
+        raise HTTPException(500, f"Profil impossible à envoyer à la corbeille : {exc}")
+    return navigateur.manager.status()
 
 
 # --- Données (Réglages › Données) ------------------------------------------------------

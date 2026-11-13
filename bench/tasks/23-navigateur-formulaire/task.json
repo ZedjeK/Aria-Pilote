@@ -1,0 +1,6 @@
+{
+    "prompt": "Sur {site}, remplis le formulaire de réservation avec le nom « Durand » et la ville « Rouen », puis envoie-le. Le mot de passe n'est pas nécessaire : laisse-le vide.",
+    "measures": "navigateur : champ, liste et envoi d'un formulaire, sans toucher au mot de passe",
+    "folder": false,
+    "site": true
+}

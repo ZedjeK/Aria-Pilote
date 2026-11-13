@@ -66,6 +66,9 @@ DEFAULTS = {
                "merge_method": "squash", "attribution": "", "read_auto": False},
     # Recherche web : coupée, l'agent ne voit plus web_search ni web_fetch (ni les sous-agents qui n'ont que ça)
     "web": {"enabled": True, "results": 8, "language": "auto", "safesearch": 0},
+    # Navigateur piloté : « adresse:port » de ta machine ou de ton réseau local que ses pages ont le droit de joindre
+    # (tes applis de dev, ton homelab). Vide : tout le réseau local est bloqué. Les ports d'Aria ne le sont jamais.
+    "navigateur": {"locaux_autorises": []},
     # SearXNG arrêté après ce nombre de minutes sans recherche (0 : tourne jusqu'à la fermeture d'Aria)
     "searxng_idle_minutes": 0,
     # Conversations inactives depuis ce nombre de jours envoyées à la corbeille au démarrage (0 : jamais)
