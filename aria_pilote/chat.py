@@ -97,8 +97,9 @@ def build_messages(conv, system_prompt):
 
 
 def _screenshots(cid, shots):
-    """Captures renvoyées par voir_ecran : les modèles ne lisent une image que dans un message, d'où celui-ci."""
-    return {"role": "user", "content": user_content(cid, "[Capture d'écran renvoyée par voir_ecran]", shots)}
+    """Captures renvoyées par voir_ecran ou voir_page : les modèles ne lisent une image que dans un message, d'où
+    celui-ci."""
+    return {"role": "user", "content": user_content(cid, "[Capture renvoyée par l'outil précédent]", shots)}
 
 
 def user_content(cid, text, attached):

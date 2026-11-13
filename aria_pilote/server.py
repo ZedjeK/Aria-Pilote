@@ -128,7 +128,9 @@ class ServerManager:
     @property
     def vision(self):
         """Le modèle chargé a son projecteur vision : il peut lire les images jointes."""
-        return bool(self.model and self.model.mmproj and (self._settings or {}).get("use_mmproj"))
+        # Lu à chaque tâche (voir_page n'est proposé qu'à un modèle qui voit) : un modèle sans projecteur peut ne pas
+        # avoir l'attribut du tout
+        return bool(self.model and getattr(self.model, "mmproj", None) and (self._settings or {}).get("use_mmproj"))
 
     async def load(self, model, settings, engine, auto):
         async with self._lock:
