@@ -20,7 +20,7 @@ Relevé du code au 13/11/2026, version 0.26.0, puis mis à jour avec le navigate
 | --- | --- |
 | Droits administrateur | Aucun |
 | Démarrage automatique | Aucun |
-| Bac à sable dans une conversation | Option par conversation, coupée par défaut : l'outil `run_sandbox` n'existe pour le modèle que si un dossier est attaché, l'option activée et le bac à sable créé ; pas d'accord par commande (rien n'y touche le PC), délai de 60 s par défaut et 600 s au plus, verrou du plan comme les commandes du PC |
+| Bac à sable dans une conversation | Option par conversation, coupée par défaut : les outils du bac à sable (`run_sandbox`, `sandbox_reset`, `sandbox_diff`, `sandbox_apply`) n'existent pour le modèle que si un dossier est attaché, l'option activée et le bac à sable créé ; pas d'accord par commande (rien n'y touche le PC), mais le retour de fichiers dans le projet (`sandbox_apply`) est toujours demandé, délai de 60 s par défaut et 600 s au plus, verrou du plan comme les commandes du PC |
 | Prérequis facultatif | WSL 2, activé par l'utilisateur lui-même, pour le bac à sable Linux ; Aria le détecte seulement |
 | Port local | 8700 (interface), 8701 (llama-server), 8888 (SearXNG) ; version de dev : 8710, 8711, 8898. Écoute sur `127.0.0.1` seulement |
 | Dossier de données | `%USERPROFILE%\.Aria-Pilote` (le code de l'appli s'y trouve aussi) |
@@ -36,6 +36,7 @@ Relevé du code au 13/11/2026, version 0.26.0, puis mis à jour avec le navigate
 | Chromium du navigateur piloté | `chromium\` : fait partie du code, remplacé à chaque mise à jour (il doit aller avec la version de Playwright) |
 | Bac à sable Linux | `bac-a-sable\` : images de base téléchargées (`images\`), disque de la distribution WSL (`disque\`), image utilisée (`image.json`) |
 | Copie du projet de chaque conversation (bac à sable) | `/home/agent/projet-<id>`, dans le disque du bac à sable (`bac-a-sable\disque\`) : ce que git n'ignore pas (jamais `.env`, `.venv` ni modèles), 200 Mo et 20 000 fichiers au plus, sans lien ni jonction qui sorte du projet ; supprimée avec la conversation |
+| Notes de chaque copie (bac à sable) | `bac-a-sable\copies\<id>.json` : l'empreinte de chaque fichier au moment de la copie, côté bac à sable et côté projet, pour savoir ce qui a changé ; effacées avec la conversation |
 | Profil du navigateur piloté | `data
 avigateur\profil\` : à part, sans les cookies, mots de passe ni historique de l'utilisateur ; « vider » l'envoie à la corbeille |
 | Compétences et sous-agents personnels | `skills\`, `agents\` |
@@ -50,6 +51,7 @@ avigateur\profil\` : à part, sans les cookies, mots de passe ni historique de l
 | --- | --- |
 | Raccourcis « Aria Pilote » sur le bureau et dans le menu Démarrer, à l'installation | Non demandé |
 | Fichiers du dossier de travail attaché à une conversation (le travail de l'agent) | Accord à chaque modification, sauvegarde avant |
+| Fichiers du projet rapportés depuis le bac à sable (`sandbox_apply`) | Accord à chaque fois, même si les modifs sont autorisées pour la conversation ; diff réel montré, sauvegarde avant, annulable. Jamais : un fichier modifié de son côté depuis la copie (conflit), un binaire, un fichier non UTF-8, ce que git ignore, `.git/` et `.aria/`, un nom que Windows interpréterait autrement (flux de données caché, périphérique) ; les suppressions ne sont pas répercutées |
 | Corbeille de Windows (modèles, sauvegardes et conversations supprimés) | Action de l'utilisateur |
 | Registre de WSL du compte Windows : la distribution `aria-bac-a-sable` y est inscrite à la création, et désinscrite à la suppression | Action de l'utilisateur (création et suppression du bac à sable) |
 | Scripts temporaires `aria-commande-*.ps1` et `aria-hook-*.ps1` dans `%TEMP%`, effacés après usage | Non demandé |

@@ -146,21 +146,37 @@ class BacASableError(Exception):
 
 # --- appels à wsl.exe --------------------------------------------------------------------------------------------
 
-def run_wsl(args, stdin=None, timeout=WSL_TIMEOUT_S):
-    """Lance wsl.exe ; renvoie (code, sortie). WSL_UTF8=1 pour ce seul appel : sans lui, wsl.exe écrit en UTF-16.
-    Remplacé par un faux dans les tests."""
+def _spawn_wsl(args, stdin, timeout):
+    """wsl.exe lancé, ou (None, message) s'il manque ou ne répond pas. WSL_UTF8=1 pour ce seul appel : sans lui,
+    wsl.exe écrit en UTF-16."""
     env = {**os.environ, "WSL_UTF8": "1"}
     # stdin fermé quand rien n'est envoyé : un programme interactif lit la fin du fichier au lieu d'attendre
     feed = {"input": stdin} if stdin is not None else {"stdin": subprocess.DEVNULL}
     try:
-        proc = subprocess.run(["wsl.exe", *args], capture_output=True, env=env, timeout=timeout, **feed,
-                              creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+        return subprocess.run(["wsl.exe", *args], capture_output=True, env=env, timeout=timeout, **feed,
+                              creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0)), None
     except FileNotFoundError:
         return None, "wsl.exe introuvable"
     except subprocess.TimeoutExpired:
         return None, f"wsl.exe n'a pas répondu en {timeout} s"
+
+
+def run_wsl(args, stdin=None, timeout=WSL_TIMEOUT_S):
+    """Lance wsl.exe ; renvoie (code, sortie). Remplacé par un faux dans les tests."""
+    proc, error = _spawn_wsl(args, stdin, timeout)
+    if proc is None:
+        return None, error
     output = (proc.stdout + proc.stderr).decode("utf-8", errors="replace").replace("\x00", "")
     return proc.returncode, output.strip()
+
+
+def run_wsl_bytes(args, stdin=None, timeout=WSL_TIMEOUT_S):
+    """Comme run_wsl, mais la sortie standard est rendue telle quelle, en octets, sans le message d'erreur mêlé :
+    pour lire une archive. Renvoie (code, octets, erreur). Remplacé par un faux dans les tests."""
+    proc, error = _spawn_wsl(args, stdin, timeout)
+    if proc is None:
+        return None, b"", error
+    return proc.returncode, proc.stdout, proc.stderr.decode("utf-8", errors="replace").replace("\x00", "").strip()
 
 
 def _wsl_ok(args, what, **kw):
@@ -318,6 +334,7 @@ def delete():
         _wsl_ok(["--unregister", DISTRO], "Suppression du bac à sable")
     if DISK_DIR.exists():
         shutil.rmtree(DISK_DIR, ignore_errors=True)
+    shutil.rmtree(COPIES_DIR, ignore_errors=True)  # les copies sont parties avec le disque : leurs notes aussi
     STATE_FILE.unlink(missing_ok=True)
     forget_cache()
     return status()
@@ -457,8 +474,10 @@ def project_files(root):
     return kept
 
 
-def build_archive(root, files):
-    """Archive tar de `files`, propriété de l'agent. Droits : 644, et 755 pour un fichier qui commence par « #! »."""
+def build_archive(root, files, hashes=None):
+    """Archive tar de `files`, propriété de l'agent. Droits : 644, et 755 pour un fichier qui commence par « #! ».
+    Si `hashes` est un dict, il reçoit l'empreinte de chaque fichier tel qu'il est copié : {chemin: {sandbox, real}},
+    les notes d'après lesquelles on saura plus tard ce qui a changé."""
     root = Path(workspace.validate_root(root))
     buffer = BytesIO()
     try:
@@ -466,15 +485,55 @@ def build_archive(root, files):
             for name in files:
                 path = root / name
                 info = tar.gettarinfo(str(path), arcname=name)
+                with open(path, "rb") as f:
+                    content = f.read()
+                info.size = len(content)  # le fichier a pu changer entre le stat et la lecture
                 info.uid = info.gid = AGENT_UID
                 info.uname = info.gname = ""
-                with open(path, "rb") as f:
-                    info.mode = 0o755 if f.read(2) == b"#!" else 0o644
-                    f.seek(0)
-                    tar.addfile(info, f)
+                info.mode = 0o755 if content[:2] == b"#!" else 0o644
+                tar.addfile(info, BytesIO(content))
+                if hashes is not None:
+                    digest = hashlib.sha256(content).hexdigest()
+                    hashes[name] = {"sandbox": digest, "real": digest}  # identiques : c'est une copie
     except OSError as exc:
         raise BacASableError(f"Copie du projet impossible : {exc}.")
     return buffer.getvalue()
+
+
+COPIES_DIR = BASE / "copies"
+
+
+def _manifest_path(cid):
+    project_dir(cid)  # valide l'identifiant : il finit dans un nom de fichier
+    return COPIES_DIR / f"{cid}.json"
+
+
+def load_manifest(cid):
+    """Notes de la copie de cette conversation : {chemin: {sandbox, real}}, ou None si elles manquent. `sandbox` est
+    l'empreinte du fichier dans le bac à sable, `real` celle du fichier de l'utilisateur, au moment où ils étaient
+    identiques (la copie, ou le dernier retour)."""
+    try:
+        files = json.loads(_manifest_path(cid).read_text(encoding="utf-8"))["files"]
+    except (OSError, ValueError, KeyError, TypeError):
+        return None
+    return files if isinstance(files, dict) else None
+
+
+def save_manifest(cid, files):
+    path = _manifest_path(cid)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(".json.tmp")
+    tmp.write_text(json.dumps({"copie_le": time.strftime("%Y-%m-%d %H:%M"), "files": files}, ensure_ascii=False),
+                   encoding="utf-8")
+    tmp.replace(path)
+
+
+def update_manifest(cid, updates):
+    files = load_manifest(cid)
+    if files is None:
+        raise BacASableError("Notes de la copie introuvables : refais la copie (sandbox_reset).")
+    files.update(updates)
+    save_manifest(cid, files)
 
 
 def has_project(cid):
@@ -488,11 +547,13 @@ def copy_project(cid, root):
     _require()
     target = project_dir(cid)
     files = project_files(root)
-    data = build_archive(root, files)
+    hashes = {}
+    data = build_archive(root, files, hashes)
     lock_network()
     _wsl_ok(["-d", DISTRO, "-u", USER, "--exec", "sh", "-c",
              'rm -rf -- "$1" && mkdir -p -- "$1" && tar -xf - -C "$1"', "sh", target],
             "Copie du projet dans le bac à sable", stdin=data)
+    save_manifest(cid, hashes)  # après la copie : sans elle, l'ancienne copie garde ses propres notes
     return {"fichiers": len(files), "octets": len(data), "dossier": target}
 
 
@@ -518,7 +579,8 @@ def stop_commands(cid):
 
 
 def forget_project(cid):
-    """Efface la copie d'une conversation supprimée ; sans effet si le bac à sable n'existe pas."""
+    """Efface la copie d'une conversation supprimée, et ses notes ; sans effet si le bac à sable n'existe pas."""
+    _manifest_path(cid).unlink(missing_ok=True)
     if not exists():
         return False
     _root(["sh", "-c", 'rm -rf -- "$1"', "sh", project_dir(cid)])
@@ -548,3 +610,69 @@ def run_in_project(cid, command, timeout=DEFAULT_TIMEOUT_S):
     elapsed = time.monotonic() - started
     timed_out = code is None or (code in KILLED and elapsed >= timeout - 1)
     return {"code": code, "sortie": out, "duree": round(elapsed, 1), "delai": timed_out}
+
+
+# Empreintes puis tailles de tous les fichiers de la copie, en un seul appel ; les noms qui contiennent un retour à la
+# ligne ou une barre inverse sont écartés plus bas (la ligne ne se lit plus), donc jamais rapportés
+LISTING_SCRIPT = ("find . -type f -print0 | xargs -r -0 sha256sum; echo '---TAILLES---'; "
+                  "find . -type f -print0 | xargs -r -0 stat -c '%s %n'")
+HASH_RE = re.compile(r"^([0-9a-f]{64})  \./(.+)$")
+SIZE_RE = re.compile(r"^(\d+) \./(.+)$")
+
+
+def _copy_ready(cid):
+    _require()
+    if not has_project(cid):
+        raise BacASableError("Le projet n'est pas copié dans le bac à sable.")
+    lock_network()
+    return project_dir(cid)
+
+
+def sandbox_listing(cid):
+    """{chemin: (sha256, taille)} des fichiers de la copie, tels qu'ils sont maintenant dans le bac à sable."""
+    target = _copy_ready(cid)
+    code, out = run_wsl(["-d", DISTRO, "-u", USER, "--cd", target, "--exec", "sh", "-c", LISTING_SCRIPT], timeout=180)
+    if code is None:
+        raise BacASableError(f"Lecture de la copie impossible : {out}.")
+    hashes, sizes, in_sizes = {}, {}, False
+    for line in out.splitlines():
+        if line == "---TAILLES---":
+            in_sizes = True
+            continue
+        m = (SIZE_RE if in_sizes else HASH_RE).match(line)
+        if m and in_sizes:
+            sizes[m.group(2)] = int(m.group(1))
+        elif m:
+            hashes[m.group(2)] = m.group(1)
+    return {name: (digest, sizes.get(name, 0)) for name, digest in hashes.items()}
+
+
+def sandbox_read(cid, names):
+    """{chemin: octets} de ces fichiers de la copie, par une archive lue en mémoire (jamais déroulée sur le disque :
+    ce qui vient du bac à sable n'est pas fiable). Seuls les noms demandés sont gardés."""
+    names = list(names)
+    if not names:
+        return {}
+    if any("\n" in n or "\0" in n for n in names):
+        raise BacASableError("Nom de fichier illisible.")
+    target = _copy_ready(cid)
+    # « ./ » devant chaque nom : GNU tar prend une ligne de -T qui commence par « - » pour une option, donc un fichier
+    # « -x.txt » ne serait pas lu, et un nom comme « --checkpoint-action=… » créé par l'agent deviendrait une option
+    code, out, error = run_wsl_bytes(["-d", DISTRO, "-u", USER, "--cd", target, "--exec", "sh", "-c", "tar -cf - -T -"],
+                                     stdin="".join(f"./{n}\n" for n in names).encode("utf-8"), timeout=180)
+    wanted, found = set(names), {}
+    try:
+        with tarfile.open(fileobj=BytesIO(out)) as tar:
+            for member in tar.getmembers():
+                name = member.name.removeprefix("./")
+                if member.isfile() and name in wanted:
+                    found[name] = tar.extractfile(member).read()
+    except tarfile.TarError as exc:
+        if code != 0 or not out:
+            raise BacASableError(f"Lecture des fichiers du bac à sable impossible : {error or exc}.")
+        raise BacASableError(f"Archive du bac à sable illisible : {exc}.")
+    # Un fichier supprimé entre le listage et la lecture fait renvoyer une erreur à tar, qui rend quand même les autres :
+    # il est simplement absent du résultat (l'appelant le signale)
+    if code != 0 and not found:
+        raise BacASableError(f"Lecture des fichiers du bac à sable impossible : {error or 'échec sans message'}.")
+    return found
