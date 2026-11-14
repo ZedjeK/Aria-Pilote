@@ -53,15 +53,22 @@ IMAGES = {
         "url": "https://salsa.debian.org/debian/WSL/-/jobs/9606244/artifacts/raw/Debian_WSL_AMD64_v1.26.0.0.wsl",
         "sha256": "5ec7dc68216e75d1d4d4761474e99d8461a98d316537110314b137122a879e0f",
         "fichier": "Debian_WSL_AMD64_v1.26.0.0.wsl",
+        "outils": "export DEBIAN_FRONTEND=noninteractive; apt-get update -qq && apt-get install -y -qq "
+                  "--no-install-recommends python3 python3-venv python3-pip git ca-certificates curl make",
     },
     "alpine": {
         "nom": "Alpine 3.24.4 (minirootfs)",
         "url": "https://dl-cdn.alpinelinux.org/alpine/v3.24/releases/x86_64/alpine-minirootfs-3.24.4-x86_64.tar.gz",
         "sha256": "cdaa38cb8de3537967ee5b6c9b6cd00cc962da2b018e6eea48696bb274923012",
         "fichier": "alpine-minirootfs-3.24.4-x86_64.tar.gz",
+        "outils": "apk add --no-cache python3 py3-pip git ca-certificates curl make",
     },
 }
 DEFAULT_IMAGE = "debian"
+# Outils de développement (mesurés sur ce PC) : Alpine +70 Mo en quelques secondes, Debian environ +400 Mo en une minute.
+# Installés par root à la création : il a toujours le réseau (la règle ne vise que l'agent, qui n'a ni sudo ni apt).
+# Python 3 avec pip et venv, git, curl, make. Sans eux, un projet ne peut pas lancer ses tests dans le bac.
+TOOLS_SUMMARY = "Python 3 (pip, venv), git, curl, make"
 
 # Écrit dans l'archive avant l'import : appliqué dès le premier démarrage
 WSL_CONF = """# Écrit par Aria Pilote : bac à sable cloisonné
@@ -95,7 +102,7 @@ def rules(loopback=False, public=False, dns=()):
 
     - loopback : la boucle locale de la distribution (ses propres serveurs de test). Seulement en mode réseau NAT : en
       mode « mirrored », 127.0.0.1 mène aux services de Windows.
-    - public : l'Internet public (pip, apt), jamais les adresses privées ni Windows ; `dns` : les résolveurs permis.
+    - public : l'Internet public (pip install, git clone, curl ; pas apt, réservé à root), jamais les adresses privées ni Windows ; `dns` : les résolveurs permis.
     """
     import ipaddress
 
@@ -220,6 +227,14 @@ def forget_cache():
     _available["at"] = 0.0
 
 
+def tools_installed():
+    """Le bac à sable a-t-il été créé avec ses outils de développement ? Lu dans son fichier d'état, sans wsl.exe."""
+    try:
+        return bool(json.loads(STATE_FILE.read_text(encoding="utf-8")).get("outils"))
+    except (OSError, ValueError):
+        return False
+
+
 def status():
     """État pour l'interface et l'agent ; ne lance rien d'autre que wsl.exe en lecture."""
     installed = wsl_installed()
@@ -230,14 +245,15 @@ def status():
         image = None
     return {"wsl": installed, "cree": created, "distribution": DISTRO, "image": image,
             "images": {k: v["nom"] for k, v in IMAGES.items()}, "image_par_defaut": DEFAULT_IMAGE,
-            "creation": creation_state()}
+            "outils": TOOLS_SUMMARY, "creation": creation_state()}
 
 
 # --- création en arrière-plan ------------------------------------------------------------------------------------
 # Télécharger 89 Mo puis importer la distribution prend de quelques secondes à une minute : l'interface lance la
 # création, change de page si elle veut, et relit cet état. Une seule création à la fois.
 
-_creation = {"etat": "inactif", "image": None, "etape": None, "octets": 0, "total": None, "message": None}
+_creation = {"etat": "inactif", "image": None, "outils": True, "etape": None, "octets": 0, "total": None,
+             "message": None}
 _creation_lock = threading.Lock()
 
 
@@ -252,10 +268,10 @@ def _set_creation(**changes):
         _creation.update(changes)
 
 
-def _run_creation(key):
+def _run_creation(key, outils):
     try:
         create(key, progress=lambda done, total: _set_creation(octets=done, total=total),
-               step=lambda name: _set_creation(etape=name))
+               step=lambda name: _set_creation(etape=name), outils=outils)
     except BacASableError as exc:
         _set_creation(etat="erreur", message=str(exc))
     except Exception as exc:  # jamais laisser l'état à « en cours » : l'interface attendrait pour toujours
@@ -264,8 +280,8 @@ def _run_creation(key):
         _set_creation(etat="ok", etape=None, message=None)
 
 
-def start_creation(key):
-    """Lance la création en arrière-plan. Les refus qui se savent tout de suite (image inconnue, WSL absent, bac déjà là,
+def start_creation(key, outils=True):
+    """Lance la création en arrière-plan, avec ou sans les outils de développement. Les refus qui se savent tout de suite (image inconnue, WSL absent, bac déjà là,
     création en cours) sont levés ici, pas dans la tâche."""
     if key not in IMAGES:
         raise BacASableError(f"Image inconnue : {key}. Choix : {', '.join(IMAGES)}.")
@@ -279,8 +295,9 @@ def start_creation(key):
     with _creation_lock:
         if _creation["etat"] == "en cours":  # deux demandes simultanées : une seule passe
             raise BacASableError("Une création est déjà en cours.")
-        _creation.update(etat="en cours", image=key, etape="telechargement", octets=0, total=None, message=None)
-    threading.Thread(target=_run_creation, args=(key,), daemon=True, name="bac-a-sable-creation").start()
+        _creation.update(etat="en cours", image=key, outils=bool(outils), etape="telechargement", octets=0,
+                         total=None, message=None)
+    threading.Thread(target=_run_creation, args=(key, bool(outils)), daemon=True, name="bac-a-sable-creation").start()
     return creation_state()
 
 
@@ -349,10 +366,10 @@ def prepare_archive(source, dest):
 
 # --- création et suppression -------------------------------------------------------------------------------------
 
-def create(key=DEFAULT_IMAGE, progress=None, step=None):
+def create(key=DEFAULT_IMAGE, progress=None, step=None, outils=True):
     """Crée le bac à sable avec l'image `key`. En cas d'échec après l'import, la distribution à moitié faite est
     désinscrite : on ne laisse jamais un bac à sable sans cloisonnement complet. `step(nom)` annonce les étapes :
-    telechargement, import, preparation."""
+    telechargement, import, preparation, outils (si `outils` : Python, git, curl, make)."""
     step = step or (lambda name: None)
     if key not in IMAGES:
         raise BacASableError(f"Image inconnue : {key}. Choix : {', '.join(IMAGES)}.")
@@ -377,13 +394,22 @@ def create(key=DEFAULT_IMAGE, progress=None, step=None):
     step("preparation")
     try:
         _wsl_ok(["-d", DISTRO, "-u", "root", "--exec", "sh", "-c", SETUP], "Préparation du bac à sable")
+        if outils:
+            step("outils")
+            try:
+                _wsl_ok(["-d", DISTRO, "-u", "root", "--exec", "sh", "-c", IMAGES[key]["outils"]],
+                        "Installation des outils de développement", timeout=900)
+            except BacASableError as exc:
+                raise BacASableError(f"{exc} Vérifie ta connexion Internet, ou crée le bac à sable sans les outils "
+                                     "de développement.")
         _wsl_ok(["--terminate", DISTRO], "Redémarrage du bac à sable")
     except BacASableError:
         run_wsl(["--unregister", DISTRO])
         raise
     forget_cache()
     STATE_FILE.write_text(json.dumps({"image": key, "nom": IMAGES[key]["nom"], "sha256": IMAGES[key]["sha256"],
-                                      "cree_le": time.strftime("%Y-%m-%d %H:%M")}, ensure_ascii=False, indent=2),
+                                      "outils": bool(outils), "cree_le": time.strftime("%Y-%m-%d %H:%M")},
+                                     ensure_ascii=False, indent=2),
                           encoding="utf-8")
     return status()
 
@@ -677,8 +703,12 @@ def run_in_project(cid, command, timeout=DEFAULT_TIMEOUT_S):
 
 # Empreintes puis tailles de tous les fichiers de la copie, en un seul appel ; les noms qui contiennent un retour à la
 # ligne ou une barre inverse sont écartés plus bas (la ligne ne se lit plus), donc jamais rapportés
-LISTING_SCRIPT = ("find . -type f -print0 | xargs -r -0 sha256sum; echo '---TAILLES---'; "
-                  "find . -type f -print0 | xargs -r -0 stat -c '%s %n'")
+# Dossiers jamais regardés : un .venv ou un node_modules fait des milliers de fichiers qu'on n'hacherait pas pour rien
+PRUNED_DIRS = SKIP_DIRS | {".pytest_cache", ".ruff_cache", ".tox", ".nox"}
+_PRUNE = " -o ".join(f"-name {d}" for d in sorted(PRUNED_DIRS))
+_FIND = f"find . \\( {_PRUNE} \\) -prune -o -type f -print0"
+LISTING_SCRIPT = (f"{_FIND} | xargs -r -0 sha256sum; echo '---TAILLES---'; "
+                  f"{_FIND} | xargs -r -0 stat -c '%s %n'")
 HASH_RE = re.compile(r"^([0-9a-f]{64})  \./(.+)$")
 SIZE_RE = re.compile(r"^(\d+) \./(.+)$")
 

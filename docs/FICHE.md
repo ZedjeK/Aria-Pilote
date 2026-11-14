@@ -72,6 +72,7 @@ avigateur\profil\` : à part, sans les cookies, mots de passe ni historique de l
 | Serveurs MCP distants | Outils ajoutés par l'utilisateur | Selon leur réglage (accord par défaut) |
 | GitHub par git et gh | Travail de l'agent sur un dépôt | Accord à chaque commande qui sort du PC |
 | `salsa.debian.org` (Debian) ou `dl-cdn.alpinelinux.org` (Alpine) | Image de base du bac à sable, à une version épinglée, refusée si son empreinte SHA-256 diffère | À la création du bac à sable, si l'image n'est pas déjà téléchargée |
+| Dépôts de paquets de la distribution (Debian ou Alpine) | Python 3, pip, venv, git, curl et make, installés par root (`apt-get` ou `apk`) à la création du bac à sable ; le réseau de l'agent, lui, reste coupé par la règle ci-dessous | À la création du bac à sable, si la case « outils de développement » est cochée (par défaut) |
 | Rien, depuis le bac à sable, pour l'agent | Réseau de l'utilisateur `agent` (uid 61000) coupé par nftables : boucle locale seulement en mode réseau NAT de WSL ; réglage « Internet public » (Réglages › Bac à sable) coupé par défaut, qui laisse passer Internet mais jamais les adresses privées, la passerelle Windows ni le réseau local. **Avec lui, le contenu de la copie du projet peut sortir** (un envoi ressemble à un téléchargement) : l'interface demande une confirmation à l'activation, et dit ce que ça ouvre | Règle rechargée et vérifiée avant chaque commande de l'agent |
 | `github.com/astral-sh/python-build-standalone`, `codeload.github.com` | Construction de l'exe seulement (Python portable, SearXNG) | Jamais par l'appli installée |
 | `cdn.playwright.dev` (et ses miroirs `playwright.download.prss.microsoft.com`) | Construction de l'exe et version de dev : Chromium du navigateur piloté | Jamais par l'appli installée |
@@ -89,7 +90,7 @@ avigateur\profil\` : à part, sans les cookies, mots de passe ni historique de l
 | FFmpeg et winldd, téléchargés par Playwright avec Chromium | FFmpeg : LGPL-2.1 (`COPYING.LGPLv2.1` livré avec lui) ; winldd : outil de Playwright |
 | Space Grotesk, IBM Plex Mono | SIL OFL 1.1 |
 | Paquets Python de `requirements.txt` | Chacun la sienne |
-| Image de base du bac à sable (Debian ou Alpine), téléchargée à la création, jamais livrée dans l'exe | Celles de chaque distribution |
+| Image de base du bac à sable (Debian ou Alpine) et ses outils de développement (case décochable), téléchargés à la création, jamais livrés dans l'exe | Celles de chaque distribution |
 
 ## Écarts au contrat des applis Aria
 

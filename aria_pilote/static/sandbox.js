@@ -59,6 +59,7 @@ const SANDBOX_STEPS = {
     telechargement: "Téléchargement de l'image",
     import: "Import de la distribution dans WSL…",
     preparation: "Préparation : utilisateur de l'agent, réseau coupé…",
+    outils: "Installation des outils (Python, pip, git, curl, make) : jusqu'à une minute sous Debian…",
 };
 
 function sandboxSectionOpen() {
@@ -93,7 +94,9 @@ function renderBacASable() {
     badge.className = `badge${s.cree ? " loaded" : ""}`;
     badge.textContent = !s.wsl ? "WSL absent" : creating ? "création…" : s.cree ? "prêt" : "pas créé";
     $("#bas-detail").textContent = !s.wsl ? "WSL 2 n'est pas installé sur ce PC."
-        : s.cree ? (s.image ? `${s.image.nom} · créé le ${s.image.cree_le}` : "Distribution WSL aria-bac-a-sable")
+        : s.cree ? (s.image ? `${s.image.nom} · créé le ${s.image.cree_le} · `
+            + (s.image.outils ? "outils de développement installés" : "sans outils de développement (shell de base)")
+            : "Distribution WSL aria-bac-a-sable")
             : "Aucune distribution : crée-la pour que l'agent puisse y lancer ses commandes.";
     $("#bas-wsl-help").hidden = s.wsl;
 
@@ -105,7 +108,9 @@ function renderBacASable() {
         return el("option", { value: key, selected: key === chosen }, label);
     }));
     $("#bas-image-row").hidden = s.cree;
+    $("#bas-outils-row").hidden = s.cree;
     select.disabled = creating || !s.wsl;
+    $("#bas-outils").disabled = creating || !s.wsl;
 
     $("#btn-bas-create").hidden = s.cree;
     $("#btn-bas-create").disabled = !s.wsl || creating;
@@ -132,7 +137,9 @@ function renderBacASable() {
 $("#btn-bas-create").addEventListener("click", async () => {
     showSandboxError("");
     try {
-        await api("/api/bac-a-sable/creer", { method: "POST", body: JSON.stringify({ image: $("#bas-image").value }) });
+        await api("/api/bac-a-sable/creer", {
+            method: "POST", body: JSON.stringify({ image: $("#bas-image").value, outils: $("#bas-outils").checked }),
+        });
     } catch (err) {
         showSandboxError(err.message);
     }
@@ -157,7 +164,7 @@ $("#btn-bas-delete").addEventListener("click", async () => {
 // la copie du projet
 $("#set-bas-public").addEventListener("change", async (event) => {
     const box = event.target;
-    if (box.checked && !confirm("Activer l'Internet public pour l'agent ?\n\nIl pourra installer des paquets (pip, apt), "
+    if (box.checked && !confirm("Activer l'Internet public pour l'agent ?\n\nIl pourra télécharger des paquets (pip install) et cloner des dépôts, "
         + "mais aussi envoyer n'importe où le contenu de la copie de ton projet : rien ne distingue un "
         + "téléchargement d'un envoi. Les adresses de ton réseau local et de Windows restent bloquées.")) {
         box.checked = false;

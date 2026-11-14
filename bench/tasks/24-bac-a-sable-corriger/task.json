@@ -1,0 +1,5 @@
+{
+    "prompt": "Les tests de ce projet échouent. Travaille dans le bac à sable : lance-les avec run_sandbox, trouve et corrige le bug, relance jusqu'à ce que tout passe, puis rapporte ta correction dans mon projet avec sandbox_apply. Ne modifie pas le test.",
+    "measures": "bac à sable guidé : lancer les tests, corriger, rapporter par sandbox_apply (Python et unittest dans le bac)",
+    "sandbox": true
+}

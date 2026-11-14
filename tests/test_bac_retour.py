@@ -364,7 +364,7 @@ class VraiWsl(unittest.TestCase):
         self.assertEqual(set(found["scan"]["refuses"]), {"f:flux", "CON", ".aria/h", "bin.dat"} - {"bin.dat"})
         self.assertIn("bin.dat", "\n".join(found["notes"]))
         self.assertEqual(found["scan"]["supprimes"], ["sub/b.txt"])
-        self.assertEqual(found["scan"]["ignores"], 1)  # le cache Python
+        self.assertEqual(found["scan"]["ignores"], 0)  # le cache Python est élagué : même pas listé par le bac
         # Retour : le circuit habituel, sans accord ici (les accords sont testés plus haut)
         prepared = tools.bind_sandbox_apply(tools.prepare_sandbox_apply(str(root), {}), cid)
         out = asyncio.run(tools.run_sandbox_apply(prepared, cid))
