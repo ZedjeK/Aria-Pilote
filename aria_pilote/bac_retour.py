@@ -23,7 +23,7 @@ MAX_FILE_BYTES = 5 * 1024 * 1024
 MAX_FILES = 30  # par retour : un accord reste lisible
 MAX_TOTAL_BYTES = 20 * 1024 * 1024
 PROTECTED = {".git", ".aria"}  # n'importe où dans le chemin
-IGNORED_DIRS = bas.SKIP_DIRS | {".pytest_cache", ".ruff_cache", ".tox", ".nox"}
+IGNORED_DIRS = bas.PRUNED_DIRS  # les mêmes que ceux que le listage du bac ne regarde même pas
 IGNORED_SUFFIXES = (".pyc", ".pyo")
 RESERVED = {"con", "prn", "aux", "nul", "conin$", "conout$"} | {f"com{i}" for i in range(1, 10)} \
     | {f"lpt{i}" for i in range(1, 10)}

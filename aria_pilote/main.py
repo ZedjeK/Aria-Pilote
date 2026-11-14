@@ -1356,6 +1356,7 @@ async def navigateur_vider_profil():
 
 class BacASableCreate(BaseModel):
     image: str = bac_a_sable.DEFAULT_IMAGE
+    outils: bool = True  # Python, git, curl, make : sans eux, le bac n'a que le shell de base
 
 
 class BacASableDelete(BaseModel):
@@ -1377,7 +1378,7 @@ def bac_a_sable_creer(req: BacASableCreate):
     if req.image not in bac_a_sable.IMAGES:
         raise HTTPException(400, f"Image inconnue : {req.image}. Choix : {', '.join(bac_a_sable.IMAGES)}.")
     try:
-        bac_a_sable.start_creation(req.image)
+        bac_a_sable.start_creation(req.image, req.outils)
     except bac_a_sable.BacASableError as exc:
         raise HTTPException(409, str(exc))
     return _bac_a_sable_state()

@@ -4,7 +4,8 @@ Chaque tâche est un dossier de bench/tasks/ :
     task.json   demande, réponses aux questions de l'agent, mots pièges ; "folder": false pour une pure
                 discussion (aucun dossier attaché) ; "approve_plan": false pour ne pas approuver le plan proposé ;
                 "verify": commande de vérification de fin de tâche (hook « verifier » du projet, sauf --no-verify) ;
-                "site": true pour servir site/ en local au navigateur piloté (voir local_site)
+                "site": true pour servir site/ en local au navigateur piloté (voir local_site) ;
+                "sandbox": true pour activer le bac à sable dans la conversation (voir sandbox_environment)
     fixture/    fichiers de départ, copiés dans un dossier temporaire neuf à chaque passage (facultatif sans dossier)
     check.py    check(ws, run) -> (ok, raison) : vérifie le résultat réel (fichiers, tests, réponse)
                 setup(ws) facultatif : prépare le dossier après la copie
@@ -94,6 +95,40 @@ def start_app(client):
         time.sleep(0.5)
     proc.kill()
     sys.exit("L'appli de dev ne démarre pas : regarde data/aria_pilote.log.")
+
+
+@contextlib.contextmanager
+def sandbox_environment(client, tasks):
+    """Le bac à sable de l'appli de dev pour les tâches qui en ont besoin : créé (Alpine, avec ses outils de développement)
+    s'il n'existe pas, puis supprimé à la fin s'il a été créé ici. Un bac déjà là est laissé tel quel, mais refusé s'il n'a
+    pas ses outils : sans Python, ces tâches ne mesureraient rien."""
+    if not any(t.get("sandbox") for t in tasks):
+        yield
+        return
+    state = client.get("/api/bac-a-sable").json()
+    if not state["wsl"]:
+        sys.exit("Ces tâches ont besoin du bac à sable, donc de WSL 2, absent de ce PC.")
+    created = False
+    if state["cree"]:
+        if not (state.get("image") or {}).get("outils"):
+            sys.exit("Le bac à sable existant n'a pas ses outils de développement (Python, git…) : supprime-le dans "
+                     "Réglages › Bac à sable, le banc en créera un.")
+    else:
+        print("\n=== Création du bac à sable (Alpine, avec ses outils de développement)")
+        client.post("/api/bac-a-sable/creer", json={"image": "alpine", "outils": True}, headers=ORIGIN).raise_for_status()
+        while True:
+            creation = client.get("/api/bac-a-sable").json()["creation"]
+            if creation["etat"] != "en cours":
+                break
+            time.sleep(1)
+        if creation["etat"] != "ok":
+            sys.exit(f"Création du bac à sable impossible : {creation['message']}")
+        created = True
+    try:
+        yield
+    finally:
+        if created:
+            client.post("/api/bac-a-sable/supprimer", json={"confirmer": True}, headers=ORIGIN)
 
 
 @contextlib.contextmanager
@@ -293,6 +328,8 @@ def run_task(client, task, args):
     if task.get("folder", True):  # le dossier attaché donne les outils de fichiers ; sans lui, une discussion
         patch["agent"] = {"enabled": True, "workspace": str(ws)}
     client.patch(f"/api/conversations/{cid}", json=patch)
+    if task.get("sandbox"):  # l'option se range dans la conversation ; le bac lui-même est préparé par main()
+        client.patch(f"/api/conversations/{cid}", json={"sandbox": True}, headers=ORIGIN).raise_for_status()
     if verify:
         client.post("/api/hooks/trust", json={"conversation_id": cid}, headers=ORIGIN).raise_for_status()
     run = {"calls": [], "sub_calls": [], "questions": [], "errors": [], "traps": [], "web_denied": 0,
@@ -432,7 +469,7 @@ def main():
                                        capture_output=True, text=True).stdout.strip(),
               "models": {}}
     try:
-        with fresh_souvenirs():
+        with fresh_souvenirs(), sandbox_environment(client, tasks):
             run_models(client, tasks, args, report)
     finally:
         if proc is not None:

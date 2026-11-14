@@ -935,6 +935,10 @@
                         <div><div class="set-label">Image de base</div><div class="muted small">Debian (environ 90 Mo) : tous les paquets Python s'installent tels quels. Alpine (environ 3 Mo) : plus léger, mais certains paquets doivent se compiler. Téléchargée à une version épinglée et refusée si son empreinte SHA-256 diffère.</div></div>
                         <select id="bas-image" class="set-wide"></select>
                     </label>
+                    <label id="bas-outils-row" class="set-row">
+                        <div><div class="set-label">Outils de développement</div><div class="muted small">Python 3 (pip, venv), git, curl et make. Sans eux, le bac n'a que le shell de base : l'agent ne peut pas lancer les tests d'un projet. Alpine : environ +70 Mo, quelques secondes. Debian : environ +400 Mo et une minute. Installer les dépendances d'un projet (pip install) demande en plus l'Internet public.</div></div>
+                        <input type="checkbox" class="switch" id="bas-outils" checked>
+                    </label>
                     <div class="set-row">
                         <div><div id="bas-progress" class="muted small"></div></div>
                         <button id="btn-bas-create" class="primary">Créer le bac à sable</button>
@@ -945,7 +949,7 @@
                 <div class="set-card">
                     <div class="set-card-title">Réseau de l'agent</div>
                     <label class="set-row">
-                        <div><div class="set-label">Internet public</div><div class="muted small">Coupé : l'agent n'a aucun réseau dans le bac à sable. Activé : il peut installer des paquets (pip, apt), mais aussi envoyer le contenu de la copie de ton projet n'importe où.</div></div>
+                        <div><div class="set-label">Internet public</div><div class="muted small">Coupé : l'agent n'a aucun réseau dans le bac à sable. Activé : il peut télécharger des paquets (pip install) et cloner des dépôts, mais aussi envoyer le contenu de la copie de ton projet n'importe où. Les dépendances d'un projet ne s'installent qu'avec lui.</div></div>
                         <input type="checkbox" class="switch" id="set-bas-public">
                     </label>
                     <p class="muted small">🔒 Ton réseau local et Windows restent toujours bloqués, avec ou sans Internet public.</p>

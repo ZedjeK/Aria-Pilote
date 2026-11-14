@@ -364,11 +364,20 @@ def sandbox_active(conv, root):
 
 
 def sandbox_rule():
-    network = ("L'Internet public est ouvert (pip, apt), pas le réseau local."
-               if bac_a_sable.public_network() else "Il n'a pas de réseau.")
+    if bac_a_sable.public_network():
+        network = ("L'Internet public est ouvert (pip install, git clone, curl), pas le réseau local ; apt ne t'est "
+                   "pas ouvert (réservé à root).")
+    else:
+        network = "Il n'a pas de réseau (ni pip install, ni git clone, ni curl)."
+    if bac_a_sable.tools_installed():
+        installed = ("Présents : python3 avec pip et venv, git, curl, make. pip refuse d'installer hors d'un environnement "
+                     "virtuel : python3 -m venv .venv && . .venv/bin/activate, puis pip install (il faut l'Internet "
+                     "public ; sans lui, seule la bibliothèque standard est utilisable).")
+    else:
+        installed = "Seul le shell de base est présent : ni Python, ni git, ni curl, ni make."
     return f"""Bac à sable Linux : run_sandbox lance une commande sh dans une copie du projet, sur un Linux jetable
-(dossier courant : la copie). {network} Il n'a accès ni aux fichiers ni aux programmes de l'utilisateur : ce que tu y
-fais ne modifie pas son projet. La copie se fait au premier appel ; sandbox_reset la refait à neuf (ce que tu y avais
+(dossier courant : la copie). {network} {installed} Il n'a accès ni aux fichiers ni aux programmes de l'utilisateur : ce que tu y
+fais ne modifie pas son projet. Attention : read_file, edit_file, write_file et les autres outils de fichiers travaillent sur le VRAI projet, jamais sur la copie ; pour changer un fichier de la copie, passe par run_sandbox (sed -i, python3 -c, cat > fichier <<'EOF'), puis sandbox_diff et sandbox_apply. La copie se fait au premier appel ; sandbox_reset la refait à neuf (ce que tu y avais
 changé disparaît). Les fichiers sont copiés tels quels : venus de Windows, ils peuvent avoir des fins de ligne CRLF,
 qui font échouer un script (interpréteur « /bin/sh\\r » introuvable) ; corrige avec sed -i 's/\\r$//' fichier avant de
 le lancer. sandbox_diff montre ce que tu as changé dans la copie ; sandbox_apply le rapporte dans le projet de
