@@ -4,6 +4,7 @@ demande (ARIA_TEST_WSL=1) : il crée puis supprime une vraie distribution.
 """
 
 import asyncio
+import hashlib
 import io
 import os
 import shutil
@@ -106,6 +107,7 @@ class FakeProjectWsl(FakeWsl):
         super().__init__()
         self.distros.append(bas.DISTRO)
         self.dirs, self.tars, self.runs, self.kills, self.removed = set(), [], [], [], []
+        self.files = {}  # dossier de copie -> {chemin: octets} : ce que contient le bac à sable
         self.result = (0, "")
         self.release = threading.Event()
         self.block = False
@@ -120,9 +122,14 @@ class FakeProjectWsl(FakeWsl):
             if rest[:3] == ["--exec", "sh", "-c"] and "tar -xf -" in rest[3]:
                 self.calls.append(list(args))
                 with tarfile.open(fileobj=io.BytesIO(stdin)) as tar:
-                    self.tars.append({m.name: tar.extractfile(m).read().decode("utf-8") for m in tar.getmembers()})
+                    contents = {m.name: tar.extractfile(m).read() for m in tar.getmembers()}
+                self.tars.append({name: data.decode("utf-8") for name, data in contents.items()})
+                self.files[rest[-1]] = dict(contents)
                 self.dirs.add(rest[-1])
                 return 0, ""
+            if rest[:1] == ["--cd"] and len(rest) > 5 and rest[5] == bas.LISTING_SCRIPT:
+                self.calls.append(list(args))
+                return 0, self.listing(rest[1])
             if rest[:2] == ["--cd", rest[1]] and rest[2:5] == ["--exec", "sh", "-c"]:
                 self.calls.append(list(args))
                 self.runs.append({"cd": rest[1], "script": rest[5], "command": rest[7], "timeout": rest[8],
@@ -145,11 +152,35 @@ class FakeProjectWsl(FakeWsl):
         return super().__call__(args, stdin, timeout)
 
 
+    def listing(self, target):
+        """Ce que rendrait le script de listage : empreintes, puis tailles."""
+        files = self.files.get(target, {})
+        lines = [f"{hashlib.sha256(data).hexdigest()}  ./{name}" for name, data in sorted(files.items())]
+        return "\n".join(lines + ["---TAILLES---"] + [f"{len(data)} ./{name}" for name, data in sorted(files.items())])
+
+    def read_bytes(self, args, stdin=None, timeout=None):
+        """Ce que rendrait tar -cf - -T - : une archive des fichiers demandés ; code 2 si l'un manque."""
+        self.calls.append(list(args))
+        files = self.files.get(args[args.index("--cd") + 1], {})
+        names = [n.removeprefix("./") for n in stdin.decode("utf-8").splitlines() if n]
+        present = [n for n in names if n in files]
+        buffer = io.BytesIO()
+        with tarfile.open(fileobj=buffer, mode="w") as tar:
+            for name in present:
+                info = tarfile.TarInfo("./" + name)
+                info.size = len(files[name])
+                tar.addfile(info, io.BytesIO(files[name]))
+        missing = len(present) != len(names)
+        return (2 if missing else 0), buffer.getvalue(), "tar: un fichier est absent" if missing else ""
+
+
 class Base(unittest.TestCase):
     def setUp(self):
         self.fake = FakeProjectWsl()
         self.original = bas.run_wsl
+        self.original_bytes = bas.run_wsl_bytes
         bas.run_wsl = self.fake
+        bas.run_wsl_bytes = self.fake.read_bytes
         bas.forget_cache()
         self.addCleanup(self.restore)
         self.root = project({"a.py": "print(1)\n", "sub/b.txt": "b"})
@@ -157,7 +188,8 @@ class Base(unittest.TestCase):
         self.target = bas.project_dir(self.cid)
 
     def restore(self):
-        bas.run_wsl = self.original
+        bas.run_wsl, bas.run_wsl_bytes = self.original, self.original_bytes
+        shutil.rmtree(bas.COPIES_DIR, ignore_errors=True)
         bas.forget_cache()
 
     def run_tool(self, name, **args):

@@ -9,7 +9,7 @@ from . import chat, conversations, github, hooks, mcp_client, permissions, tools
 # Types d'outils soumis à accord, et le drapeau qui les autorise pour toute la conversation
 # (None : jamais d'autorisation globale)
 APPROVAL_FLAGS = {"write": "auto_write", "web": "auto_web", "command": None, "screen_action": None, "mcp": None,
-                  "memory": None, "terminal": None, "page_action": None}  # souvenirs : demandés seulement avec « Me demander avant de retenir »
+                  "memory": None, "terminal": None, "page_action": None, "sandbox_apply": None}  # souvenirs : demandés seulement avec « Me demander avant de retenir »
 
 # « Autoriser les actions ordinaires pour cette tâche » : la clé de la conversation qui retient la tâche concernée
 TASK_FLAGS = {"screen_action": "screen_auto_task", "page_action": "page_auto_task"}

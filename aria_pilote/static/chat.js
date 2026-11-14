@@ -1221,6 +1221,7 @@ function approvalNode(ev) {
         memory: "🧠 L'agent veut toucher à ses souvenirs :",
         terminal: "L'agent veut lire ton terminal :",
         page_action: "🌐 L'agent veut agir dans la page du navigateur (une action sur un site ne s'annule pas) :",
+        sandbox_apply: "🧪 L'agent veut rapporter dans ton projet des fichiers modifiés dans le bac à sable (chacun reste annulable) :",
     }[ev.kind];
     const buttons = el("div", { className: "row" });
     const decide = async (decision, label, rule = null) => {
