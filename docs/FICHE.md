@@ -1,6 +1,6 @@
 # Fiche projet : Aria Pilote
 
-Relevé du code au 13/11/2026, version 0.26.0, puis mis à jour avec le navigateur piloté. Une ligne « à renseigner » est une décision qui reste à prendre.
+Relevé du code au 13/11/2026 (version 0.26.0), puis mis à jour avec le navigateur piloté et le bac à sable Linux pour la version 0.27.0. Une ligne « à renseigner » est une décision qui reste à prendre.
 
 ## Identité
 
