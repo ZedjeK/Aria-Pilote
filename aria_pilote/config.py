@@ -69,6 +69,8 @@ DEFAULTS = {
     # Navigateur piloté : « adresse:port » de ta machine ou de ton réseau local que ses pages ont le droit de joindre
     # (tes applis de dev, ton homelab). Vide : tout le réseau local est bloqué. Les ports d'Aria ne le sont jamais.
     "navigateur": {"locaux_autorises": []},
+    # Bac à sable Linux : l'agent y a-t-il l'Internet public (pip, apt) ? Coupé par défaut ; jamais le réseau local
+    "bac_a_sable": {"reseau_public": False},
     # SearXNG arrêté après ce nombre de minutes sans recherche (0 : tourne jusqu'à la fermeture d'Aria)
     "searxng_idle_minutes": 0,
     # Conversations inactives depuis ce nombre de jours envoyées à la corbeille au démarrage (0 : jamais)

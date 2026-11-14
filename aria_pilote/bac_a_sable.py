@@ -8,6 +8,9 @@ au vrai PC.
   démarrage ait jamais monté C: (pas de disques Windows dans /mnt, pas de lancement d'exe Windows, pas de PATH
   Windows).
 - L'agent y sera l'utilisateur « agent », sans sudo ni mot de passe. Root ne sert qu'à la préparation.
+- Réseau de l'agent coupé par nftables (voir rules) : toutes les distributions WSL 2 partagent une même machine
+  virtuelle, donc un même noyau et une même pile réseau ; la règle vise un uid réservé à l'agent (AGENT_UID), pour ne
+  jamais couper le réseau d'une autre distribution.
 - La distribution s'inscrit dans le registre WSL du compte Windows (écriture hors du dossier de données, déclarée
   dans la fiche) ; son disque est dans bac-a-sable\\disque. supprimer() la désinscrit et efface ce disque.
 """
@@ -31,6 +34,10 @@ IMAGES_DIR = BASE / "images"
 DISK_DIR = BASE / "disque"
 STATE_FILE = BASE / "image.json"
 USER = "agent"
+# Un uid que les autres distributions n'utilisent pas : la règle réseau s'applique à toute la machine virtuelle de WSL
+AGENT_UID = 61000
+TABLE = "inet aria_bac_a_sable"
+RULES_FILE = "/etc/aria-reseau.nft"
 CHUNK = 1 << 20
 WSL_TIMEOUT_S = 300  # un import peut être long sur un disque lent
 
@@ -65,19 +72,69 @@ appendWindowsPath = false
 """
 # Ajouté une fois l'utilisateur créé (un utilisateur par défaut qui n'existe pas encore ferait échouer le démarrage)
 WSL_CONF_USER = f"\n[user]\ndefault = {USER}\n"
+# À chaque démarrage de la machine virtuelle de WSL : la règle stricte (aucun réseau pour l'agent, pas même la boucle
+# locale). NFT est remplacé à la préparation par le chemin complet de nft, par précaution (/usr/sbin n'est pas dans le
+# PATH de wsl --exec sous Alpine). La commande tourne en arrière-plan : juste après le démarrage, la règle met un
+# instant à arriver (vérifié : absente aussitôt après un wsl --shutdown, présente deux secondes plus tard). D'où
+# lock_network() avant chaque commande de l'agent lancée par Aria.
+WSL_CONF_BOOT = f"\n[boot]\ncommand = NFT -f {RULES_FILE}\n"
+
+# Adresses que l'agent ne joint jamais, même avec l'Internet public permis : machine, réseau local, Windows (la
+# passerelle de WSL et son résolveur sont dans ces plages), multidiffusion, réservées
+PRIVATE_V4 = ("0.0.0.0/8, 10.0.0.0/8, 100.64.0.0/10, 127.0.0.0/8, 169.254.0.0/16, 172.16.0.0/12, 192.0.0.0/24, "
+              "192.168.0.0/16, 198.18.0.0/15, 224.0.0.0/4, 240.0.0.0/4")
+PRIVATE_V6 = "::1, ::ffff:0:0/96, fc00::/7, fe80::/10, ff00::/8"
+
+
+def rules(loopback=False, public=False, dns=()):
+    """Règles nftables de la sortie réseau de l'agent. Elles se remplacent (la table est supprimée puis recréée dans la
+    même transaction) au lieu de s'empiler à chaque chargement.
+
+    - loopback : la boucle locale de la distribution (ses propres serveurs de test). Seulement en mode réseau NAT : en
+      mode « mirrored », 127.0.0.1 mène aux services de Windows.
+    - public : l'Internet public (pip, apt), jamais les adresses privées ni Windows ; `dns` : les résolveurs permis.
+    """
+    import ipaddress
+
+    who = f"meta skuid {AGENT_UID}"
+    lines = [f"table {TABLE} {{}}", f"delete table {TABLE}", f"table {TABLE} {{", "    chain sortie {",
+             "        type filter hook output priority 0; policy accept;"]
+    if loopback:
+        lines += [f"        {who} ip daddr 127.0.0.0/8 accept", f"        {who} ip6 daddr ::1 accept"]
+    if public:
+        for server in dns:
+            ip = ipaddress.ip_address(server)  # ValueError pour une adresse farfelue lue dans resolv.conf
+            family = "ip" if ip.version == 4 else "ip6"
+            lines += [f"        {who} {family} daddr {ip} udp dport 53 accept",
+                      f"        {who} {family} daddr {ip} tcp dport 53 accept"]
+        lines += [f"        {who} ip daddr {{ {PRIVATE_V4} }} counter reject",
+                  f"        {who} ip6 daddr {{ {PRIVATE_V6} }} counter reject",
+                  f"        {who} accept"]
+    lines += [f"        {who} counter reject", "    }", "}"]
+    return "\n".join(lines) + "\n"
+
+
+STRICT_RULES = rules()
 
 # Préparation, en root, au premier démarrage : l'utilisateur de l'agent, sans mot de passe utilisable ni sudo
 SETUP = f"""set -e
 if command -v useradd >/dev/null 2>&1; then
-    useradd --create-home --shell /bin/bash {USER}
+    useradd --uid {AGENT_UID} --create-home --shell /bin/bash {USER}
 else
-    adduser -D -s /bin/sh {USER}
+    adduser -D -u {AGENT_UID} -s /bin/sh {USER}
 fi
 passwd -l {USER} >/dev/null 2>&1 || true
 for g in sudo wheel admin; do
     if getent group "$g" >/dev/null 2>&1; then gpasswd -d {USER} "$g" >/dev/null 2>&1 || true; fi
 done
-printf '%s' '{WSL_CONF_USER}' >> /etc/wsl.conf
+if ! command -v nft >/dev/null 2>&1 && command -v apk >/dev/null 2>&1; then
+    apk add --no-cache nftables >/dev/null
+fi
+command -v nft >/dev/null 2>&1 || {{ echo "nftables introuvable : le réseau de l'agent ne peut pas être coupé" >&2; exit 1; }}
+cat > {RULES_FILE} <<'REGLES'
+{STRICT_RULES}REGLES
+nft -f {RULES_FILE}
+printf '%s' '{WSL_CONF_USER}{WSL_CONF_BOOT}' | sed "s#NFT#$(command -v nft)#" >> /etc/wsl.conf
 """
 
 
@@ -234,6 +291,8 @@ def delete():
     """Désinscrit la distribution et efface son disque : rien de l'utilisateur n'y vit (le projet n'y est qu'une
     copie). Les images téléchargées sont gardées."""
     if exists():
+        # La règle vit dans la machine virtuelle partagée de WSL, pas dans la distribution : on ne la laisse pas derrière
+        _root(NFT_DELETE)
         _wsl_ok(["--unregister", DISTRO], "Suppression du bac à sable")
     if DISK_DIR.exists():
         shutil.rmtree(DISK_DIR, ignore_errors=True)
@@ -241,11 +300,53 @@ def delete():
     return status()
 
 
+def public_network():
+    """L'agent a-t-il droit à l'Internet public (réglage, coupé par défaut) ?"""
+    return bool((config.get().get("bac_a_sable") or {}).get("reseau_public"))
+
+
+def _root(args, stdin=None, timeout=60):
+    return run_wsl(["-d", DISTRO, "-u", "root", "--exec", *args], stdin=stdin, timeout=timeout)
+
+
+# nft vit dans /usr/sbin, absent du PATH que wsl --exec donne à Alpine : on passe par sh, qui pose un PATH complet.
+# Les commandes sont fixes, rien n'y est interpolé.
+NFT_LOAD = ["sh", "-c", "nft -f -"]
+NFT_LIST = ["sh", "-c", f"nft -n list table {TABLE}"]
+NFT_DELETE = ["sh", "-c", f"nft delete table {TABLE}"]
+
+
+def lock_network(public=None):
+    """Recharge la règle réseau de l'agent pour le mode réseau en cours de WSL, puis vérifie qu'elle est en place.
+    Appelée avant chaque commande de l'agent : un démarrage où la règle n'aurait pas pris, ou un passage en mode
+    « mirrored » depuis la création, ne laisse jamais l'agent avec plus de réseau que prévu."""
+    public = public_network() if public is None else public
+    code, mode = _root(["sh", "-c", "wslinfo --networking-mode 2>/dev/null || echo inconnu"])
+    mode = mode.strip() if code == 0 else "inconnu"
+    dns = []
+    if public:
+        _, conf = _root(["cat", "/etc/resolv.conf"])
+        dns = [line.split()[1] for line in conf.splitlines() if line.startswith("nameserver") and len(line.split()) > 1]
+    try:
+        text = rules(loopback=mode == "nat", public=public, dns=dns)
+    except ValueError:
+        text = rules(loopback=mode == "nat", public=public)  # résolveur illisible : pas de DNS, le reste tient
+    code, out = _root(NFT_LOAD, stdin=text.encode("utf-8"))
+    if code != 0:
+        raise BacASableError(f"Règle réseau de l'agent impossible à charger : {out or 'échec sans message'}.")
+    code, listing = _root(NFT_LIST)
+    if code != 0 or f"meta skuid {AGENT_UID}" not in listing or "reject" not in listing:
+        raise BacASableError("Règle réseau de l'agent absente après chargement : commande refusée.")
+    return {"mode": mode, "boucle_locale": mode == "nat", "internet_public": public}
+
+
 def run(command, user=USER, timeout=120):
     """Une commande dans le bac à sable (en `agent` par défaut) ; renvoie (code, sortie). Servira à l'outil de l'agent
-    et aux vérifications du cloisonnement."""
+    et aux vérifications du cloisonnement. Pour l'agent, la règle réseau est rechargée et vérifiée avant."""
     if not exists():
         raise BacASableError("Le bac à sable n'existe pas : crée-le d'abord.")
+    if user == USER:
+        lock_network()
     # --exec : la commande va telle quelle à sh. Avec « -- », wsl.exe la passerait d'abord au shell par défaut de
     # l'utilisateur, qui développerait $?, $HOME et les guillemets avant que sh ne la voie
     return run_wsl(["-d", DISTRO, "-u", user, "--cd", "~", "--exec", "sh", "-c", command], timeout=timeout)
