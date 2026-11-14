@@ -155,6 +155,7 @@ function syncAgentBar() {
     renderTodo(chat.current?.todo?.items || a.todo || null);
     syncScreenBar();
     syncMcpChip();
+    if (typeof sandboxSync === "function") sandboxSync();  // sandbox.js est chargé après ce fichier
     syncSidePanel();  // sans choix de ta part, le panneau suit le mode Agent
 }
 

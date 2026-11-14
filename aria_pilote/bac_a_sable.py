@@ -22,6 +22,7 @@ import re
 import shutil
 import subprocess
 import tarfile
+import threading
 import time
 from io import BytesIO
 from pathlib import Path
@@ -228,7 +229,59 @@ def status():
     except (OSError, ValueError):
         image = None
     return {"wsl": installed, "cree": created, "distribution": DISTRO, "image": image,
-            "images": {k: v["nom"] for k, v in IMAGES.items()}, "image_par_defaut": DEFAULT_IMAGE}
+            "images": {k: v["nom"] for k, v in IMAGES.items()}, "image_par_defaut": DEFAULT_IMAGE,
+            "creation": creation_state()}
+
+
+# --- création en arrière-plan ------------------------------------------------------------------------------------
+# Télécharger 89 Mo puis importer la distribution prend de quelques secondes à une minute : l'interface lance la
+# création, change de page si elle veut, et relit cet état. Une seule création à la fois.
+
+_creation = {"etat": "inactif", "image": None, "etape": None, "octets": 0, "total": None, "message": None}
+_creation_lock = threading.Lock()
+
+
+def creation_state():
+    """{etat: inactif | en cours | ok | erreur, image, etape, octets, total, message}."""
+    with _creation_lock:
+        return dict(_creation)
+
+
+def _set_creation(**changes):
+    with _creation_lock:
+        _creation.update(changes)
+
+
+def _run_creation(key):
+    try:
+        create(key, progress=lambda done, total: _set_creation(octets=done, total=total),
+               step=lambda name: _set_creation(etape=name))
+    except BacASableError as exc:
+        _set_creation(etat="erreur", message=str(exc))
+    except Exception as exc:  # jamais laisser l'état à « en cours » : l'interface attendrait pour toujours
+        _set_creation(etat="erreur", message=f"Erreur inattendue : {exc}")
+    else:
+        _set_creation(etat="ok", etape=None, message=None)
+
+
+def start_creation(key):
+    """Lance la création en arrière-plan. Les refus qui se savent tout de suite (image inconnue, WSL absent, bac déjà là,
+    création en cours) sont levés ici, pas dans la tâche."""
+    if key not in IMAGES:
+        raise BacASableError(f"Image inconnue : {key}. Choix : {', '.join(IMAGES)}.")
+    if creation_state()["etat"] == "en cours":
+        raise BacASableError("Une création est déjà en cours.")
+    if not wsl_installed():
+        raise BacASableError("WSL n'est pas installé. Installe-le toi-même, une fois, dans un terminal administrateur "
+                             "(wsl --install --no-distribution), puis redémarre le PC.")
+    if exists():
+        raise BacASableError("Le bac à sable existe déjà.")
+    with _creation_lock:
+        if _creation["etat"] == "en cours":  # deux demandes simultanées : une seule passe
+            raise BacASableError("Une création est déjà en cours.")
+        _creation.update(etat="en cours", image=key, etape="telechargement", octets=0, total=None, message=None)
+    threading.Thread(target=_run_creation, args=(key,), daemon=True, name="bac-a-sable-creation").start()
+    return creation_state()
 
 
 # --- image de base -----------------------------------------------------------------------------------------------
@@ -242,7 +295,8 @@ def _sha256(path):
 
 
 def download(key, progress=None):
-    """L'image `key`, téléchargée si besoin et vérifiée ; une image déjà là mais abîmée est retéléchargée."""
+    """L'image `key`, téléchargée si besoin et vérifiée ; une image déjà là mais abîmée est retéléchargée.
+    `progress(octets reçus, taille totale ou None)` est appelé au fil du téléchargement."""
     spec = IMAGES[key]
     IMAGES_DIR.mkdir(parents=True, exist_ok=True)
     target = IMAGES_DIR / spec["fichier"]
@@ -255,13 +309,17 @@ def download(key, progress=None):
                           timeout=httpx.Timeout(30, read=120), follow_redirects=True) as resp:
             if resp.status_code != 200:
                 raise BacASableError(f"Image {spec['nom']} : le serveur a répondu {resp.status_code}.")
+            try:
+                total = int(resp.headers.get("content-length") or 0) or None
+            except ValueError:
+                total = None
             with open(part, "wb") as out:
                 for chunk in resp.iter_bytes(CHUNK):
                     out.write(chunk)
                     h.update(chunk)
                     done += len(chunk)
                     if progress:
-                        progress(done)
+                        progress(done, total)
     except httpx.HTTPError as exc:
         part.unlink(missing_ok=True)
         raise BacASableError(f"Image {spec['nom']} : téléchargement impossible ({exc}).")
@@ -291,9 +349,11 @@ def prepare_archive(source, dest):
 
 # --- création et suppression -------------------------------------------------------------------------------------
 
-def create(key=DEFAULT_IMAGE, progress=None):
+def create(key=DEFAULT_IMAGE, progress=None, step=None):
     """Crée le bac à sable avec l'image `key`. En cas d'échec après l'import, la distribution à moitié faite est
-    désinscrite : on ne laisse jamais un bac à sable sans cloisonnement complet."""
+    désinscrite : on ne laisse jamais un bac à sable sans cloisonnement complet. `step(nom)` annonce les étapes :
+    telechargement, import, preparation."""
+    step = step or (lambda name: None)
     if key not in IMAGES:
         raise BacASableError(f"Image inconnue : {key}. Choix : {', '.join(IMAGES)}.")
     if not wsl_installed():
@@ -301,7 +361,9 @@ def create(key=DEFAULT_IMAGE, progress=None):
                              "(wsl --install --no-distribution), puis redémarre le PC.")
     if exists():
         raise BacASableError("Le bac à sable existe déjà.")
+    step("telechargement")
     image = download(key, progress)
+    step("import")
     IMAGES_DIR.mkdir(parents=True, exist_ok=True)
     prepared = IMAGES_DIR / "prepare.tar"
     try:
@@ -312,6 +374,7 @@ def create(key=DEFAULT_IMAGE, progress=None):
         _wsl_ok(["--import", DISTRO, str(DISK_DIR), str(prepared), "--version", "2"], "Import de la distribution")
     finally:
         prepared.unlink(missing_ok=True)
+    step("preparation")
     try:
         _wsl_ok(["-d", DISTRO, "-u", "root", "--exec", "sh", "-c", SETUP], "Préparation du bac à sable")
         _wsl_ok(["--terminate", DISTRO], "Redémarrage du bac à sable")

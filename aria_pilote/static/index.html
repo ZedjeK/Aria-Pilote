@@ -45,6 +45,7 @@
                 <button id="btn-agent-root" class="ghost" hidden>Attacher</button>
                 <button id="btn-rules" class="ghost" title="Commandes toujours autorisées dans ce projet" hidden>Règles</button>
                 <button id="btn-screen" class="ghost" title="Laisser l'agent voir l'écran et agir dans les fenêtres que tu choisis" hidden>🖱 Prendre la main</button>
+                <button id="btn-sandbox" class="ghost" aria-pressed="false" hidden>🧪 Bac à sable</button>
                 <button id="btn-mcp" class="ghost" hidden>🔌 MCP</button>
                 <button id="btn-private" class="ghost" aria-pressed="false">🕶 Privée</button>
                 <span id="agent-info" class="muted small"></span>
@@ -152,6 +153,7 @@
             <a href="#/reglages/hooks" data-section="hooks">🪝 Hooks</a>
             <a href="#/reglages/mcp" data-section="mcp">🔌 Serveurs MCP</a>
             <a href="#/reglages/web" data-section="web">🌐 Web et navigateur</a>
+            <a href="#/reglages/bac-a-sable" data-section="bac-a-sable">🧪 Bac à sable</a>
             <div class="nav-group">Système</div>
             <a href="#/reglages/donnees" data-section="donnees">💾 Données</a>
         </nav>
@@ -916,6 +918,39 @@
                     <p id="nav-error" class="error" hidden></p>
                 </div>
             </section>
+            <section class="settings-section" data-section="bac-a-sable" data-title="Bac à sable" hidden>
+                <div class="set-card">
+                    <div class="set-card-title">Bac à sable Linux</div>
+                    <p class="muted small">Un Linux jetable (WSL 2) où l'agent lance ses commandes sur une copie de ton projet : rien n'y touche ton PC. Ce qu'il y change ne revient dans ton projet qu'avec ton accord, diff à l'appui, et reste annulable. Il s'active conversation par conversation, avec la puce 🧪 de la zone de saisie.</p>
+                    <div class="set-row">
+                        <div><div class="set-label">État</div><div id="bas-detail" class="muted small"></div></div>
+                        <span id="bas-state" class="badge"></span>
+                    </div>
+                    <div id="bas-wsl-help" class="muted small" hidden>
+                        <p>WSL 2 s'active une seule fois, par toi, dans un terminal <b>administrateur</b> :</p>
+                        <pre class="mono">wsl --install --no-distribution</pre>
+                        <p>puis redémarre le PC. Pilote ne l'installe jamais à ta place.</p>
+                    </div>
+                    <label id="bas-image-row" class="set-row">
+                        <div><div class="set-label">Image de base</div><div class="muted small">Debian (environ 90 Mo) : tous les paquets Python s'installent tels quels. Alpine (environ 3 Mo) : plus léger, mais certains paquets doivent se compiler. Téléchargée à une version épinglée et refusée si son empreinte SHA-256 diffère.</div></div>
+                        <select id="bas-image" class="set-wide"></select>
+                    </label>
+                    <div class="set-row">
+                        <div><div id="bas-progress" class="muted small"></div></div>
+                        <button id="btn-bas-create" class="primary">Créer le bac à sable</button>
+                        <button id="btn-bas-delete" class="ghost">🗑 Supprimer</button>
+                    </div>
+                    <p id="bas-error" class="error" hidden></p>
+                </div>
+                <div class="set-card">
+                    <div class="set-card-title">Réseau de l'agent</div>
+                    <label class="set-row">
+                        <div><div class="set-label">Internet public</div><div class="muted small">Coupé : l'agent n'a aucun réseau dans le bac à sable. Activé : il peut installer des paquets (pip, apt), mais aussi envoyer le contenu de la copie de ton projet n'importe où.</div></div>
+                        <input type="checkbox" class="switch" id="set-bas-public">
+                    </label>
+                    <p class="muted small">🔒 Ton réseau local et Windows restent toujours bloqués, avec ou sans Internet public.</p>
+                </div>
+            </section>
 
             <section class="settings-section" data-section="donnees" data-title="Données" hidden>
                 <p class="muted">Tout reste sur ton PC, dans le dossier de l'appli. Rien n'est supprimé pour de bon : tout part à la corbeille.</p>
@@ -1019,6 +1054,7 @@
     <script src="notify.js"></script>
     <script src="souvenirs.js"></script>
     <script src="chat.js"></script>
+    <script src="sandbox.js"></script>
     <script src="vendor/xterm/xterm.js"></script>
     <script src="vendor/xterm/addon-fit.js"></script>
     <script src="terminal.js"></script>

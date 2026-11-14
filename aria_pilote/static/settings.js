@@ -2,7 +2,7 @@
 // S'appuie sur $, api, el, state, loadModels, loadEngines, renderHardware (app.js) et SKILL_SOURCES (chat.js).
 
 const SECTIONS = ["general", "persona", "modele-defaut", "mes-modeles", "presets", "decouvrir", "moteurs", "materiel",
-    "comportement", "autorisations", "github", "competences", "hooks", "mcp", "web", "donnees"];
+    "comportement", "autorisations", "github", "competences", "hooks", "mcp", "web", "bac-a-sable", "donnees"];
 
 // --- Navigation ------------------------------------------------------------------
 
@@ -1239,6 +1239,7 @@ const LOADERS = {
         loadSearx();
         loadNavigateur();
     },
+    "bac-a-sable": loadBacASable,
     donnees: loadData,
 };
 
