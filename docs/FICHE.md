@@ -20,6 +20,7 @@ Relevé du code au 13/11/2026, version 0.26.0, puis mis à jour avec le navigate
 | --- | --- |
 | Droits administrateur | Aucun |
 | Démarrage automatique | Aucun |
+| Prérequis facultatif | WSL 2, activé par l'utilisateur lui-même, pour le bac à sable Linux ; Aria le détecte seulement |
 | Port local | 8700 (interface), 8701 (llama-server), 8888 (SearXNG) ; version de dev : 8710, 8711, 8898. Écoute sur `127.0.0.1` seulement |
 | Dossier de données | `%USERPROFILE%\.Aria-Pilote` (le code de l'appli s'y trouve aussi) |
 
@@ -32,6 +33,7 @@ Relevé du code au 13/11/2026, version 0.26.0, puis mis à jour avec le navigate
 | Modèles | `models\` |
 | Moteurs et SearXNG | `engines\`, `services\` |
 | Chromium du navigateur piloté | `chromium\` : fait partie du code, remplacé à chaque mise à jour (il doit aller avec la version de Playwright) |
+| Bac à sable Linux | `bac-a-sable\` : images de base téléchargées (`images\`), disque de la distribution WSL (`disque\`), image utilisée (`image.json`) |
 | Profil du navigateur piloté | `data
 avigateur\profil\` : à part, sans les cookies, mots de passe ni historique de l'utilisateur ; « vider » l'envoie à la corbeille |
 | Compétences et sous-agents personnels | `skills\`, `agents\` |
@@ -47,6 +49,7 @@ avigateur\profil\` : à part, sans les cookies, mots de passe ni historique de l
 | Raccourcis « Aria Pilote » sur le bureau et dans le menu Démarrer, à l'installation | Non demandé |
 | Fichiers du dossier de travail attaché à une conversation (le travail de l'agent) | Accord à chaque modification, sauvegarde avant |
 | Corbeille de Windows (modèles, sauvegardes et conversations supprimés) | Action de l'utilisateur |
+| Registre de WSL du compte Windows : la distribution `aria-bac-a-sable` y est inscrite à la création, et désinscrite à la suppression | Action de l'utilisateur (création et suppression du bac à sable) |
 | Scripts temporaires `aria-commande-*.ps1` et `aria-hook-*.ps1` dans `%TEMP%`, effacés après usage | Non demandé |
 | Commandes lancées par l'agent ou tapées dans le terminal : peuvent écrire n'importe où | Accord à chaque commande |
 | Contrôle du PC (expérimental, coupé par défaut) : agit dans d'autres applications | Accord par action, sauf actions ordinaires autorisées pour la tâche |
@@ -64,6 +67,7 @@ avigateur\profil\` : à part, sans les cookies, mots de passe ni historique de l
 | Toute page publique, et ce qu'elle charge ou envoie | `naviguer` de l'agent, dans le Chromium embarqué, puis ses actions (`cliquer`, `taper`, `choisir`) qui peuvent envoyer un formulaire au site | Avec accord, action par action (les boutons sensibles toujours) ; chaque requête de la page (redirections, images, scripts, WebSocket) vers ta machine ou ton réseau local est bloquée, sauf les `adresse:port` ajoutés par l'utilisateur dans Réglages › Web et navigateur (vide par défaut, jamais les ports d'Aria) |
 | Serveurs MCP distants | Outils ajoutés par l'utilisateur | Selon leur réglage (accord par défaut) |
 | GitHub par git et gh | Travail de l'agent sur un dépôt | Accord à chaque commande qui sort du PC |
+| `salsa.debian.org` (Debian) ou `dl-cdn.alpinelinux.org` (Alpine) | Image de base du bac à sable, à une version épinglée, refusée si son empreinte SHA-256 diffère | À la création du bac à sable, si l'image n'est pas déjà téléchargée |
 | `github.com/astral-sh/python-build-standalone`, `codeload.github.com` | Construction de l'exe seulement (Python portable, SearXNG) | Jamais par l'appli installée |
 | `cdn.playwright.dev` (et ses miroirs `playwright.download.prss.microsoft.com`) | Construction de l'exe et version de dev : Chromium du navigateur piloté | Jamais par l'appli installée |
 
@@ -80,6 +84,7 @@ avigateur\profil\` : à part, sans les cookies, mots de passe ni historique de l
 | FFmpeg et winldd, téléchargés par Playwright avec Chromium | FFmpeg : LGPL-2.1 (`COPYING.LGPLv2.1` livré avec lui) ; winldd : outil de Playwright |
 | Space Grotesk, IBM Plex Mono | SIL OFL 1.1 |
 | Paquets Python de `requirements.txt` | Chacun la sienne |
+| Image de base du bac à sable (Debian ou Alpine), téléchargée à la création, jamais livrée dans l'exe | Celles de chaque distribution |
 
 ## Écarts au contrat des applis Aria
 
