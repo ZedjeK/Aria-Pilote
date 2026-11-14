@@ -45,6 +45,7 @@ class FakeWsl:
     def __init__(self, installed=True, setup_code=0):
         self.installed, self.setup_code = installed, setup_code
         self.distros, self.calls, self.imported = [], [], None
+        self.mode, self.nft_code, self.loaded, self.keep_listing = "nat", 0, [], True
 
     def __call__(self, args, stdin=None, timeout=None):
         self.calls.append(list(args))
@@ -61,12 +62,32 @@ class FakeWsl:
             self.distros.append(args[1])
             return 0, "Opération réussie."
         if args[:4] == ["-d", bas.DISTRO, "-u", "root"]:
-            return self.setup_code, "" if self.setup_code == 0 else "useradd: erreur"
+            return self.as_root(args[4:], stdin)
+        if args[:4] == ["-d", bas.DISTRO, "-u", bas.USER]:
+            return 0, "commande de l'agent"
         if args[0] == "--terminate":
             return 0, ""
         if args[0] == "--unregister":
             self.distros.remove(args[1]) if args[1] in self.distros else None
             return 0, "Désinscription."
+        return 0, ""
+
+    def as_root(self, rest, stdin):
+        if rest == ["--exec", "sh", "-c", bas.SETUP]:
+            return self.setup_code, "" if self.setup_code == 0 else "useradd: erreur"
+        if rest == ["--exec", "sh", "-c", "wslinfo --networking-mode 2>/dev/null || echo inconnu"]:
+            return 0, self.mode
+        if rest == ["--exec", "cat", "/etc/resolv.conf"]:
+            return 0, "# généré par WSL\nnameserver 10.255.255.254\n"
+        if rest == ["--exec", *bas.NFT_LOAD]:
+            self.loaded.append(stdin.decode("utf-8"))
+            return self.nft_code, "" if self.nft_code == 0 else "Error: syntax"
+        if rest == ["--exec", *bas.NFT_LIST]:
+            if not (self.loaded and self.keep_listing):
+                return 1, "Error: No such file or directory"
+            return 0, self.loaded[-1].replace("counter reject", "counter packets 0 bytes 0 reject")
+        if rest == ["--exec", *bas.NFT_DELETE]:
+            return 0, ""
         return 0, ""
 
 
@@ -141,17 +162,112 @@ class Creation(unittest.TestCase):
         self.assertFalse(bas.STATE_FILE.exists())
         self.assertTrue((bas.IMAGES_DIR / "gardee.tar.gz").exists())  # recréer sans retélécharger
 
+    def test_suppression_retire_la_regle_de_la_machine_virtuelle(self):
+        bas.create()
+        bas.delete()
+        delete_rule = ["-d", bas.DISTRO, "-u", "root", "--exec", *bas.NFT_DELETE]
+        self.assertIn(delete_rule, self.fake.calls)
+        self.assertLess(self.fake.calls.index(delete_rule), self.fake.calls.index(["--unregister", bas.DISTRO]))
+
     def test_preparation_sans_sudo_ni_mot_de_passe(self):
         self.assertIn(f"passwd -l {bas.USER}", bas.SETUP)
         self.assertIn("gpasswd -d", bas.SETUP)
         self.assertNotIn("sudoers", bas.SETUP)
         self.assertIn(f"default = {bas.USER}", bas.SETUP)
 
+    def test_preparation_coupe_le_reseau_de_l_agent(self):
+        self.assertIn(f"--uid {bas.AGENT_UID}", bas.SETUP)  # Debian
+        self.assertIn(f"-u {bas.AGENT_UID}", bas.SETUP)  # Alpine
+        self.assertIn("apk add --no-cache nftables", bas.SETUP)
+        self.assertIn(bas.STRICT_RULES, bas.SETUP)
+        self.assertIn(f"nft -f {bas.RULES_FILE}", bas.SETUP)
+        self.assertIn(f"command = NFT -f {bas.RULES_FILE}", bas.SETUP)  # rechargée à chaque démarrage…
+        self.assertIn('sed "s#NFT#$(command -v nft)#"', bas.SETUP)  # …par le chemin complet de nft
+        self.assertIn("exit 1", bas.SETUP)  # sans nftables, pas de bac à sable
+
     def test_images_epinglees(self):
         for key, spec in bas.IMAGES.items():
             self.assertTrue(spec["url"].startswith("https://"), key)
             self.assertRegex(spec["sha256"], r"^[0-9a-f]{64}$", key)
             self.assertNotIn("latest", spec["url"], key)  # une version précise, jamais « la dernière »
+
+
+class Regles(unittest.TestCase):
+    def test_stricte_rien_pour_l_agent(self):
+        lines = [line.strip() for line in bas.STRICT_RULES.splitlines()]
+        self.assertIn(f"meta skuid {bas.AGENT_UID} counter reject", lines)
+        self.assertNotIn("accept", "\n".join(lines[lines.index("type filter hook output priority 0; policy accept;") + 1:]))
+
+    def test_se_remplacent_au_lieu_de_s_empiler(self):
+        lines = bas.STRICT_RULES.splitlines()
+        self.assertEqual(lines[:3], ["table inet aria_bac_a_sable {}", "delete table inet aria_bac_a_sable",
+                                     "table inet aria_bac_a_sable {"])
+
+    def test_boucle_locale(self):
+        text = bas.rules(loopback=True)
+        self.assertIn("ip daddr 127.0.0.0/8 accept", text)
+        self.assertIn("ip6 daddr ::1 accept", text)
+        self.assertNotIn(f"meta skuid {bas.AGENT_UID} accept", text)  # rien d'autre
+
+    def test_internet_public_jamais_le_reseau_local(self):
+        text = bas.rules(public=True, dns=["10.255.255.254", "fd00::1"])
+        dns = text.index("10.255.255.254 udp dport 53 accept")
+        private = text.index("172.16.0.0/12")
+        self.assertLess(dns, private)  # le résolveur passe avant le refus des adresses privées
+        self.assertLess(private, text.index(f"meta skuid {bas.AGENT_UID} accept"))
+        for block in ("10.0.0.0/8", "192.168.0.0/16", "169.254.0.0/16", "127.0.0.0/8", "fc00::/7", "fe80::/10"):
+            self.assertIn(block, text)
+        self.assertIn("ip6 daddr fd00::1 tcp dport 53 accept", text)
+        with self.assertRaises(ValueError):
+            bas.rules(public=True, dns=["10.0.0.1; flush ruleset"])  # rien d'injecté depuis resolv.conf
+
+
+class Verrou(unittest.TestCase):
+    def setUp(self):
+        self.fake = FakeWsl()
+        self.fake.distros.append(bas.DISTRO)
+        self.original = bas.run_wsl
+        bas.run_wsl = self.fake
+        self.addCleanup(setattr, bas, "run_wsl", self.original)
+        self.addCleanup(bas.config.update, {"bac_a_sable": {"reseau_public": False}})
+
+    def test_commande_de_l_agent_apres_le_verrou(self):
+        self.assertEqual(bas.run("ls"), (0, "commande de l'agent"))
+        names = [c[5] if len(c) > 5 else c[0] for c in self.fake.calls]
+        load = next(i for i, c in enumerate(self.fake.calls) if c[4:] == ["--exec", *bas.NFT_LOAD])
+        agent = next(i for i, c in enumerate(self.fake.calls) if c[:4] == ["-d", bas.DISTRO, "-u", bas.USER])
+        self.assertLess(load, agent, names)
+        self.assertIn("127.0.0.0/8 accept", self.fake.loaded[-1])  # NAT : boucle locale permise
+
+    def test_mode_mirrored_sans_boucle_locale(self):
+        self.fake.mode = "mirrored"  # 127.0.0.1 mènerait aux services de Windows
+        bas.run("ls")
+        self.assertNotIn("127.0.0.0/8 accept", self.fake.loaded[-1])
+        self.fake.mode = "inconnu"
+        bas.run("ls")
+        self.assertNotIn("127.0.0.0/8 accept", self.fake.loaded[-1])
+
+    def test_internet_public_selon_le_reglage(self):
+        bas.run("ls")
+        self.assertNotIn(f"meta skuid {bas.AGENT_UID} accept", self.fake.loaded[-1])
+        bas.config.update({"bac_a_sable": {"reseau_public": True}})
+        state = bas.lock_network()
+        self.assertTrue(state["internet_public"])
+        self.assertIn("10.255.255.254 udp dport 53 accept", self.fake.loaded[-1])  # le résolveur de resolv.conf
+        self.assertIn(f"meta skuid {bas.AGENT_UID} accept", self.fake.loaded[-1])
+
+    def test_verrou_rate_commande_refusee(self):
+        self.fake.nft_code = 1
+        with self.assertRaises(bas.BacASableError):
+            bas.run("ls")
+        self.fake.nft_code, self.fake.keep_listing = 0, False  # chargée mais absente à la relecture
+        with self.assertRaises(bas.BacASableError):
+            bas.run("ls")
+        self.assertFalse(any(c[:4] == ["-d", bas.DISTRO, "-u", bas.USER] for c in self.fake.calls))
+
+    def test_root_sans_verrou(self):
+        bas.run("id", user="root")
+        self.assertEqual(self.fake.loaded, [])
 
 
 class _Image(http.server.BaseHTTPRequestHandler):
@@ -227,6 +343,23 @@ class VraiWsl(unittest.TestCase):
         self.assertEqual(bas.run("false; echo \"code=$?\""), (0, "code=1"))
         self.assertEqual(bas.run("exit 3")[0], 3)
         self.assertEqual(bas.run("which cmd.exe || echo absent")[1], "absent")  # pas de lancement d'exe Windows
+        self.assertEqual(bas.run("id -u")[1], str(bas.AGENT_UID))
+        # Réseau : coupé pour l'agent (Internet et DNS), gardé pour root
+        web = "wget -q -T 5 -O /dev/null https://dl-cdn.alpinelinux.org/ >/dev/null 2>&1 && echo ouvert || echo ferme"
+        self.assertEqual(bas.run(web)[1], "ferme")
+        self.assertEqual(bas.run("nslookup dl-cdn.alpinelinux.org >/dev/null 2>&1 && echo ouvert || echo ferme")[1],
+                         "ferme")
+        self.assertEqual(bas.run(web, user="root")[1], "ouvert")
+        self.assertIn("Operation not permitted", bas.run("nft flush ruleset 2>&1")[1])
+        # Internet public permis : le site passe, toujours rien vers la passerelle de Windows
+        state = bas.lock_network(public=True)
+        self.assertTrue(state["internet_public"])
+        code, out = bas.run_wsl(["-d", bas.DISTRO, "-u", bas.USER, "--exec", "sh", "-c", web])
+        self.assertEqual(out, "ouvert")
+        gateway = bas.run("ip route | awk '/default/ {print $3; exit}'", user="root")[1]
+        code, out = bas.run_wsl(["-d", bas.DISTRO, "-u", bas.USER, "--exec", "sh", "-c",
+                                 f"nc -w 3 {gateway} 53 </dev/null 2>&1; echo code=$?"])
+        self.assertNotIn("code=0", out)
         bas.delete()
         self.assertFalse(bas.exists())
 
