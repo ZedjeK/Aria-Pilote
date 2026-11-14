@@ -157,6 +157,10 @@ class NavigateurSettings(BaseModel):
     locaux_autorises: list[str] | str | None = None  # « 127.0.0.1:3000, 192.168.1.20:8080 » tapé dans le champ
 
 
+class BacASableSettings(BaseModel):
+    reseau_public: bool | None = None  # l'agent a-t-il l'Internet public (jamais le réseau local) ?
+
+
 class NotificationSettings(BaseModel):
     enabled: bool | None = None
     only_background: bool | None = None
@@ -181,6 +185,7 @@ class ConfigPatch(BaseModel):
     screen_control: bool | None = None
     web: WebSettings | None = None
     navigateur: NavigateurSettings | None = None
+    bac_a_sable: BacASableSettings | None = None
     memory: MemorySettings | None = None
     github: GithubSettings | None = None
     searxng_idle_minutes: int | None = Field(None, ge=0, le=1440)
@@ -1345,6 +1350,51 @@ async def navigateur_vider_profil():
     except OSError as exc:
         raise HTTPException(500, f"Profil impossible à envoyer à la corbeille : {exc}")
     return navigateur.manager.status()
+
+
+# --- Bac à sable Linux (Réglages › Bac à sable) ----------------------------------------
+
+class BacASableCreate(BaseModel):
+    image: str = bac_a_sable.DEFAULT_IMAGE
+
+
+class BacASableDelete(BaseModel):
+    confirmer: bool = False  # la suppression est sans retour : l'interface demande, et le serveur l'exige aussi
+
+
+def _bac_a_sable_state():
+    return {**bac_a_sable.status(), "reseau_public": bac_a_sable.public_network()}
+
+
+@app.get("/api/bac-a-sable")
+def bac_a_sable_status():
+    return _bac_a_sable_state()
+
+
+@app.post("/api/bac-a-sable/creer")
+def bac_a_sable_creer(req: BacASableCreate):
+    """Lance la création en arrière-plan : l'état (avec son avancement) se relit par GET /api/bac-a-sable."""
+    if req.image not in bac_a_sable.IMAGES:
+        raise HTTPException(400, f"Image inconnue : {req.image}. Choix : {', '.join(bac_a_sable.IMAGES)}.")
+    try:
+        bac_a_sable.start_creation(req.image)
+    except bac_a_sable.BacASableError as exc:
+        raise HTTPException(409, str(exc))
+    return _bac_a_sable_state()
+
+
+@app.post("/api/bac-a-sable/supprimer")
+def bac_a_sable_supprimer(req: BacASableDelete):
+    if not req.confirmer:
+        raise HTTPException(400, "Suppression sans retour : confirme-la. Les copies de projet du bac à sable "
+                                 "disparaissent avec lui (tes vrais projets ne sont pas touchés).")
+    if bac_a_sable.creation_state()["etat"] == "en cours":
+        raise HTTPException(409, "Une création est en cours : attends sa fin.")
+    try:
+        bac_a_sable.delete()
+    except bac_a_sable.BacASableError as exc:
+        raise HTTPException(409, str(exc))
+    return _bac_a_sable_state()
 
 
 # --- Données (Réglages › Données) ------------------------------------------------------
