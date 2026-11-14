@@ -15,6 +15,9 @@ engines/
 # Chromium du navigateur piloté (tools/install_navigateur.py)
 /chromium/
 
+# Bac à sable Linux : images téléchargées et disque de la distribution WSL
+/bac-a-sable/
+
 # SearXNG : code téléchargé, dépendances et configuration (contient une clé secrète)
 services/searxng/src/
 services/searxng/.venv/
