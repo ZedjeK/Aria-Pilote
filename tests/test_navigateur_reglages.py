@@ -199,6 +199,7 @@ class VraieException(unittest.TestCase):
         self.server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), _Site)
         threading.Thread(target=self.server.serve_forever, daemon=True).start()
         self.port = self.server.server_address[1]
+        self.addCleanup(self.server.server_close)  # enregistré avant shutdown : il s'exécute après lui
         self.addCleanup(self.server.shutdown)
         self.addCleanup(set_exceptions, [])
 

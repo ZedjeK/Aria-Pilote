@@ -3,7 +3,9 @@
 le vrai essai ne tourne que sur demande (ARIA_TEST_WSL=1) : il crée puis supprime une vraie distribution.
 """
 
+import contextlib
 import importlib.util
+import io
 import os
 import shutil
 import sys
@@ -202,11 +204,14 @@ class _Reponse:
 class FauxBanc:
     """Le client du banc d'essai, réduit à l'API du bac à sable."""
 
-    def __init__(self, wsl=True, cree=False, outils=True, final="ok"):
+    def __init__(self, wsl=True, cree=False, outils=True, final="ok", models=()):
         self.wsl, self.cree, self.outils, self.final = wsl, cree, outils, final
+        self.models = list(models)
         self.posts, self.creating, self.polls = [], False, 0
 
     def get(self, url):
+        if url == "/api/models":
+            return _Reponse(self.models)
         assert url == "/api/bac-a-sable"
         creation = {"etat": "inactif", "message": None}
         if self.creating:
@@ -275,6 +280,31 @@ class Banc(unittest.TestCase):
         with self.assertRaises(SystemExit) as ctx:
             self.environment(client, [{"sandbox": True}])
         self.assertIn("pas de réseau", str(ctx.exception))
+
+
+class OrdreDuBanc(unittest.TestCase):
+    """Un motif de modèle ambigu ou inconnu doit arrêter le banc avant la création du bac à sable."""
+
+    def run_main(self, models, pattern):
+        client = FauxBanc(models=models)
+        argv = ["bench.py", "--models", pattern, "--tasks", "24"]
+        out = io.TextIOWrapper(io.BytesIO(), encoding="utf-8")
+        with mock.patch.object(sys, "argv", argv), mock.patch.object(sys, "stdout", out),                 mock.patch.object(bench.httpx, "Client", return_value=client),                 mock.patch.object(bench, "start_app", return_value=None),                 mock.patch.object(bench, "previous_results", return_value=None),                 mock.patch.object(bench, "fresh_souvenirs", contextlib.nullcontext),                 mock.patch.object(bench.time, "sleep"):
+            with self.assertRaises(SystemExit) as ctx:
+                bench.main()
+        return client, str(ctx.exception)
+
+    def test_motif_ambigu_sans_creer_de_bac(self):
+        models = [{"name": "Ternary-Bonsai-2-27B-PQ2_0", "path": "C:/m/Ternary-Bonsai-2-27B-PQ2_0.gguf"},
+                  {"name": "Ternary-Bonsai-2-27B-Abliterated", "path": "C:/m/Ternary-Bonsai-2-27B-Abliterated.gguf"}]
+        client, message = self.run_main(models, "bonsai")
+        self.assertIn("plusieurs modèles", message)
+        self.assertEqual(client.posts, [])  # ni création, ni suppression : rien n'a été touché
+
+    def test_motif_inconnu_sans_creer_de_bac(self):
+        client, message = self.run_main([{"name": "Qwen", "path": "C:/m/qwen.gguf"}], "bonsai")
+        self.assertIn("Aucun modèle ne correspond", message)
+        self.assertEqual(client.posts, [])
 
 
 def load_check(name):

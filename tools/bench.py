@@ -469,8 +469,10 @@ def main():
                                        capture_output=True, text=True).stdout.strip(),
               "models": {}}
     try:
+        # Les modèles d'abord : un motif ambigu ou inconnu s'arrête ici, avant la création du bac à sable (une minute)
+        models = resolve_models(client, args)
         with fresh_souvenirs(), sandbox_environment(client, tasks):
-            run_models(client, tasks, args, report)
+            run_models(client, tasks, args, report, models)
     finally:
         if proc is not None:
             try:
@@ -492,9 +494,12 @@ def main():
         print(f"Comparé au run du {before['date']} (commit {before.get('commit') or '?'}).")
 
 
-def run_models(client, tasks, args, report):
-    for pattern in [p.strip() for p in args.models.split(",") if p.strip()]:
-        model = find_model(client, pattern)
+def resolve_models(client, args):
+    return [find_model(client, p.strip()) for p in args.models.split(",") if p.strip()]
+
+
+def run_models(client, tasks, args, report, models):
+    for model in models:
         load_model(client, model, args.ctx)
         name = Path(model["path"]).stem
         results = report["models"].setdefault(name, {})
