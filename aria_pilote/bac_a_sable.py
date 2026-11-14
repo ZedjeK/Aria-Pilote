@@ -18,15 +18,17 @@ au vrai PC.
 import hashlib
 import json
 import os
+import re
 import shutil
 import subprocess
 import tarfile
 import time
 from io import BytesIO
+from pathlib import Path
 
 import httpx
 
-from . import VERSION, config
+from . import VERSION, config, workspace
 
 DISTRO = "aria-bac-a-sable"
 BASE = config.ROOT / "bac-a-sable"
@@ -148,8 +150,10 @@ def run_wsl(args, stdin=None, timeout=WSL_TIMEOUT_S):
     """Lance wsl.exe ; renvoie (code, sortie). WSL_UTF8=1 pour ce seul appel : sans lui, wsl.exe écrit en UTF-16.
     Remplacé par un faux dans les tests."""
     env = {**os.environ, "WSL_UTF8": "1"}
+    # stdin fermé quand rien n'est envoyé : un programme interactif lit la fin du fichier au lieu d'attendre
+    feed = {"input": stdin} if stdin is not None else {"stdin": subprocess.DEVNULL}
     try:
-        proc = subprocess.run(["wsl.exe", *args], input=stdin, capture_output=True, env=env, timeout=timeout,
+        proc = subprocess.run(["wsl.exe", *args], capture_output=True, env=env, timeout=timeout, **feed,
                               creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
     except FileNotFoundError:
         return None, "wsl.exe introuvable"
@@ -180,6 +184,23 @@ def distributions():
 
 def exists():
     return DISTRO in distributions()
+
+
+AVAILABLE_TTL_S = 15
+_available = {"at": 0.0, "value": False}
+
+
+def available(force=False):
+    """Le bac à sable existe-t-il ? Gardé quelques secondes : l'agent le demande à chaque étape (liste des outils,
+    prompt), et chaque lecture est un appel à wsl.exe. Invalidé par create() et delete()."""
+    now = time.monotonic()
+    if force or now - _available["at"] > AVAILABLE_TTL_S:
+        _available.update(at=now, value=exists())
+    return _available["value"]
+
+
+def forget_cache():
+    _available["at"] = 0.0
 
 
 def status():
@@ -281,6 +302,7 @@ def create(key=DEFAULT_IMAGE, progress=None):
     except BacASableError:
         run_wsl(["--unregister", DISTRO])
         raise
+    forget_cache()
     STATE_FILE.write_text(json.dumps({"image": key, "nom": IMAGES[key]["nom"], "sha256": IMAGES[key]["sha256"],
                                       "cree_le": time.strftime("%Y-%m-%d %H:%M")}, ensure_ascii=False, indent=2),
                           encoding="utf-8")
@@ -297,6 +319,7 @@ def delete():
     if DISK_DIR.exists():
         shutil.rmtree(DISK_DIR, ignore_errors=True)
     STATE_FILE.unlink(missing_ok=True)
+    forget_cache()
     return status()
 
 
@@ -350,3 +373,178 @@ def run(command, user=USER, timeout=120):
     # --exec : la commande va telle quelle à sh. Avec « -- », wsl.exe la passerait d'abord au shell par défaut de
     # l'utilisateur, qui développerait $?, $HOME et les guillemets avant que sh ne la voie
     return run_wsl(["-d", DISTRO, "-u", user, "--cd", "~", "--exec", "sh", "-c", command], timeout=timeout)
+
+
+# --- copie du projet et commandes de l'agent -----------------------------------------------------------------------
+# Le projet de l'utilisateur est copié dans le bac à sable, un dossier par conversation. Pas de dossier partagé : la
+# copie est le cloisonnement. Ce que l'agent y change ne revient pas tout seul (PR suivante : diff et accord).
+
+HOME = f"/home/{USER}"
+SKIP_DIRS = {".git", ".hg", ".svn", "node_modules", ".venv", "venv", "__pycache__", ".mypy_cache", ".idea"}
+MAX_COPY_BYTES = 200 * 1024 * 1024
+MAX_COPY_FILES = 20000
+MAX_COMMAND_CHARS = 8000  # la ligne de commande de wsl.exe plafonne à environ 32 000 caractères, enrobage compris
+DEFAULT_TIMEOUT_S, MAX_TIMEOUT_S = 60, 600
+KILLED = (9, 137)  # code d'une commande tuée par timeout : 9 sous Alpine (busybox), 137 sous Debian (coreutils)
+# timeout tue la commande et ses enfants sur les deux images (vérifié) ; un processus qui quitte lui-même son groupe
+# (setsid) lui échappe : reset_project() les retrouve par leur dossier courant
+RUN_SCRIPT = 'timeout -s KILL "$2" sh -c "$1"'
+CID_RE = re.compile(r"^[0-9a-f]{12}$")
+
+
+def project_dir(cid):
+    """Dossier de la copie, dans la distribution. Un identifiant de conversation inattendu est refusé : il finit dans
+    un chemin."""
+    if not CID_RE.match(str(cid)):
+        raise BacASableError("Identifiant de conversation invalide.")
+    return f"{HOME}/projet-{cid}"
+
+
+def _require():
+    if not exists():
+        raise BacASableError("Le bac à sable n'existe pas : crée-le d'abord (Réglages).")
+
+
+def _inside(root_real, path):
+    real = os.path.realpath(path)
+    return real == root_real or real.startswith(root_real + os.sep)
+
+
+def _git_files(root):
+    """Fichiers que git ne ignore pas (suivis ou nouveaux), ou None si le dossier n'est pas un dépôt lisible."""
+    if not (root / ".git").exists() or shutil.which("git") is None:
+        return None
+    try:
+        proc = subprocess.run(["git", "-C", str(root), "ls-files", "-z", "--cached", "--others", "--exclude-standard"],
+                              capture_output=True, timeout=60, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    if proc.returncode != 0:
+        return None
+    return [n for n in proc.stdout.decode("utf-8", errors="replace").split("\0") if n]
+
+
+def project_files(root):
+    """Chemins relatifs (avec /) des fichiers à copier : ce que git ne ignore pas si le projet est un dépôt (donc ni
+    .venv, ni modèles, ni .env), sinon le parcours habituel de l'agent. Jamais de lien ni de jonction qui sorte du
+    dossier. Refuse un projet trop gros, en disant ce qui pèse."""
+    root = Path(workspace.validate_root(root))
+    root_real = os.path.realpath(root)
+    names = _git_files(root)
+    if names is None:
+        names = []
+        for dirpath, dirnames, filenames in os.walk(root):
+            dirnames[:] = sorted(d for d in dirnames if d not in SKIP_DIRS and _inside(root_real, os.path.join(dirpath, d)))
+            names += [os.path.relpath(os.path.join(dirpath, f), root) for f in sorted(filenames)]
+    kept, total, by_top = [], 0, {}
+    for name in names:
+        name = name.replace("\\", "/")
+        if SKIP_DIRS & set(name.split("/")[:-1]):
+            continue
+        full = root / name
+        if os.path.islink(full) or not full.is_file() or not _inside(root_real, full):
+            continue
+        size = full.stat().st_size
+        kept.append(name)
+        total += size
+        top = name.split("/")[0] if "/" in name else "(racine)"
+        by_top[top] = by_top.get(top, 0) + size
+    if len(kept) > MAX_COPY_FILES or total > MAX_COPY_BYTES:
+        heaviest = ", ".join(f"{k} ({v / 1e6:.0f} Mo)" for k, v in sorted(by_top.items(), key=lambda kv: -kv[1])[:3])
+        raise BacASableError(f"Projet trop gros pour le bac à sable : {len(kept)} fichiers, {total / 1e6:.0f} Mo "
+                             f"(limite {MAX_COPY_FILES} fichiers et {MAX_COPY_BYTES // 2**20} Mo). Le plus lourd : "
+                             f"{heaviest}. Ajoute ces dossiers à .gitignore, ou ouvre un sous-dossier du projet.")
+    return kept
+
+
+def build_archive(root, files):
+    """Archive tar de `files`, propriété de l'agent. Droits : 644, et 755 pour un fichier qui commence par « #! »."""
+    root = Path(workspace.validate_root(root))
+    buffer = BytesIO()
+    try:
+        with tarfile.open(fileobj=buffer, mode="w") as tar:
+            for name in files:
+                path = root / name
+                info = tar.gettarinfo(str(path), arcname=name)
+                info.uid = info.gid = AGENT_UID
+                info.uname = info.gname = ""
+                with open(path, "rb") as f:
+                    info.mode = 0o755 if f.read(2) == b"#!" else 0o644
+                    f.seek(0)
+                    tar.addfile(info, f)
+    except OSError as exc:
+        raise BacASableError(f"Copie du projet impossible : {exc}.")
+    return buffer.getvalue()
+
+
+def has_project(cid):
+    code, _ = run_wsl(["-d", DISTRO, "-u", USER, "--exec", "test", "-d", project_dir(cid)], timeout=30)
+    return code == 0
+
+
+def copy_project(cid, root):
+    """(Re)copie le projet dans le bac à sable, en remplaçant la copie précédente : ce que l'agent y avait changé
+    disparaît. Renvoie {fichiers, octets, dossier}."""
+    _require()
+    target = project_dir(cid)
+    files = project_files(root)
+    data = build_archive(root, files)
+    lock_network()
+    _wsl_ok(["-d", DISTRO, "-u", USER, "--exec", "sh", "-c",
+             'rm -rf -- "$1" && mkdir -p -- "$1" && tar -xf - -C "$1"', "sh", target],
+            "Copie du projet dans le bac à sable", stdin=data)
+    return {"fichiers": len(files), "octets": len(data), "dossier": target}
+
+
+# Processus de l'agent dont le dossier courant est dans la copie : ceux d'une commande qui a quitté son groupe
+KILL_LEFTOVERS = (f'for p in /proc/[0-9]*; do [ "$(stat -c %u "$p" 2>/dev/null)" = {AGENT_UID} ] || continue; '
+                  'case "$(readlink "$p/cwd" 2>/dev/null)" in "$1"|"$1"/*) kill -KILL "${p#/proc/}" 2>/dev/null;; '
+                  "esac; done; true")
+
+
+def reset_project(cid, root):
+    """Tue ce qui tourne encore dans la copie, puis la refait à neuf."""
+    _require()
+    _root(["sh", "-c", KILL_LEFTOVERS, "sh", project_dir(cid)])
+    return copy_project(cid, root)
+
+
+def stop_commands(cid):
+    """Tue ce qui tourne dans la copie de cette conversation (bouton Stop). Sans erreur si le bac à sable a disparu."""
+    try:
+        _root(["sh", "-c", KILL_LEFTOVERS, "sh", project_dir(cid)], timeout=30)
+    except BacASableError:
+        pass
+
+
+def forget_project(cid):
+    """Efface la copie d'une conversation supprimée ; sans effet si le bac à sable n'existe pas."""
+    if not exists():
+        return False
+    _root(["sh", "-c", 'rm -rf -- "$1"', "sh", project_dir(cid)])
+    return True
+
+
+def run_in_project(cid, command, timeout=DEFAULT_TIMEOUT_S):
+    """Une commande `sh` de l'agent dans la copie de son projet, avec un délai. Renvoie {code, sortie, duree, delai}.
+    La règle réseau est rechargée et vérifiée avant."""
+    command = (command or "").strip()
+    if not command:
+        raise BacASableError("Commande vide.")
+    if len(command) > MAX_COMMAND_CHARS:
+        raise BacASableError(f"Commande trop longue ({len(command)} caractères, {MAX_COMMAND_CHARS} au plus) : "
+                             "écris-la dans un fichier du projet, puis lance ce fichier.")
+    timeout = max(1, min(MAX_TIMEOUT_S, int(timeout)))
+    _require()
+    target = project_dir(cid)
+    if not has_project(cid):
+        raise BacASableError("Le projet n'est pas copié dans le bac à sable.")
+    lock_network()
+    started = time.monotonic()
+    # --exec : la commande va telle quelle à sh. Le délai de wsl.exe est plus large que celui de timeout, qui tue
+    # d'abord ; si wsl.exe ne répond plus du tout, le processus est tué avec lui
+    code, out = run_wsl(["-d", DISTRO, "-u", USER, "--cd", target, "--exec", "sh", "-c", RUN_SCRIPT, "sh", command,
+                         str(timeout)], timeout=timeout + 15)
+    elapsed = time.monotonic() - started
+    timed_out = code is None or (code in KILLED and elapsed >= timeout - 1)
+    return {"code": code, "sortie": out, "duree": round(elapsed, 1), "delai": timed_out}

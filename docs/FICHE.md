@@ -20,6 +20,7 @@ Relevé du code au 13/11/2026, version 0.26.0, puis mis à jour avec le navigate
 | --- | --- |
 | Droits administrateur | Aucun |
 | Démarrage automatique | Aucun |
+| Bac à sable dans une conversation | Option par conversation, coupée par défaut : l'outil `run_sandbox` n'existe pour le modèle que si un dossier est attaché, l'option activée et le bac à sable créé ; pas d'accord par commande (rien n'y touche le PC), délai de 60 s par défaut et 600 s au plus, verrou du plan comme les commandes du PC |
 | Prérequis facultatif | WSL 2, activé par l'utilisateur lui-même, pour le bac à sable Linux ; Aria le détecte seulement |
 | Port local | 8700 (interface), 8701 (llama-server), 8888 (SearXNG) ; version de dev : 8710, 8711, 8898. Écoute sur `127.0.0.1` seulement |
 | Dossier de données | `%USERPROFILE%\.Aria-Pilote` (le code de l'appli s'y trouve aussi) |
@@ -34,6 +35,7 @@ Relevé du code au 13/11/2026, version 0.26.0, puis mis à jour avec le navigate
 | Moteurs et SearXNG | `engines\`, `services\` |
 | Chromium du navigateur piloté | `chromium\` : fait partie du code, remplacé à chaque mise à jour (il doit aller avec la version de Playwright) |
 | Bac à sable Linux | `bac-a-sable\` : images de base téléchargées (`images\`), disque de la distribution WSL (`disque\`), image utilisée (`image.json`) |
+| Copie du projet de chaque conversation (bac à sable) | `/home/agent/projet-<id>`, dans le disque du bac à sable (`bac-a-sable\disque\`) : ce que git n'ignore pas (jamais `.env`, `.venv` ni modèles), 200 Mo et 20 000 fichiers au plus, sans lien ni jonction qui sorte du projet ; supprimée avec la conversation |
 | Profil du navigateur piloté | `data
 avigateur\profil\` : à part, sans les cookies, mots de passe ni historique de l'utilisateur ; « vider » l'envoie à la corbeille |
 | Compétences et sous-agents personnels | `skills\`, `agents\` |
