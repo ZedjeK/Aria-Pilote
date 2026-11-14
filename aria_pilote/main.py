@@ -16,7 +16,7 @@ from pydantic import BaseModel, Field
 from . import (VERSION, agent, attachments, background, backups, chat, config, context, conversations, downloads,
                engines, github, hardware, hooks, hub, images, mcp_client, models, optimizer, permissions, persona,
                pick_folder, presets, screen, searxng, skills, souvenirs, subagents, tools, trial, updates, workspace)
-from . import navigateur, terminal
+from . import bac_a_sable, navigateur, terminal
 from .server import EngineMissing, manager
 
 STATIC_DIR = Path(__file__).parent / "static"
@@ -224,6 +224,7 @@ class ConversationPatch(BaseModel):
     screen_mode: str | None = None  # « fenetres » (celles cochées) ou « pc » (tout le PC, sauf les applis interdites)
     mcp: list[str] | None = None  # serveurs MCP proposés dans cette conversation
     prive: bool | None = None  # 🕶 conversation privée : rien n'y est retenu, aucun souvenir n'y sert
+    sandbox: bool | None = None  # commandes de l'agent dans le bac à sable Linux, sur une copie du projet
     mcp_default: bool = False  # revenir aux serveurs actifs d'office
 
 
@@ -701,6 +702,13 @@ def patch_conversation(cid: str, patch: ConversationPatch):
     if patch.screen_allow is not None:
         conv["screen_allow"] = [p.strip().lower() for p in patch.screen_allow if p.strip()]
         conv["screen_mode"] = "fenetres"
+    if patch.sandbox is not None:
+        if patch.sandbox:
+            if not (conv.get("agent") or {}).get("workspace"):
+                raise HTTPException(400, "Choisis d'abord un dossier de travail.")
+            if not bac_a_sable.available(force=True):
+                raise HTTPException(409, "Le bac à sable n'existe pas : crée-le d'abord (Réglages).")
+        conv["sandbox"] = patch.sandbox
     if patch.prive is not None:
         conv["prive"] = patch.prive
     if patch.mcp_default:
@@ -715,8 +723,13 @@ def patch_conversation(cid: str, patch: ConversationPatch):
 
 @app.delete("/api/conversations/{cid}")
 def delete_conversation(cid: str):
-    _conversation_or_404(cid)
+    conv = _conversation_or_404(cid)
     background.stop_conversation(cid)
+    if conv.get("sandbox") is not None:  # une copie de son projet a pu être faite : on l'efface (sans réveiller WSL sinon)
+        try:
+            bac_a_sable.forget_project(cid)
+        except bac_a_sable.BacASableError:
+            pass  # le bac à sable lui-même sera supprimé un jour : la copie part avec
     terminal.close(cid)
     # Son onglet du navigateur : fermé dans la boucle de l'appli (cette route tourne dans un thread à part)
     anyio.from_thread.run(navigateur.manager.fermer_page, cid)

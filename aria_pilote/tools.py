@@ -18,8 +18,8 @@ import time
 from dataclasses import dataclass
 from typing import Awaitable, Callable
 
-from . import (background, backups, checks, config, context, conversations, github, images, jobs, navigateur,
-               page_texte, screen, skills, souvenirs, web, workspace)
+from . import (background, backups, bac_a_sable, checks, config, context, conversations, github, images, jobs,
+               navigateur, page_texte, screen, skills, souvenirs, web, workspace)
 from .server import manager
 
 SKIP_DIRS = {".git", ".hg", ".svn", "node_modules", ".venv", "venv", "__pycache__", ".mypy_cache", ".idea"}
@@ -1768,6 +1768,73 @@ async def run_page_action(prepared, cid):
                "ce qui a changé ; les numéros des éléments ont été mis à jour.")
 
 
+# --- bac à sable Linux --------------------------------------------------------------------------------
+# Les commandes de l'agent tournent dans une copie de son projet, sur un Linux jetable sans réseau (voir
+# bac_a_sable.py). Aucun accord par commande : rien n'y touche le PC. Le bac à sable doit exister et être activé dans la
+# conversation (agent.sandbox_active) ; le verrou du plan les bloque comme les commandes du PC.
+
+
+def prepare_run_sandbox(root, args):
+    command = (args.get("command") or "").strip()
+    if not command:
+        raise ToolError("Commande vide.")
+    if len(command) > bac_a_sable.MAX_COMMAND_CHARS:
+        raise ToolError(f"Commande trop longue ({len(command)} caractères, {bac_a_sable.MAX_COMMAND_CHARS} au plus) : "
+                        "écris-la dans un fichier du projet, puis lance ce fichier.")
+    try:
+        timeout = int(args.get("timeout") or bac_a_sable.DEFAULT_TIMEOUT_S)
+    except (TypeError, ValueError):
+        raise ToolError("« timeout » doit être un nombre de secondes.")
+    timeout = max(1, min(bac_a_sable.MAX_TIMEOUT_S, timeout))
+    return {"command": command, "timeout": timeout, "root": str(workspace.validate_root(root)),
+            "preview": f"Dans le bac à sable : {command}"}
+
+
+def _megabytes(size):
+    return f"{size / 2**20:.1f} Mo"
+
+
+def _sandbox_run(prepared, cid):
+    lines = []
+    if not bac_a_sable.has_project(cid):
+        info = bac_a_sable.copy_project(cid, prepared["root"])
+        lines.append(f"Projet copié dans le bac à sable ({info['fichiers']} fichiers, {_megabytes(info['octets'])}).")
+    result = bac_a_sable.run_in_project(cid, prepared["command"], prepared["timeout"])
+    if result["delai"]:
+        lines.append(f"Délai de {prepared['timeout']} s dépassé : commande arrêtée.")
+    else:
+        lines.append(f"Code de sortie : {result['code']} ({result['duree']} s)")
+    if result["sortie"]:
+        lines.append(result["sortie"])
+    ok = result["code"] == 0 and not result["delai"]
+    return {"status": "ok" if ok else "error", "output": _truncate("\n".join(lines))}
+
+
+async def run_run_sandbox(prepared, cid):
+    try:
+        return await asyncio.to_thread(_sandbox_run, prepared, cid)
+    except bac_a_sable.BacASableError as exc:
+        raise ToolError(str(exc))
+    except asyncio.CancelledError:
+        # Bouton Stop : la commande ne continue pas dans le bac à sable
+        await asyncio.to_thread(bac_a_sable.stop_commands, cid)
+        raise
+
+
+def prepare_sandbox_reset(root, args):
+    return {"root": str(workspace.validate_root(root)),
+            "preview": "Refaire la copie du projet dans le bac à sable (ce que l'agent y avait changé est effacé)"}
+
+
+async def run_sandbox_reset(prepared, cid):
+    try:
+        info = await asyncio.to_thread(bac_a_sable.reset_project, cid, prepared["root"])
+    except bac_a_sable.BacASableError as exc:
+        raise ToolError(str(exc))
+    return _ok(f"Copie refaite à neuf : {info['fichiers']} fichiers, {_megabytes(info['octets'])}. Ce que tu avais "
+               "changé dans le bac à sable est effacé ; ce que l'utilisateur a modifié de son côté y apparaît.")
+
+
 # --- registre --------------------------------------------------------------------
 
 _PATH = {"type": "string", "description": "Chemin relatif au dossier de travail."}
@@ -2071,6 +2138,24 @@ TOOLS = {t.name: t for t in [
         "Choisit une option, par son libellé, dans une liste déroulante numérotée de la page.",
         _schema({"element": {"type": "integer"}, "option": {"type": "string"}}, ["element", "option"]),
         prepare_choisir, run_page_action, bind=bind_page_action,
+    ),
+    Tool(
+        "run_sandbox", "sandbox",
+        "Lance une commande `sh` dans une copie du projet, sur un Linux jetable : sans réseau, sans accès au PC de "
+        "l'utilisateur, et ce que tu y fais ne modifie pas son projet. Pour essayer, installer, compiler ou lancer des "
+        "tests sans risque. Pas d'interaction ; chaque commande a un délai, après lequel elle est arrêtée.",
+        _schema({"command": {"type": "string", "description": "Une commande sh, éventuellement sur plusieurs lignes."},
+                 "timeout": {"type": "integer", "default": bac_a_sable.DEFAULT_TIMEOUT_S,
+                             "description": f"Secondes avant l'arrêt ({bac_a_sable.MAX_TIMEOUT_S} au plus)."}},
+                ["command"]),
+        prepare_run_sandbox, run_run_sandbox,
+    ),
+    Tool(
+        "sandbox_reset", "sandbox",
+        "Refait la copie du projet dans le bac à sable à partir du projet réel : ce que tu y avais changé est effacé, "
+        "et ce que l'utilisateur a modifié de son côté apparaît.",
+        _schema({}, []),
+        prepare_sandbox_reset, run_sandbox_reset,
     ),
 ]}
 
