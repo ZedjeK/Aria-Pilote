@@ -78,6 +78,17 @@
                     <button type="button" id="btn-compact-go" class="primary">Compacter</button>
                     <button type="button" id="btn-compact-cancel" class="ghost">Annuler</button>
                 </div>
+                <div id="rewind-pop" class="rewind-pop" hidden>
+                    <div id="rewind-summary" class="small"></div>
+                    <div id="rewind-details" class="rewind-details small"></div>
+                    <label id="rewind-files-row" class="rewind-files small">
+                        <input type="checkbox" id="rewind-files"> <span id="rewind-files-label"></span>
+                    </label>
+                    <div class="rewind-actions">
+                        <button type="button" id="btn-rewind-go" class="primary">Reprendre d'ici</button>
+                        <button type="button" id="btn-rewind-cancel" class="ghost">Annuler</button>
+                    </div>
+                </div>
                 <div class="composer-actions">
                     <span id="chat-model" class="muted small"></span>
                     <select id="persona-select" class="preset-chip" title="Persona : qui te répond dans cette conversation"></select>

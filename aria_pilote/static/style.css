@@ -610,6 +610,15 @@ button.danger-text { color: var(--err); }
 .mention-pop button.on { background: var(--panel); outline: 1px solid var(--accent); outline-offset: -1px; }
 .mention-pop .mention-path { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .mention-pop .mention-size { color: var(--muted); font-size: 11px; }
+.msg-rewind { display: block; margin: 6px 0 0 auto; padding: 1px 8px; font-size: 11px; opacity: 0; transition: opacity .12s; }
+.msg.user:hover .msg-rewind, .msg-rewind:focus-visible { opacity: .85; }
+.rewind-pop { display: grid; gap: 8px; padding: 10px 12px; margin-bottom: 6px; border: 1px solid var(--accent-2);
+    border-radius: 8px; background: var(--panel-2); }
+.rewind-details { display: grid; gap: 4px; color: var(--muted); }
+.rewind-files { display: flex; align-items: flex-start; gap: 8px; }
+.rewind-files input { margin-top: 2px; }
+.rewind-files.off { color: var(--muted); }
+.rewind-actions { display: flex; gap: 8px; justify-content: flex-end; }
 .compact-pop { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 8px 10px; margin-bottom: 6px;
     border: 1px solid var(--accent-2); border-radius: 8px; background: var(--panel-2); }
 .compact-pop span { flex-basis: 100%; color: var(--muted); }

@@ -117,6 +117,7 @@ def add_user_message(conv, content, skill=None, images=None, files=None):
     if files:
         message["files"] = files  # [{"name", "kind", "chars", "truncated", "text"}] : texte extrait (attachments.py)
     conv["messages"].append(message)
+    conv.pop("rewound", None)  # la conversation a repris : le bandeau « Repris d'ici » n'a plus lieu d'être
     if conv["title"] == DEFAULT_TITLE:
         fallback = f"📄 {files[0]['name']}" if files else "🖼 Image"
         conv["title"] = _make_title(f"/{skill} {content}" if skill else content or fallback)
@@ -126,6 +127,7 @@ def drop_trailing_assistant(conv):
     """Retire la dernière réponse, y compris les appels d'outils de l'agent."""
     while conv["messages"] and conv["messages"][-1]["role"] in ("assistant", "tool", "verification"):
         conv["messages"].pop()
+    conv.pop("rewound", None)  # la conversation a bougé : on ne rétablit plus ce qui avait été mis de côté
 
 
 def update(cid, change):

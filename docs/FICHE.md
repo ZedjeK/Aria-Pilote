@@ -36,6 +36,7 @@ Relevé du code au 13/11/2026 (version 0.26.0), puis mis à jour avec le navigat
 | Chromium du navigateur piloté | `chromium\` : fait partie du code, remplacé à chaque mise à jour (il doit aller avec la version de Playwright) |
 | Bac à sable Linux | `bac-a-sable\` : images de base téléchargées (`images\`), disque de la distribution WSL (`disque\`), image utilisée (`image.json`) |
 | Copie du projet de chaque conversation (bac à sable) | `/home/agent/projet-<id>`, dans le disque du bac à sable (`bac-a-sable\disque\`) : ce que git n'ignore pas (jamais `.env`, `.venv` ni modèles), 200 Mo et 20 000 fichiers au plus, sans lien ni jonction qui sorte du projet ; supprimée avec la conversation |
+| Messages mis de côté par « Reprendre d'ici » | `data\conversations\<id>\rewinds.json` : copie des messages retirés (texte des pièces jointes compris), 5 reprises au plus par conversation ; effacée avec la conversation |
 | Notes de chaque copie (bac à sable) | `bac-a-sable\copies\<id>.json` : l'empreinte de chaque fichier au moment de la copie, côté bac à sable et côté projet, pour savoir ce qui a changé ; effacées avec la conversation |
 | Profil du navigateur piloté | `data
 avigateur\profil\` : à part, sans les cookies, mots de passe ni historique de l'utilisateur ; « vider » l'envoie à la corbeille |
@@ -51,6 +52,7 @@ avigateur\profil\` : à part, sans les cookies, mots de passe ni historique de l
 | --- | --- |
 | Raccourcis « Aria Pilote » sur le bureau et dans le menu Démarrer, à l'installation | Non demandé |
 | Fichiers du dossier de travail attaché à une conversation (le travail de l'agent) | Accord à chaque modification, sauvegarde avant |
+| Fichiers du dossier remis dans leur état d'avant par « Reprendre d'ici » (case décochée d'office) | Accord de l'utilisateur (case cochée), versions actuelles à la corbeille, fichiers retouchés depuis laissés tels quels |
 | Fichiers du projet rapportés depuis le bac à sable (`sandbox_apply`) | Accord à chaque fois, même si les modifs sont autorisées pour la conversation ; diff réel montré, sauvegarde avant, annulable. Jamais : un fichier modifié de son côté depuis la copie (conflit), un binaire, un fichier non UTF-8, ce que git ignore, `.git/` et `.aria/`, un nom que Windows interpréterait autrement (flux de données caché, périphérique) ; les suppressions ne sont pas répercutées |
 | Corbeille de Windows (modèles, sauvegardes et conversations supprimés) | Action de l'utilisateur |
 | Registre de WSL du compte Windows : la distribution `aria-bac-a-sable` y est inscrite à la création, et désinscrite à la suppression | Action de l'utilisateur (création et suppression du bac à sable) |
