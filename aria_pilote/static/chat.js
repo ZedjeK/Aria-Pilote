@@ -1938,7 +1938,96 @@ $("#chat-form").addEventListener("drop", (event) => {
     addFiles(event.dataTransfer.files);
 });
 
+// --- @fichier : les fichiers du dossier attaché, proposés après un « @ » ---------------------------------------
+
+const mention = { items: [], index: 0, start: -1, timer: null, seq: 0 };
+
+function mentionQuery() {
+    // Le « @ » qui commence un mot (pas celui d'une adresse), jusqu'au curseur
+    const input = $("#chat-input");
+    const before = input.value.slice(0, input.selectionStart);
+    const match = before.match(/(^|[\s(])@([^\s@"]*)$/);
+    return match ? { start: before.length - match[2].length - 1, query: match[2] } : null;
+}
+
+function mentionSize(bytes) {
+    if (bytes < 1024) return `${bytes} o`;
+    return bytes < 1024 ** 2 ? `${Math.round(bytes / 1024)} Ko` : `${(bytes / 1024 ** 2).toFixed(1)} Mo`;
+}
+
+function hideMention() {
+    clearTimeout(mention.timer);
+    mention.seq += 1;
+    mention.items = [];
+    $("#mention-pop").hidden = true;
+}
+
+function renderMention() {
+    const pop = $("#mention-pop");
+    pop.replaceChildren(...mention.items.map((item, i) => {
+        const button = el("button", { type: "button", className: i === mention.index ? "on" : "", role: "option" },
+            el("span", { className: "mention-path", title: item.path }, item.path),
+            el("span", { className: "mention-size" }, mentionSize(item.size)));
+        // mousedown plutôt que click : la saisie garde le focus
+        button.addEventListener("mousedown", (event) => { event.preventDefault(); chooseMention(i); });
+        return button;
+    }));
+    pop.hidden = !mention.items.length;
+}
+
+function chooseMention(i) {
+    const item = mention.items[i];
+    const input = $("#chat-input");
+    if (!item || mention.start < 0) return;
+    const text = /\s/.test(item.path) ? `@"${item.path}" ` : `@${item.path} `;
+    input.setRangeText(text, mention.start, input.selectionStart, "end");
+    hideMention();
+    input.focus();
+}
+
+function refreshMention() {
+    const found = mentionQuery();
+    const a = agentSettings();
+    if (!found || !(a.enabled && a.workspace)) return hideMention();
+    mention.start = found.start;
+    clearTimeout(mention.timer);
+    mention.timer = setTimeout(async () => {
+        const seq = (mention.seq += 1);
+        const where = chat.current ? `conversation_id=${encodeURIComponent(chat.current.id)}` : `dossier=${encodeURIComponent(a.workspace)}`;
+        try {
+            const data = await api(`/api/fichiers?q=${encodeURIComponent(found.query)}&${where}`);
+            if (seq !== mention.seq) return;  // une réponse plus récente est déjà arrivée
+            mention.items = data.files;
+            mention.index = 0;
+            renderMention();
+        } catch {
+            hideMention();
+        }
+    }, 120);
+}
+
+$("#chat-input").addEventListener("input", refreshMention);
+$("#chat-input").addEventListener("click", refreshMention);
+$("#chat-input").addEventListener("blur", () => setTimeout(hideMention, 150));
+$("#chat-form").addEventListener("submit", hideMention);
+
 $("#chat-input").addEventListener("keydown", (event) => {
+    if (!$("#mention-pop").hidden && mention.items.length && !event.isComposing) {
+        if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+            event.preventDefault();
+            const step = event.key === "ArrowDown" ? 1 : -1;
+            mention.index = (mention.index + step + mention.items.length) % mention.items.length;
+            return renderMention();
+        }
+        if (event.key === "Enter" || event.key === "Tab") {
+            event.preventDefault();
+            return chooseMention(mention.index);
+        }
+        if (event.key === "Escape") {
+            event.preventDefault();
+            return hideMention();
+        }
+    }
     if (event.key === "Enter" && !event.shiftKey && !event.isComposing) {
         event.preventDefault();
         $("#chat-form").requestSubmit();

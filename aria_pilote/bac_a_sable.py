@@ -516,7 +516,7 @@ def _inside(root_real, path):
     return real == root_real or real.startswith(root_real + os.sep)
 
 
-def _git_files(root):
+def git_files(root):
     """Fichiers que git ne ignore pas (suivis ou nouveaux), ou None si le dossier n'est pas un dépôt lisible."""
     if not (root / ".git").exists() or shutil.which("git") is None:
         return None
@@ -536,7 +536,7 @@ def project_files(root):
     dossier. Refuse un projet trop gros, en disant ce qui pèse."""
     root = Path(workspace.validate_root(root))
     root_real = os.path.realpath(root)
-    names = _git_files(root)
+    names = git_files(root)
     if names is None:
         names = []
         for dirpath, dirnames, filenames in os.walk(root):

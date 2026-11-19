@@ -78,11 +78,21 @@ def _pdf(raw):
 
 
 def extract(name, data):
-    """Texte d'un fichier joint ; lève AttachmentError avec une raison lisible."""
+    """Texte d'un fichier joint, donné en base64 ; lève AttachmentError avec une raison lisible."""
     name = PurePath(str(name or "fichier")).name[:120]
     if not supported(name):
         raise AttachmentError(f"« {name} » : format non pris en charge (textes, code et PDF seulement).")
-    raw = _decode(data)
+    return extract_bytes(name, _decode(data))
+
+
+def extract_bytes(name, raw, label=None):
+    """Texte d'un fichier joint, donné en octets (un @fichier du dossier de travail, par exemple). `label` : le nom
+    montré au modèle et sous le message (le chemin dans le projet) à la place du seul nom du fichier."""
+    name = PurePath(str(name or "fichier")).name[:120]
+    if not supported(name):
+        raise AttachmentError(f"« {name} » : format non pris en charge (textes, code et PDF seulement).")
+    if len(raw) > MAX_BYTES:
+        raise AttachmentError(f"« {name} » : fichier trop gros ({MAX_BYTES // (1024 * 1024)} Mo au plus).")
     try:
         if extension(name) == "pdf":
             text, pages = _pdf(raw)
@@ -93,7 +103,8 @@ def extract(name, data):
         raise AttachmentError(f"« {name} » : {exc}.")
     text = text.replace("\r\n", "\n")
     total = len(text)
-    return {"name": name, "kind": kind, "chars": total, "truncated": total > MAX_CHARS, "text": text[:MAX_CHARS]}
+    shown = str(label).replace('"', "'")[:200] if label else name
+    return {"name": shown, "kind": kind, "chars": total, "truncated": total > MAX_CHARS, "text": text[:MAX_CHARS]}
 
 
 def for_model(files):

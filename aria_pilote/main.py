@@ -16,7 +16,7 @@ from pydantic import BaseModel, Field
 from . import (VERSION, agent, attachments, background, backups, chat, config, context, conversations, downloads,
                engines, github, hardware, hooks, hub, images, mcp_client, models, optimizer, permissions, persona,
                pick_folder, presets, screen, searxng, skills, souvenirs, subagents, tools, trial, updates, workspace)
-from . import bac_a_sable, navigateur, terminal
+from . import bac_a_sable, mentions, navigateur, terminal
 from .server import EngineMissing, manager
 
 STATIC_DIR = Path(__file__).parent / "static"
@@ -746,6 +746,19 @@ def delete_conversation(cid: str):
     return {"ok": True}
 
 
+@app.get("/api/fichiers")
+def mention_files(q: str = "", conversation_id: str | None = None, dossier: str | None = None):
+    """Les fichiers proposés après un « @ » dans la saisie : ceux du dossier attaché à la conversation, ou du dossier
+    choisi pour une conversation pas encore créée. Que des textes, du code et des PDF, jamais un secret."""
+    root = agent.attached_root(_conversation_or_404(conversation_id)) if conversation_id else dossier
+    if not root:
+        return {"files": []}
+    try:
+        return {"files": mentions.candidates(root, q[:200])}
+    except workspace.WorkspaceError as exc:
+        raise HTTPException(400, str(exc))
+
+
 @app.post("/api/chat")
 async def chat_endpoint(req: ChatRequest):
     if manager.state != "ready":
@@ -783,7 +796,9 @@ async def chat_endpoint(req: ChatRequest):
             skill, content = match.group(1), (match.group(2) or "").strip()
         try:
             files = [attachments.extract(f.name, f.data) for f in req.files]
-        except attachments.AttachmentError as exc:
+            # @fichier : les fichiers du dossier attaché cités dans le message sont joints comme une pièce jointe
+            files += mentions.read(agent.attached_root(conv), content, already=len(files))
+        except (attachments.AttachmentError, mentions.MentionError) as exc:
             raise HTTPException(400, str(exc))
         try:
             attached = [images.save(conv["id"], url) for url in req.images]
