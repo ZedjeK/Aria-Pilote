@@ -20,8 +20,10 @@ os.environ["ARIA_PILOTE_HOME"] = str(HOME)
 sys.path.insert(0, str(SRC))
 # Port à part : les tests ne gênent jamais une Aria Pilote ouverte à côté
 APP_PORT, LLAMA_PORT = 8799, 8798
-(HOME / "config.json").write_text(json.dumps({"app_port": APP_PORT, "llama_port": LLAMA_PORT, "model_dirs": ["models"]}),
-                                  encoding="utf-8")
+# Pas de vérification des mises à jour au démarrage de l'appli : les tests ne s'adressent jamais à GitHub (une requête
+# annulée en route laissait une socket ouverte, selon le moment où un test démarrait l'appli)
+(HOME / "config.json").write_text(json.dumps({"app_port": APP_PORT, "llama_port": LLAMA_PORT, "model_dirs": ["models"],
+                                              "update_check": False}), encoding="utf-8")
 atexit.register(shutil.rmtree, HOME, ignore_errors=True)
 
 from aria_pilote import config, trash  # noqa: E402
