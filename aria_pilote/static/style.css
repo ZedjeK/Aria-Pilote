@@ -603,6 +603,13 @@ button.danger-text { color: var(--err); }
     border: 1px solid var(--action); border-radius: 8px; background: var(--panel-2); font-size: 13px; }
 .ctx-alert span { flex: 1; min-width: 220px; }
 .ctx-alert button { padding: 3px 10px; font-size: 12px; }
+.mention-pop { display: grid; border: 1px solid var(--accent-2); border-radius: 8px; background: var(--panel-2);
+    overflow: hidden; }
+.mention-pop button { display: flex; align-items: baseline; gap: 10px; padding: 5px 10px; border: 0; border-radius: 0;
+    background: transparent; color: var(--text); font: 13px var(--mono); text-align: left; cursor: pointer; }
+.mention-pop button.on { background: var(--panel); outline: 1px solid var(--accent); outline-offset: -1px; }
+.mention-pop .mention-path { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mention-pop .mention-size { color: var(--muted); font-size: 11px; }
 .compact-pop { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 8px 10px; margin-bottom: 6px;
     border: 1px solid var(--accent-2); border-radius: 8px; background: var(--panel-2); }
 .compact-pop span { flex-basis: 100%; color: var(--muted); }
