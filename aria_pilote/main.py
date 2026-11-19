@@ -16,7 +16,7 @@ from pydantic import BaseModel, Field
 from . import (VERSION, agent, attachments, background, backups, chat, config, context, conversations, downloads,
                engines, github, hardware, hooks, hub, images, mcp_client, models, optimizer, permissions, persona,
                pick_folder, presets, screen, searxng, skills, souvenirs, subagents, tools, trial, updates, workspace)
-from . import bac_a_sable, mentions, navigateur, terminal
+from . import bac_a_sable, mentions, navigateur, rewind, terminal
 from .server import EngineMissing, manager
 
 STATIC_DIR = Path(__file__).parent / "static"
@@ -853,6 +853,41 @@ def screen_windows():
 def _agent_root(conv):
     """Dossier attaché à la conversation (pour trouver les compétences du projet)."""
     return agent.attached_root(conv)
+
+
+class RewindRequest(BaseModel):
+    index: int  # rang, dans la conversation, de ton message à partir duquel on reprend
+    restore_files: bool = False  # remettre aussi les fichiers modifiés par l'agent dans la partie retirée
+    force: bool = False  # y compris ceux que tu as retouchés depuis
+
+
+class RewindRestore(BaseModel):
+    id: str
+
+
+def _rewind_call(function, *args):
+    try:
+        return function(*args)
+    except rewind.RewindError as exc:
+        raise HTTPException(exc.status, str(exc))
+
+
+@app.get("/api/conversations/{cid}/rewind")
+def rewind_preview(cid: str, index: int):
+    """« Reprendre d'ici » : ce qui serait mis de côté, et ce que remettre les fichiers ferait. Ne touche à rien."""
+    return _rewind_call(rewind.preview, _conversation_or_404(cid), index)
+
+
+@app.post("/api/conversations/{cid}/rewind")
+def rewind_apply(cid: str, req: RewindRequest):
+    """La conversation repart de ton message `index` ; son texte revient dans la saisie."""
+    return _rewind_call(rewind.apply, cid, req.index, req.restore_files, req.force)
+
+
+@app.post("/api/conversations/{cid}/rewind/restore")
+def rewind_restore(cid: str, req: RewindRestore):
+    """Rétablit ce qu'une reprise avait mis de côté (conversation pas encore reprise, aucun fichier remis)."""
+    return _rewind_call(rewind.restore, cid, req.id)
 
 
 class CompactRequest(BaseModel):

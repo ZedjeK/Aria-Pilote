@@ -206,10 +206,11 @@ def _relative(conv, path):
         return path
 
 
-def _task_commands(conv, task_id):
-    """Commandes réellement lancées pendant la tâche (sous-agents compris) : leurs effets ne s'annulent pas."""
+def task_commands(conv, task_id, messages=None):
+    """Commandes réellement lancées pendant la tâche (sous-agents compris) : leurs effets ne s'annulent pas.
+    `messages` : ne regarder que cette partie de la conversation (la partie retirée par « Reprendre d'ici »)."""
     commands = []
-    for m in conv["messages"]:
+    for m in conv["messages"] if messages is None else messages:
         if m.get("task_id") != task_id or m["role"] != "tool":
             continue
         if m["name"] == "run_command" and m.get("status") in ("ok", "error"):
@@ -223,7 +224,7 @@ def _task_commands(conv, task_id):
 def task_preview(conv, task_id):
     plan = backups.task_plan(conv["id"], task_id)
     return {"files": [{"path": _relative(conv, e["path"]), "action": e["action"], "conflict": e["conflict"]} for e in plan],
-            "commands": _task_commands(conv, task_id)}
+            "commands": task_commands(conv, task_id)}
 
 
 def changes(conv):

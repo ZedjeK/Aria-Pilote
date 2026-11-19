@@ -937,6 +937,141 @@ $("#btn-ctx-close").addEventListener("click", () => {
     $("#ctx-alert").hidden = true;
 });
 
+// --- Reprendre d'ici : repartir d'un ancien message à toi -----------------------------------------------------
+
+const rewind = { index: null, text: "" };
+
+function rewindButton(index) {
+    const button = el("button", { type: "button", className: "ghost msg-rewind",
+        title: "Reprendre la conversation à partir de ce message : la suite est mise de côté et le texte revient dans la saisie" },
+    "↩ Reprendre d'ici");
+    button.addEventListener("click", () => openRewind(index));
+    return button;
+}
+
+function plural(n, one, many) {
+    return `${n} ${n > 1 ? many : one}`;
+}
+
+async function openRewind(index) {
+    if (chat.controller) return showChatError("Attends la fin de la réponse, ou arrête-la, avant de reprendre d'ici.");
+    let info;
+    try {
+        info = await api(`/api/conversations/${chat.current.id}/rewind?index=${index}`);
+    } catch (err) {
+        return showChatError(err.message);
+    }
+    rewind.index = index;
+    const after = info.removed - 1;
+    $("#rewind-summary").textContent = `↩ Reprendre d'ici : ce message${after ? ` et ${plural(after, "message", "messages")} suivant${after > 1 ? "s" : ""}` : ""} `
+        + `${after ? "sont" : "est"} mis de côté (une copie reste : tu pourras rétablir tant que tu n'as rien envoyé de nouveau). `
+        + "Le texte revient dans la saisie.";
+    const lines = [];
+    const written = info.tasks.filter((t) => t.files.length);
+    const files = written.flatMap((t) => t.files);
+    if (files.length) {
+        lines.push(`📝 L'agent a modifié ${plural(files.length, "fichier", "fichiers")} dans cette partie : `
+            + files.slice(0, 4).map((f) => `${f.path}${f.conflict ? " (retouché depuis)" : ""}`).join(", ") + (files.length > 4 ? "…" : ""));
+    }
+    const commands = info.tasks.flatMap((t) => t.commands);
+    if (commands.length) {
+        lines.push(`⚙ Commandes lancées, qui ne s'annulent pas : ${commands.slice(0, 3).join(" ; ")}${commands.length > 3 ? "…" : ""}`);
+    }
+    if (info.lost_attachments.length) lines.push(`📎 Pièces jointes d'origine non reprises : ${info.lost_attachments.join(", ")}`);
+    if (info.sandbox) lines.push("🧪 Le bac à sable n'est pas touché : sa copie du projet reste telle que l'agent l'a laissée.");
+    if (info.summary_dropped) lines.push("🗜 Le résumé du contexte est supprimé : les messages qu'il couvrait reviennent tels quels.");
+    $("#rewind-details").replaceChildren(...lines.map((line) => el("div", {}, line)));
+    const row = $("#rewind-files-row");
+    const box = $("#rewind-files");
+    box.checked = false;
+    box.disabled = !info.can_restore_files;
+    row.hidden = !files.length;
+    row.classList.toggle("off", !info.can_restore_files);
+    $("#rewind-files-label").textContent = info.can_restore_files
+        ? `Remettre aussi les fichiers dans leur état d'avant (${plural(files.length, "fichier", "fichiers")}, ${plural(written.length, "tâche", "tâches")}) : `
+            + "la version actuelle part à la corbeille, un fichier que tu as retouché depuis reste tel quel."
+        : "Fichiers non remis : une tâche a commencé avant ce message, l'annuler d'ici la couperait en deux. "
+            + "« Annuler toute la tâche » (panneau Modifications) la remet d'un coup.";
+    $("#rewind-pop").hidden = false;
+    $("#btn-rewind-go").focus();
+}
+
+function closeRewind() {
+    $("#rewind-pop").hidden = true;
+    rewind.index = null;
+}
+
+function restoredReport(restored) {
+    const sum = (key) => Object.values(restored || {}).reduce((n, r) => n + (r[key]?.length || 0), 0);
+    const parts = [];
+    if (sum("restored")) parts.push(plural(sum("restored"), "fichier remis", "fichiers remis"));
+    if (sum("deleted")) parts.push(plural(sum("deleted"), "supprimé", "supprimés"));
+    if (sum("skipped")) parts.push(plural(sum("skipped"), "laissé tel quel (retouché depuis)", "laissés tels quels (retouchés depuis)"));
+    if (sum("errors")) parts.push(plural(sum("errors"), "erreur", "erreurs"));
+    return parts.join(", ");
+}
+
+async function confirmRewind() {
+    if (rewind.index === null || !chat.current) return;
+    const go = $("#btn-rewind-go");
+    go.disabled = true;
+    try {
+        const result = await api(`/api/conversations/${chat.current.id}/rewind`, {
+            method: "POST",
+            body: JSON.stringify({ index: rewind.index, restore_files: $("#rewind-files").checked && !$("#rewind-files").disabled }),
+        });
+        chat.current = result.conversation;
+        if (chat.current.rewound) chat.current.rewound.report = restoredReport(result.restored);
+        rewind.text = result.text;
+        closeRewind();
+        renderMessages();
+        const input = $("#chat-input");
+        input.value = result.text;
+        input.focus();
+        input.setSelectionRange(input.value.length, input.value.length);
+        loadConversations();
+        refreshChanges();
+    } catch (err) {
+        showChatError(err.message);
+    } finally {
+        go.disabled = false;
+    }
+}
+
+function rewoundNode(note) {
+    const text = `↩ Repris d'ici : ${plural(note.count, "message mis", "messages mis")} de côté`
+        + `${note.files_changed ? " · fichiers remis dans leur état d'avant" : ""}${note.report ? ` (${note.report})` : ""}.`;
+    const node = el("div", { className: "summary-divider" }, text);
+    if (!note.files_changed) {
+        const button = el("button", { type: "button", className: "ghost", style: "margin-left: 8px" }, "Rétablir");
+        button.addEventListener("click", () => restoreRewind(note.id, button));
+        node.append(button);
+    }
+    return node;
+}
+
+async function restoreRewind(id, button) {
+    button.disabled = true;
+    try {
+        const result = await api(`/api/conversations/${chat.current.id}/rewind/restore`, {
+            method: "POST", body: JSON.stringify({ id }),
+        });
+        chat.current = result.conversation;
+        const input = $("#chat-input");
+        if (rewind.text && input.value === rewind.text) input.value = "";  // le texte qui était revenu dans la saisie est de nouveau dans le fil
+        rewind.text = "";
+        renderMessages();
+        loadConversations();
+        refreshChanges();
+    } catch (err) {
+        showChatError(err.message);
+        button.disabled = false;
+    }
+}
+
+$("#btn-rewind-go").addEventListener("click", confirmRewind);
+$("#btn-rewind-cancel").addEventListener("click", closeRewind);
+
 function summaryNode(summary, count) {
     const node = el("details", { className: "summary-divider" },
         el("summary", {}, `🗜 Les ${count} messages au-dessus sont résumés pour le modèle (voir le résumé)`));
@@ -978,7 +1113,7 @@ function formatStats(m) {
     return parts.join(" · ");
 }
 
-function messageNode(m) {
+function messageNode(m, index) {
     const node = el("div", { className: `msg ${m.role}` });
     if (m.role === "user") {
         if (m.skill) node.append(el("span", { className: "badge skill" }, `📚 ${m.skill}`), " ");
@@ -987,6 +1122,7 @@ function messageNode(m) {
         if (pictures) node.append(pictures);
         const files = messageFiles(m);
         if (files) node.append(files);
+        if (index !== undefined && chat.current) node.append(rewindButton(index));
         return node;
     }
     node.append(
@@ -1466,12 +1602,13 @@ function renderMessages() {
         } else if (m.role === "assistant" && !m.content && !m.reasoning) {
             // simple appel d'outil : la carte de l'outil suffit
         } else {
-            nodes.push(messageNode(m));
+            nodes.push(messageNode(m, index));
         }
         if (m.task_id && taskEnd[m.task_id] === index && (taskWrites.has(m.task_id) || undoneTasks[m.task_id])) {
             nodes.push(taskFooterNode(m.task_id, undoneTasks[m.task_id]));
         }
     });
+    if (chat.current?.rewound) nodes.push(rewoundNode(chat.current.rewound));
     if (textPlan) {
         nodes.push(el("div", { className: "plan-card" },
             el("div", { className: "approval-title" }, "🗺️ Plan ci-dessus : en attente de ta décision"), planActions()));
@@ -1595,6 +1732,7 @@ async function send(content, answer, continueTask = false, pictures = [], planFi
         while (["assistant", "tool"].includes(chat.current.messages.at(-1)?.role)) chat.current.messages.pop();
     } else {
         chat.current.messages.push({ role: "user", content, localImages: imagesOf(pictures), localFiles: filesOf(pictures) });
+        delete chat.current.rewound;
         if (!continueTask) delete chat.current.todo;
     }
     renderMessages();
